@@ -1,0 +1,6 @@
+version: v2
+plugins:
+  # Generates the standard Go structs from your .proto messages
+  - local: protoc-gen-go
+    out: internal/api/proto
+    opt: paths=source_relative

@@ -1,0 +1,6 @@
+package: trading212
+generate:
+  client: true
+  models: true
+  embedded-spec: true
+output: pkg/apis/trading212/client.gen.go

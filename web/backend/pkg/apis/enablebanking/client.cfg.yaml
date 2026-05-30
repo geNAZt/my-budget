@@ -1,0 +1,6 @@
+package: enablebanking
+generate:
+  client: true
+  models: true
+  embedded-spec: true
+output: pkg/apis/enablebanking/client.gen.go

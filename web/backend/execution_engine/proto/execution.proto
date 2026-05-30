@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package execution;
+option go_package = "github.com/genazt/my-budget-script/web/backend/internal/service/proto;executionpb";
+
+service ExecutionEngine {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+message PingRequest {}
+message PingResponse {
+  string status = 1;
+}
+
+message ExecuteRequest {
+  string plan_id = 1;
+  string code = 2;
+  bytes state_msgpack = 3;
+  bytes secrets_msgpack = 4;
+  bytes trigger_msgpack = 5;
+}
+
+message ExecuteResponse {
+  bool success = 1;
+  string stdout = 2;
+  string stderr = 3;
+  int32 exit_code = 4;
+  bool not_cached = 5;
+}

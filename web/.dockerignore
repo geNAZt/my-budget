@@ -1,0 +1,23 @@
+# Version control
+.git
+.gitignore
+
+# OS specific files
+.DS_Store
+Thumb.db
+
+# Backend artifacts
+backend/.gocache/
+backend/main
+backend/execution_engine/node_modules/
+backend/data/
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/.vscode/
+
+# Local data
+data/
+logs/

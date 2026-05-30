@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --config /etc/cloudflared/config.yaml run
+    volumes:
+      - ./cloudflare-tunnel.yaml:/etc/cloudflared/config.yaml:Z
+      - ./tunnel-credentials.json:/etc/cloudflared/credentials.json:Z
+    depends_on:
+      - backend
+      - frontend
+
+  backend:
+    build:
+      context: ./web
+      dockerfile: backend/Dockerfile
+    expose:
+      - "8080"
+    volumes:
+      - ./web/data:/app/data:Z
+      - ./logs:/app/logs:Z
+    develop:
+      watch:
+        - action: rebuild
+          path: ./web/backend
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://budget:budgetpass@db:5432/budget?sslmode=disable
+      - SQLITE_DB_PATH=/app/data/budget.db
+      - RP_ID=${DOMAIN:-localhost}
+      - RP_ORIGINS=https://${DOMAIN:-localhost},http://localhost:3000,http://${DOMAIN:-localhost}:3000
+      - RESET_RECOVERY=${RESET_RECOVERY:-false}
+    restart: always
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=budget
+      - POSTGRES_PASSWORD=budgetpass
+      - POSTGRES_DB=budget
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: frontend/Dockerfile
+    expose:
+      - "3000"
+    develop:
+      watch:
+        - action: rebuild
+          path: ./web/frontend
+    restart: always
+
+volumes:
+  db-data:

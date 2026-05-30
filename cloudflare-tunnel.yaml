@@ -1,0 +1,19 @@
+# Cloudflare Tunnel Configuration
+# This file allows you to manage ingress rules locally instead of the Cloudflare UI.
+# To use this, you must mount this file to /etc/cloudflared/config.yaml in the tunnel container.
+
+tunnel: ed168bbb-feb9-48a4-a367-eb98e3b4d2ed
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # 1. Backend WebSocket Gateway
+  - hostname: budget.genazt.me
+    path: ^/api/ws$
+    service: http://backend:8080
+
+  # 2. Frontend SPA (Catch-all)
+  - hostname: budget.genazt.me
+    service: http://frontend:3000
+
+  # 3. Global 404
+  - service: http_status:404

@@ -1,0 +1,6 @@
+version: v2
+plugins:
+  # Uses the official, managed v2-compatible ES plugin
+  - local: protoc-gen-es
+    out: src/lib/gen
+    opt: target=ts

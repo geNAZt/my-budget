@@ -1,0 +1,671 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "github.com/genazt/my-budget-script/web/backend/internal/api/proto";
+
+// --- Utility Payloads ---
+
+message GenericID {
+  string id = 1;
+}
+
+message Error {
+  string message = 1;
+  int32 code = 2;
+}
+
+// --- Authentication Payloads ---
+
+message AuthBeginRequest {
+  string username = 1;
+}
+
+message AuthFinishRequest {
+  string username = 1;
+  string user_id = 2; // Required for registration verification
+  bytes webauthn_payload = 3; // The complex W3C JSON object
+}
+
+message AuthRecoveryRequest {
+  string username = 1;
+  string token = 2;
+}
+
+message AuthHandshakeRequest {
+  string token = 1;
+}
+
+message AuthOptions {
+  bytes options_json = 1; // Temporary fallback for complex WebAuthn JSON, or we map it fully.
+}
+
+message AuthBeginResponse {
+  string user_id = 1;
+  bytes options = 2; // WebAuthn options as JSON-encoded bytes for now to maintain browser compatibility, or Protobuf if mapped.
+}
+
+message AuthSuccessResponse {
+  string status = 1;
+  string token = 2;
+  string username = 3;
+  string id = 4;
+  string dashboard_scenario_id = 5;
+  int32 dashboard_month_offset = 6;
+  string scope = 7;
+}
+
+// --- Automation Domain Payloads ---
+
+message ExecutionPlan {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  string description = 4;
+  string created_at = 5;
+  string code = 6;
+  string trigger_type = 7;
+  string trigger_value = 8;
+  bool is_enabled = 9;
+}
+
+message ExecutionPlanList {
+  repeated ExecutionPlan plans = 1;
+}
+
+message ExecutionConnection {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  string type = 4;
+  string created_at = 5;
+  string value = 6;
+}
+
+message ExecutionConnectionList {
+  repeated ExecutionConnection connections = 1;
+}
+
+message ExecutionLog {
+  string id = 1;
+  string user_id = 2;
+  string plan_id = 3;
+  string status = 4;
+  string stdout = 5;
+  string stderr = 6;
+  int32 exit_code = 7;
+  string started_at = 8;
+  string finished_at = 9;
+}
+
+message ExecutionLogList {
+  repeated ExecutionLog logs = 1;
+}
+
+// --- Gateway Envelopes (REMOVED HTTP EMULATION) ---
+
+message WSRequest {
+  string id = 1;
+  string path = 2; // Logical namespaced path, e.g. "assets::list"
+  bytes body = 3;
+}
+message WSResponse {
+  string id = 1;
+  bytes data = 2;
+  bool done = 3;
+}
+
+message EventWrapper {
+  string event = 1;
+  bytes data = 2;
+}
+
+// --- Integrations & Automation Payloads ---
+
+message SyncFinishedPayload {
+  string integration_id = 1;
+  string integration_name = 2;
+  string service_type = 3;
+  int32 discovered_count = 4;
+}
+
+message Transaction {
+  string id = 1;
+  string integration_id = 2;
+  string account_id = 3;
+  double amount = 4;
+  string receiver = 5;
+  string description = 6;
+  string created_at = 7;
+  string tags = 8;
+  string source_account_id = 9;
+  string destination_account_id = 10;
+  string pool_id = 11;
+  bool is_potential_duplicate = 12;
+  string potential_link_id = 13;
+  bool is_link_confirmed = 14;
+  string duplicate_key = 15;
+  string denied_duplicate_ids = 16;
+  string external_id = 17;
+  string correct_external_id = 18;
+  string correlation_id = 19;
+  bool is_deleted = 20;
+  string receiver_iban = 21;
+}
+
+message Integration {
+  string integration_id = 1;
+  string integration_name = 2;
+  string service_type = 3;
+  int32 discovered_count = 4;
+  string status = 5;
+  int32 sync_interval_seconds = 6;
+  string last_sync_at = 7;
+  string last_error = 8;
+  double cached_balance = 9;
+}
+
+message IntegrationList {
+  repeated Integration integrations = 1;
+}
+
+message IntegrationAccount {
+  string id = 1;
+  string name = 2;
+  double balance = 3;
+  string integration_id = 4;
+  bool enabled = 5;
+  string iban = 6;
+  string backoff_until = 7;
+}
+
+message IntegrationAccountList {
+  repeated IntegrationAccount accounts = 1;
+}
+
+message DiscoveredTransactionList {
+  repeated Transaction transactions = 1;
+}
+
+message YieldMap {
+  map<string, double> yields = 1;
+}
+
+// --- Projections & Simulation Payloads ---
+
+message VirtualAccountMonthBalance {
+  string id = 1;
+  string name = 2;
+  double balance = 3;
+  double allocated_bills = 4;
+  double allocated_expenses = 5;
+}
+
+message EntryBreakdown {
+  string name = 1;
+  string entity_name = 2;
+  double amount = 3;
+  double realtime_balance = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  double interest = 7;
+  double penalty = 8;
+  double balance = 9;
+  map<string, double> real_split = 10;
+  map<string, double> tracker_flows = 11;
+  map<string, double> sub_asset_flows = 12;
+}
+
+message MonthBreakdown {
+  repeated EntryBreakdown incomes = 1;
+  repeated EntryBreakdown bills = 2;
+  repeated EntryBreakdown expenses = 3;
+  repeated EntryBreakdown assets = 4;
+  repeated EntryBreakdown loans = 5;
+}
+
+message ProjectionMonth {
+  string date = 1;
+  string period_start = 2;
+  string period_end = 3;
+  double income = 4;
+  double passive_income = 5;
+  double bills = 6;
+  double expenses = 7;
+  double assets = 8;
+  double loans = 9;
+  double remainder = 10;
+  double balance = 11;
+  double asset_worth = 12;
+  double loan_debt = 13;
+  repeated VirtualAccountMonthBalance virtual_accounts = 14;
+  MonthBreakdown breakdown = 15;
+}
+
+message PerformanceMetrics {
+  int64 total_duration_ms = 1;
+  int64 resolution_duration_ms = 2;
+  int64 monte_carlo_duration_ms = 3;
+  int64 catchup_duration_ms = 4;
+  int64 projection_duration_ms = 5;
+  int64 per_asset_mc_ms = 6;
+}
+
+message ScenarioEntity {
+  string entity_id = 1;
+  string entity_type = 2;
+  string version_id = 3;
+}
+
+message ETFScenarioParams {
+  int32 simulations = 1;
+  int32 sim_years = 2;
+  double sim_percent = 3;
+  int32 lookback_years = 4;
+}
+
+message Scenario {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  string description = 4;
+  int32 projection_months = 5;
+  repeated string remainder_order = 6;
+  bool is_active = 7;
+  int32 month_start_day = 8;
+  string start_date = 9;
+  string created_at = 10;
+  int32 simulations = 11;
+  int32 sim_years = 12;
+  double sim_percent = 13;
+  int32 lookback_years = 14;
+  string mc_implementation = 15;
+  double passive_income_percentage = 16;
+  repeated ScenarioEntity entities = 17;
+  ETFScenarioParams etf_params = 18;
+}
+
+message ScenarioList {
+  repeated Scenario scenarios = 1;
+}
+
+// --- Asset Domain Payloads ---
+
+message ETFTracker {
+  string tracker = 1;
+  double percentage = 2;
+  double ter = 3;
+}
+
+message AssetPenalty {
+  string name = 1;
+  string trigger_type = 2;
+  double percentage = 3;
+}
+
+message SubAsset {
+  string id = 1;
+  string name = 2;
+  double target_value = 3;
+  double amount_per_month = 4;
+  bool is_remainder_consumer = 5;
+  string remainder_start_date = 6;
+  string dumping_loan_id = 7;
+  string start_date = 8;
+  string end_date = 9;
+  string earliest_dump_date = 10;
+}
+
+message AssetVersion {
+  string id = 1;
+  string asset_id = 2;
+  string type = 3;
+  double target_value = 4;
+  string dumping_loan_id = 5;
+  string stop_modification_id = 6;
+  double interest_rate = 7;
+  string interest_interval = 8;
+  double amount_per_month = 9;
+  string remainder_start_date = 10;
+  string start_date = 11;
+  string end_date = 12;
+  repeated ETFTracker etf_config = 13;
+  repeated AssetPenalty penalties = 14;
+  repeated SubAsset sub_assets = 15;
+  string created_at = 16;
+}
+
+message Asset {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  string created_at = 7;
+  AssetVersion active_version = 8;
+  repeated string link_to_scenarios = 9;
+}
+
+message AssetList {
+  repeated Asset assets = 1;
+}
+
+// --- Loan Domain Payloads ---
+
+message LoanVersion {
+  string id = 1;
+  string loan_id = 2;
+  double amount_lent = 3;
+  double interest_rate = 4;
+  int32 runtime_months = 5;
+  string start_date = 6;
+  string remainder_start_date = 7;
+  int32 priority = 8;
+  string next_loan_id = 9;
+  double balloon_leftover = 10;
+  bool is_interest_only = 11;
+  double early_payoff_penalty = 12;
+  string created_at = 13;
+}
+
+message Loan {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  string created_at = 7;
+  LoanVersion active_version = 8;
+  repeated string link_to_scenarios = 9;
+}
+
+message LoanList {
+  repeated Loan loans = 1;
+}
+
+// --- Income Domain Payloads ---
+
+message IncomeVersion {
+  string id = 1;
+  string income_id = 2;
+  double amount = 3;
+  string stop_modification_id = 4;
+  string start_date = 5;
+  string end_date = 6;
+  int32 interval_months = 7;
+  string created_at = 8;
+}
+
+message Income {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  string created_at = 7;
+  IncomeVersion active_version = 8;
+  repeated string link_to_scenarios = 9;
+}
+
+message IncomeList {
+  repeated Income incomes = 1;
+}
+
+// --- Bill Domain Payloads ---
+
+message BillVersion {
+  string id = 1;
+  string bill_id = 2;
+  double amount = 3;
+  string start_date = 4;
+  string end_date = 5;
+  int32 interval_months = 6;
+  string created_at = 7;
+}
+
+message Bill {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  string created_at = 7;
+  BillVersion active_version = 8;
+  repeated string link_to_scenarios = 9;
+}
+
+message BillList {
+  repeated Bill bills = 1;
+}
+
+// --- Expense Domain Payloads ---
+
+message ExpenseVersion {
+  string id = 1;
+  string expense_id = 2;
+  double amount = 3;
+  string due_date = 4;
+  string created_at = 5;
+}
+
+message Expense {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string pool_id = 5;
+  repeated string account_ids = 6;
+  string created_at = 7;
+  ExpenseVersion active_version = 8;
+  repeated string link_to_scenarios = 9;
+}
+
+message ExpenseList {
+  repeated Expense expenses = 1;
+}
+
+// --- Modification Domain Payloads ---
+
+message ModificationVersion {
+  string id = 1;
+  string modification_id = 2;
+  double amount = 3;
+  double withdrawal_percentage = 4;
+  string start_date = 5;
+  string end_date = 6;
+  int32 interval_months = 7;
+  string created_at = 8;
+}
+
+message Modification {
+  string id = 1;
+  string user_id = 2;
+  string target_id = 3;
+  repeated string target_ids = 4;
+  string target_type = 5;
+  string description = 6;
+  bool is_deleted = 7;
+  string created_at = 8;
+  ModificationVersion active_version = 9;
+}
+
+message ModificationList {
+  repeated Modification modifications = 1;
+}
+
+// --- VirtualAccount Domain Payloads ---
+
+message VirtualAccountVersion {
+  string id = 1;
+  string virtual_account_id = 2;
+  string color = 3;
+  double starting_balance = 4;
+  string description = 5;
+  string created_at = 6;
+}
+
+message VirtualAccount {
+  string id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool is_deleted = 4;
+  string created_at = 5;
+  VirtualAccountVersion active_version = 6;
+}
+
+message VirtualAccountList {
+  repeated VirtualAccount virtual_accounts = 1;
+}
+
+// --- Rule & Pool Domain Payloads ---
+
+message TransactionPool {
+  string id = 1;
+  string user_id = 2;
+  string parent_id = 3;
+  string name = 4;
+  string color = 5;
+  bool is_hidden = 6;
+  string created_at = 7;
+}
+
+message TransactionPoolList {
+  repeated TransactionPool pools = 1;
+}
+
+message TransactionRule {
+  string id = 1;
+  string user_id = 2;
+  string parent_id = 3;
+  string integration_id = 4;
+  string target_pool_id = 5;
+  string operator = 6;
+  string field = 7;
+  string regex = 8;
+  string amount_operator = 9;
+  double amount_value = 10;
+  int32 priority = 11;
+  bool negate = 12;
+  string created_at = 13;
+  repeated TransactionRule children = 14;
+}
+
+message TransactionRuleList {
+  repeated TransactionRule rules = 1;
+}
+
+// --- New Integration & Rule Messages ---
+
+message IntegrationSaveRequest {
+  string id = 1;
+  string name = 2;
+  string service_type = 3;
+  int32 sync_interval_seconds = 4;
+
+  // GoCardless
+  string secret_id = 5;
+  string secret_key = 6;
+
+  // Trading212
+  string api_key = 7;
+  string api_secret = 8;
+
+  // EnableBanking
+  string application_id = 9;
+  string private_key = 10;
+}
+
+message EBAspspsRequest {
+  string id = 1;
+  string country = 2;
+}
+
+message EBAspsp {
+  string name = 1;
+  string country = 2;
+}
+
+message EBAspspsList {
+  repeated EBAspsp aspsps = 1;
+}
+
+message EBLinkRequest {
+  string id = 1;
+  string bank_name = 2;
+  string country = 3;
+  string redirect_url = 4;
+  string state = 5;
+}
+
+message EBLinkResponse {
+  string url = 1;
+}
+
+message GCInstitutionsRequest {
+  string id = 1;
+  string country = 2;
+}
+
+message GCInstitution {
+  string id = 1;
+  string name = 2;
+}
+
+message GCInstitutionsList {
+  repeated GCInstitution institutions = 1;
+}
+
+message GCLinkRequest {
+  string id = 1;
+  string institution_id = 2;
+  string redirect_url = 3;
+}
+
+message GCLinkResponse {
+  string link = 1;
+}
+
+message IntegrationSyncRequest {
+  string id = 1;
+  bool force = 2;
+}
+
+message IntegrationAccountsRequest {
+  string id = 1;
+}
+
+message IntegrationAccountUpdate {
+  string integration_id = 1;
+  string account_id = 2;
+  string alias = 3;
+  bool enabled = 4;
+  string iban = 5;
+}
+
+message TransactionDeleteRequest {
+  string id = 1;
+}
+
+message TransactionUnlinkRequest {
+  string id = 1;
+}
+
+message TransactionLinkRequest {
+  string id = 1;
+  string target_id = 2;
+}
+
+message TransactionDuplicateRequest {
+  string id = 1;
+  string denied_id = 2;
+}
+
+message TransactionSaveBulkRequest {
+  string integration_id = 1;
+  string account_id = 2;
+  repeated Transaction transactions = 3;
+}

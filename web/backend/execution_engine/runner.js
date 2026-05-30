@@ -1,0 +1,303 @@
+const fs = require("fs");
+const path = require("path");
+const { execSync } = require("child_process");
+const vm = require("vm");
+
+const executionEngineDir = __dirname;
+
+// In-memory persistent cache for compiled VM scripts
+const compiledPlans = new Map(); // maps plan_id -> { script, code }
+
+// Stdin buffer chunk accumulator
+let buffer = Buffer.alloc(0);
+
+process.stdin.on("data", (chunk) => {
+  buffer = Buffer.concat([buffer, chunk]);
+  processBuffer();
+});
+
+process.stdin.on("end", () => {
+  // Daemon standard stdio closed - exit
+  process.exit(0);
+});
+
+async function processBuffer() {
+  try {
+    while (buffer.length >= 4) {
+      // Read 4-byte big-endian length prefix
+      const length = buffer.readUInt32BE(0);
+      if (buffer.length >= 4 + length) {
+        // Slice the complete frame
+        const frameBytes = buffer.subarray(4, 4 + length);
+        buffer = buffer.subarray(4 + length);
+
+        // Handle request frame concurrently
+        handleFrame(frameBytes);
+      } else {
+        break;
+      }
+    }
+  } catch (err) {
+    sendErrorResponse(
+      null,
+      `[Daemon Stream Error] Stream processing failed: ${err.message}`,
+    );
+  }
+}
+
+async function handleFrame(frameBytes) {
+  let correlation_id = null;
+  try {
+    const request = JSON.parse(frameBytes.toString("utf8"));
+    correlation_id = request.correlation_id;
+    const plan_id = request.plan_id;
+    const code = request.code;
+    const state = request.state || { incomes: [], assets: [], loans: [] };
+    const secrets = request.secrets || {};
+    const trigger = request.trigger || { type: "CRON", data: {} };
+
+    if (!code) {
+      sendErrorResponse(
+        correlation_id,
+        "[Runner Error] No code provided for execution",
+      );
+      return;
+    }
+
+    // Ensure esbuild and dependency files are fully available
+    ensureDependenciesInstalled();
+
+    const esbuild = require("esbuild");
+
+    // Check persistent in-memory compilation cache
+    let cached = plan_id ? compiledPlans.get(plan_id) : null;
+    let script;
+
+    // Compile only if we don't have a cache or if code has changed
+    if (!cached || cached.code !== code) {
+      // A. Dynamically install missing packages inside execution_engine directory
+      const depRegex =
+        /\/\*\*\s*depend\s+on\s+([a-zA-Z0-9_\-]+):([0-9\.]+)\s*\*\*\//g;
+      let match;
+      const deps = [];
+      while ((match = depRegex.exec(code)) !== null) {
+        const pkg = match[1];
+        const ver = match[2];
+        if (pkg !== "wealthengine") {
+          deps.push({ pkg, ver });
+        }
+      }
+
+      for (const { pkg, ver } of deps) {
+        let isInstalled = false;
+        try {
+          const pkgPath = path.join(
+            executionEngineDir,
+            "node_modules",
+            pkg,
+            "package.json",
+          );
+          if (fs.existsSync(pkgPath)) {
+            const pkgMetaRaw = fs.readFileSync(pkgPath, "utf8");
+            const versionMatch = pkgMetaRaw.match(/"version":\s*"([^"]+)"/);
+            if (versionMatch && versionMatch[1] === ver) {
+              isInstalled = true;
+            }
+          }
+        } catch (e) {}
+
+        if (!isInstalled) {
+          try {
+            execSync(
+              `npm install --no-audit --no-fund --silent ${pkg}@${ver}`,
+              { cwd: executionEngineDir },
+            );
+          } catch (err) {
+            sendErrorResponse(
+              correlation_id,
+              `[Runner Error] Failed to install dependency ${pkg}@${ver}: ${err.message}`,
+            );
+            return;
+          }
+        }
+      }
+
+      // B. Transpile TypeScript to JavaScript in-memory using esbuild
+      let compiled;
+      try {
+        compiled = esbuild.transformSync(code, {
+          loader: "ts",
+          format: "cjs",
+          target: "node16",
+        });
+      } catch (err) {
+        sendErrorResponse(
+          correlation_id,
+          `[Compiler Error] Failed to compile script:\n${err.message}`,
+        );
+        return;
+      }
+
+      // Wrap in an IIFE so async/await works seamlessly at top-level
+      const wrappedCode = `
+            (async () => {
+                try {
+                    ${compiled.code}
+                } catch (innerErr) {
+                    console.error(innerErr.stack || innerErr.message || String(innerErr));
+                    throw innerErr;
+                }
+            })()
+            `;
+
+      try {
+        script = new vm.Script(wrappedCode, {
+          filename: `plan_${plan_id || "temp"}.ts`,
+        });
+        if (plan_id) {
+          compiledPlans.set(plan_id, { script, code });
+        }
+      } catch (err) {
+        sendErrorResponse(
+          correlation_id,
+          `[Compiler Error] Failed to parse script in VM context:\n${err.stack || err.message || String(err)}`,
+        );
+        return;
+      }
+    } else {
+      // Retrieve compilation cache
+      script = cached.script;
+    }
+
+    // 3. Capture stdout / stderr logs
+    const stdoutLogs = [];
+    const stderrLogs = [];
+
+    const customConsole = {
+      log: (...args) => stdoutLogs.push(args.map((a) => String(a)).join(" ")),
+      error: (...args) => stderrLogs.push(args.map((a) => String(a)).join(" ")),
+      warn: (...args) =>
+        stdoutLogs.push("[WARN] " + args.map((a) => String(a)).join(" ")),
+      info: (...args) =>
+        stdoutLogs.push("[INFO] " + args.map((a) => String(a)).join(" ")),
+    };
+
+    const sandboxRequire = (moduleName) => {
+      if (moduleName === "wealthengine") {
+        const { WealthEngine } = require("./wealthengine_sandbox");
+        return {
+          WealthEngine: class extends WealthEngine {
+            constructor() {
+              super(state);
+            }
+          },
+        };
+      }
+      return require(moduleName);
+    };
+
+    const context = vm.createContext({
+      console: customConsole,
+      secrets: secrets,
+      trigger: trigger,
+      require: sandboxRequire,
+      process: {
+        env: { ...process.env },
+      },
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+    });
+
+    let success = true;
+    let exitCode = 0;
+
+    try {
+      const runPromise = script.runInContext(context);
+      if (runPromise && typeof runPromise.then === "function") {
+        // Impose a strict 10 second timeout using a promise race
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(new Error("Script execution timed out after 10 seconds")),
+            10000,
+          ),
+        );
+        await Promise.race([runPromise, timeoutPromise]);
+      }
+    } catch (err) {
+      success = false;
+      exitCode = 1;
+      const errStr = err.stack || err.message || String(err);
+      if (!stderrLogs.includes(errStr)) {
+        stderrLogs.push(errStr);
+      }
+    }
+
+    // Return multiplexed response frame
+    // Response format: [correlation_id, success, stdout, stderr, exit_code, not_cached]
+    const responseBytes = Buffer.from(JSON.stringify({
+      correlation_id,
+      success,
+      stdout: stdoutLogs.join("\n"),
+      stderr: stderrLogs.join("\n"),
+      exit_code: exitCode
+    }), "utf8");
+    writeFrame(responseBytes);
+  } catch (err) {
+    sendErrorResponse(
+      correlation_id,
+      `[Internal Runner Error]: ${err.stack || err.message || String(err)}`,
+    );
+  }
+}
+
+function sendErrorResponse(correlation_id, stderrMsg) {
+  try {
+    const responseBytes = Buffer.from(JSON.stringify({
+      correlation_id,
+      success: false,
+      stdout: "",
+      stderr: stderrMsg,
+      exit_code: 1
+    }), "utf8");
+    writeFrame(responseBytes);
+  } catch (err) {
+    // Fallback safety
+  }
+}
+
+function writeFrame(responseBytes) {
+  const lengthBytes = Buffer.alloc(4);
+  lengthBytes.writeUInt32BE(responseBytes.length, 0);
+  // Write thread-safely by joining Buffer allocations in process.stdout
+  process.stdout.write(Buffer.concat([lengthBytes, responseBytes]));
+}
+
+// Ensure required packages are installed inside node_modules inside the execution engine directory
+function ensureDependenciesInstalled() {
+  const requiredDeps = [
+    "esbuild",
+    "tsx",
+    "typescript",
+    "@types/node",
+  ];
+  let needsInstall = false;
+  for (const dep of requiredDeps) {
+    if (!fs.existsSync(path.join(executionEngineDir, "node_modules", dep))) {
+      needsInstall = true;
+      break;
+    }
+  }
+  if (needsInstall) {
+    try {
+      execSync(
+        "npm install --no-audit --no-fund --silent esbuild tsx typescript @types/node",
+        { cwd: executionEngineDir },
+      );
+    } catch (err) {
+      // Log fallback
+    }
+  }
+}
