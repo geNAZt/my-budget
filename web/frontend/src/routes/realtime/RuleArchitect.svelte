@@ -180,6 +180,7 @@
     }
 
     function getTxPeer(tx: any) {
+        if (tx.receiver) return tx.receiver;
         if (tx.peer) return tx.peer;
         if (!tx.data) return "External Peer";
 
@@ -198,6 +199,7 @@
     }
 
     function getTxPeerIban(tx: any) {
+        if (tx.receiverIban) return tx.receiverIban;
         if (!tx.data) return "";
         return (
             tx.data.creditorAccount?.iban ||
