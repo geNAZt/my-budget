@@ -67,7 +67,6 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 
 	if av.Type == domain.AssetTypeETF {
 		av.InterestRate = 0
-		av.InterestInterval = "Yearly"
 	}
 
 	if reqVersion.DumpingLoanId != "" {
@@ -98,9 +97,11 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 
 	for _, tracker := range reqVersion.EtfConfig {
 		av.ETFConfig = append(av.ETFConfig, domain.ETFTracker{
-			Tracker:    tracker.Tracker,
-			Percentage: tracker.Percentage,
-			TER:        tracker.Ter,
+			Tracker:           tracker.Tracker,
+			HistoricalTracker: tracker.HistoricalTracker,
+			ConversionTracker: tracker.ConversionTracker,
+			Percentage:        tracker.Percentage,
+			TER:               tracker.Ter,
 		})
 	}
 
@@ -293,9 +294,11 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 
 		for _, tracker := range a.ActiveVersion.ETFConfig {
 			pa.ActiveVersion.EtfConfig = append(pa.ActiveVersion.EtfConfig, &apiproto.ETFTracker{
-				Tracker:    tracker.Tracker,
-				Percentage: tracker.Percentage,
-				Ter:        tracker.TER,
+				Tracker:           tracker.Tracker,
+				HistoricalTracker: tracker.HistoricalTracker,
+				ConversionTracker: tracker.ConversionTracker,
+				Percentage:        tracker.Percentage,
+				Ter:               tracker.TER,
 			})
 		}
 

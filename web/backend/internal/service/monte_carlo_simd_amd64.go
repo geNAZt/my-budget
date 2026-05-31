@@ -21,13 +21,20 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 
 	const stepsPerYear = 52
 	totalSteps := years * stepsPerYear
-	poolSize := 9999
-	for _, h := range history {
-		if len(h) < poolSize {
-			poolSize = len(h)
+	numTrackers := len(history)
+	if numTrackers == 0 {
+		return 0.05
+	}
+
+	// Use shortest history for date-aligned correlated sampling
+	poolSize := len(history[0])
+	for i := 1; i < numTrackers; i++ {
+		if len(history[i]) < poolSize {
+			poolSize = len(history[i])
 		}
 	}
-	if poolSize == 9999 || poolSize == 0 {
+
+	if poolSize == 0 {
 		return 0.05
 	}
 
@@ -49,7 +56,6 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
 
 			// Pre-calculate weights and TERs
-			numTrackers := len(history)
 			weights := make([]float64, numTrackers)
 			terPerStep := make([]float64, numTrackers)
 			for i := 0; i < numTrackers; i++ {
@@ -62,47 +68,51 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 			batchEnd := startIndex + ((endIndex-startIndex)/batchSize)*batchSize
 
 			for sim := startIndex; sim < batchEnd; sim += batchSize {
-				// Initialize zero vector for accumulation
-				acc := archsimd.Float64x4{}
+				accumulatedLogReturns := [4]float64{}
 
 				for step := 0; step < totalSteps; step++ {
-					// We need 4 random indices
-					idx0 := r.IntN(poolSize)
-					idx1 := r.IntN(poolSize)
-					idx2 := r.IntN(poolSize)
-					idx3 := r.IntN(poolSize)
+					// Correlated sampling: same weekIndex for all trackers in one simulation
+					indices := [4]int{
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+					}
 
 					stepRet := archsimd.Float64x4{}
 					for t := 0; t < numTrackers; t++ {
-						// Load 4 values from history (Gather-like)
+						hist := history[t]
+						// Load 4 values from history (Dependent indices)
 						rets := [4]float64{
-							history[t][idx0],
-							history[t][idx1],
-							history[t][idx2],
-							history[t][idx3],
+							hist[indices[0]],
+							hist[indices[1]],
+							hist[indices[2]],
+							hist[indices[3]],
 						}
 						vRet := archsimd.LoadFloat64x4Slice(rets[:])
 
-						// Create broadcast vectors for TER and Weight
 						terSlice := [4]float64{terPerStep[t], terPerStep[t], terPerStep[t], terPerStep[t]}
 						vTer := archsimd.LoadFloat64x4Slice(terSlice[:])
 
 						weightSlice := [4]float64{weights[t], weights[t], weights[t], weights[t]}
 						vWeight := archsimd.LoadFloat64x4Slice(weightSlice[:])
 
-						// stepRet += (vRet - vTer) * vWeight
 						diff := vRet.Sub(vTer)
 						weighted := diff.Mul(vWeight)
 						stepRet = stepRet.Add(weighted)
 					}
-					acc = acc.Add(stepRet)
+
+					// Store step returns to apply math.Log
+					stepRetSlice := [4]float64{}
+					stepRet.StoreSlice(stepRetSlice[:])
+					accumulatedLogReturns[0] += math.Log(1.0 + stepRetSlice[0])
+					accumulatedLogReturns[1] += math.Log(1.0 + stepRetSlice[1])
+					accumulatedLogReturns[2] += math.Log(1.0 + stepRetSlice[2])
+					accumulatedLogReturns[3] += math.Log(1.0 + stepRetSlice[3])
 				}
 
-				// Finalize batch
-				resSlice := make([]float64, 4)
-				acc.StoreSlice(resSlice)
 				for b := 0; b < 4; b++ {
-					results[sim+b] = math.Exp(resSlice[b]/float64(years)) - 1.0
+					results[sim+b] = math.Exp(accumulatedLogReturns[b]/float64(years)) - 1.0
 				}
 			}
 
@@ -115,7 +125,7 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 					for t := 0; t < numTrackers; t++ {
 						stepReturn += (history[t][weekIndex] - terPerStep[t]) * weights[t]
 					}
-					totalLogReturn += stepReturn
+					totalLogReturn += math.Log(1.0 + stepReturn)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}
@@ -165,30 +175,15 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 			batchEnd := startIndex + ((endIndex-startIndex)/batchSize)*batchSize
 
 			for sim := startIndex; sim < batchEnd; sim += batchSize {
-				acc := archsimd.Float64x4{}
-				terSlice := [4]float64{terPerStep, terPerStep, terPerStep, terPerStep}
-				vTer := archsimd.LoadFloat64x4Slice(terSlice[:])
-
+				accumulatedLogReturns := [4]float64{}
 				for step := 0; step < totalSteps; step++ {
-					idx0 := r.IntN(poolSize)
-					idx1 := r.IntN(poolSize)
-					idx2 := r.IntN(poolSize)
-					idx3 := r.IntN(poolSize)
-
-					retSlice := [4]float64{
-						history[idx0],
-						history[idx1],
-						history[idx2],
-						history[idx3],
-					}
-					vRet := archsimd.LoadFloat64x4Slice(retSlice[:])
-					acc = acc.Add(vRet.Sub(vTer))
+					accumulatedLogReturns[0] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[1] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[2] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[3] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
 				}
-
-				resSlice := make([]float64, 4)
-				acc.StoreSlice(resSlice)
 				for b := 0; b < 4; b++ {
-					results[sim+b] = math.Exp(resSlice[b]/float64(years)) - 1.0
+					results[sim+b] = math.Exp(accumulatedLogReturns[b]/float64(years)) - 1.0
 				}
 			}
 
@@ -196,7 +191,7 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 				totalLogReturn := 0.0
 				for step := 0; step < totalSteps; step++ {
 					weekIndex := r.IntN(poolSize)
-					totalLogReturn += history[weekIndex] - terPerStep
+					totalLogReturn += math.Log(1.0 + history[weekIndex] - terPerStep)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}

@@ -67,7 +67,9 @@ type AssetVersion struct {
 }
 
 type ETFTracker struct {
-	Tracker    string  `json:"tracker"`
-	Percentage float64 `json:"percentage"`
-	TER        float64 `json:"ter"`
+	Tracker           string  `json:"tracker"`
+	HistoricalTracker string  `json:"historical_tracker"`
+	ConversionTracker string  `json:"conversion_tracker"`
+	Percentage        float64 `json:"percentage"`
+	TER               float64 `json:"ter"`
 }

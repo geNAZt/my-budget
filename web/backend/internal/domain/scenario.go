@@ -47,7 +47,21 @@ type ProjectionResult struct {
 	Months          []ProjectionMonth
 	TotalRemainder  float64
 	SimulatedYields map[string]float64 // Map of AssetID -> Simulated Annual Yield %
+	PenaltyAnalysis []PenaltyEvent
 	Metrics         *PerformanceMetrics
+}
+
+type PenaltyEvent struct {
+	Type              string    `json:"type"` // 'BUY' or 'SELL'
+	Date              time.Time `json:"date"`
+	AssetName         string    `json:"asset_name"`
+	LotID             string    `json:"lot_id"`
+	LotCreatedAt      time.Time `json:"lot_created_at"`
+	Amount            float64   `json:"amount"`
+	PrincipalSold     float64   `json:"principal_sold"`    // Only for SELL
+	PenaltyPaid       float64   `json:"penalty_paid"`      // Only for SELL
+	MonthsHeld        int       `json:"months_held"`       // Only for SELL
+	InterestGenerated float64   `json:"interest_generated"` // Only for SELL
 }
 
 type PerformanceMetrics struct {

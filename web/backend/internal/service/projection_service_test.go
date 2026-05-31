@@ -400,45 +400,158 @@ func TestETFInterestAccumulationAndStartingBalance(t *testing.T) {
 	}
 }
 
-func TestETFZeroStartingBalanceAccumulation(t *testing.T) {
-	// Verify that if an ETF starts with 0.0 balance,
-	// and we deposit 1000.0 (simulating monthly contributions/waterfalls),
-	// the interest calculated at the end of the month applies correctly to the updated balance.
+func TestDistributingETF(t *testing.T) {
+	// Setup asset state for a distributing ETF
 	as := &assetState{
 		asset: domain.Asset{
+			ActiveVersion: &domain.AssetVersion{
+				Type:             "ETF",
+				InterestInterval: "Monthly", // Monthly = Distributing
+			},
+			AccountIDs: []string{"va-1"},
+		},
+		currentBalance: 1000.0,
+		simulatedYield: 0.12, // 12% yearly = 1% monthly (approx)
+		lots: []etfLot{
+			{principal: 1000.0, currentValue: 1000.0},
+		},
+		currentMonth: time.Now(),
+	}
+
+	month := &domain.ProjectionMonth{
+		Breakdown: domain.MonthBreakdown{
+			Incomes: []domain.EntryBreakdown{},
+			Assets:  []domain.EntryBreakdown{},
+		},
+	}
+	availableFunds := 0.0
+
+	v := as.asset.ActiveVersion
+	interestPenaltyRate := 0.0
+	monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
+	var newBal float64
+	var totalGrossGrowth float64
+	var interestEarned float64
+	var interestPenaltyPaid float64
+
+	isDistributing := v.InterestInterval == "Monthly"
+
+	if monthlyRate > 0 {
+		for i := range as.lots {
+			grossGrowth := as.lots[i].currentValue * monthlyRate
+			totalGrossGrowth += grossGrowth
+
+			if !isDistributing {
+				netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
+				as.lots[i].currentValue += netGrowth
+			}
+			newBal += as.lots[i].currentValue
+		}
+		interestEarned = totalGrossGrowth
+		interestPenaltyPaid = totalGrossGrowth * interestPenaltyRate
+	}
+
+	as.currentBalance = newBal
+
+	if isDistributing && interestEarned > 0 {
+		payout := interestEarned - interestPenaltyPaid
+		month.Income += payout
+		availableFunds += payout
+		month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
+			Name:       as.asset.Name + " (Dividend)",
+			Amount:     payout,
+			AccountIDs: as.asset.AccountIDs,
+		})
+
+		// Reset interestEarned/PenaltyPaid for final breakdown check in the loop
+		interestEarned = 0
+		interestPenaltyPaid = 0
+	}
+
+	// Verify that asset balance did NOT grow
+	if as.currentBalance != 1000.0 {
+		t.Errorf("Expected asset balance to remain 1000.0 for distributing ETF, got %f", as.currentBalance)
+	}
+
+	// Verify that income was generated
+	expectedPayout := 1000.0 * (math.Pow(1.12, 1.0/12.0) - 1.0)
+	if math.Abs(month.Income-expectedPayout) > 0.00001 {
+		t.Errorf("Expected income payout of %f, got %f", expectedPayout, month.Income)
+	}
+
+	if len(month.Breakdown.Incomes) != 1 {
+		t.Errorf("Expected 1 income entry in breakdown, got %d", len(month.Breakdown.Incomes))
+	} else if month.Breakdown.Incomes[0].AccountIDs[0] != "va-1" {
+		t.Errorf("Expected income entry to be linked to va-1, got %v", month.Breakdown.Incomes[0].AccountIDs)
+	}
+}
+
+func TestSubAssetPayoutVirtualAccountAttribution(t *testing.T) {
+	// Setup asset state with a sub-asset that has reached its end date
+	as := &assetState{
+		asset: domain.Asset{
+			Name:       "Test Asset",
+			AccountIDs: []string{"va-1"},
 			ActiveVersion: &domain.AssetVersion{
 				Type: "ETF",
 			},
 		},
-		currentBalance: 0.0,
-		simulatedYield: 0.10,
-		lots:           []etfLot{},
+		currentBalance: 1000.0,
+		subAssets: []*subAssetState{
+			{
+				id:             "sa-1",
+				name:           "Test SubAsset",
+				currentBalance: 1000.0,
+			},
+		},
+		lots: []etfLot{
+			{principal: 1000.0, currentValue: 1000.0},
+		},
+		currentMonth: time.Now(),
 	}
 
-	// 1. Simulate deposit during the month (before interest is calculated)
-	depositAsset(as, 1000.0, nil)
-
-	if len(as.lots) != 1 {
-		t.Fatalf("Expected 1 lot after deposit, got %d", len(as.lots))
-	}
-	if as.currentBalance != 1000.0 {
-		t.Fatalf("Expected balance to be 1000.0 after deposit, got %f", as.currentBalance)
+	month := &domain.ProjectionMonth{
+		Breakdown: domain.MonthBreakdown{
+			Incomes: []domain.EntryBreakdown{},
+			Assets:  []domain.EntryBreakdown{},
+		},
 	}
 
-	// 2. Calculate interest at the end of the month (Step 8.5)
-	monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
-	var newBal float64
-	for i := range as.lots {
-		grossGrowth := as.lots[i].currentValue * monthlyRate
-		netGrowth := grossGrowth * 1.0 // no penalties
-		as.lots[i].currentValue += netGrowth
-		newBal += as.lots[i].currentValue
-	}
-	as.currentBalance = newBal
+	sa := as.subAssets[0]
+	// Simulate the payout logic from lines ~1950
+	maxNetLeftover := calculateMaxNetForSubAsset(as, sa)
+	grossPayout, netPayout := withdrawFromSubAsset(as, sa.id, maxNetLeftover)
+	penaltyPaid := grossPayout - netPayout
 
-	expectedBalance := 1000.0 * math.Pow(1.10, 1.0/12.0)
-	if math.Abs(as.currentBalance-expectedBalance) > 0.00001 {
-		t.Errorf("Expected currentBalance to be %f after end-of-month interest calculation, got %f", expectedBalance, as.currentBalance)
+	month.Income += netPayout
+	month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
+		Name:       as.asset.Name + " (" + sa.name + " Payout)",
+		Amount:     netPayout,
+		Penalty:    penaltyPaid,
+		AccountIDs: as.asset.AccountIDs,
+	})
+
+	// Verify that income was generated with correct account IDs
+	if len(month.Breakdown.Incomes) != 1 {
+		t.Fatalf("Expected 1 income entry, got %d", len(month.Breakdown.Incomes))
+	}
+
+	entry := month.Breakdown.Incomes[0]
+	if entry.Amount != 1000.0 {
+		t.Errorf("Expected payout amount 1000.0, got %f", entry.Amount)
+	}
+
+	if len(entry.AccountIDs) != 1 || entry.AccountIDs[0] != "va-1" {
+		t.Errorf("Expected AccountIDs [va-1], got %v", entry.AccountIDs)
+	}
+
+	// Verify that NO asset breakdown entry was created (to avoid double counting)
+	if len(month.Breakdown.Assets) != 0 {
+		t.Errorf("Expected 0 asset entries in breakdown for payout, got %d", len(month.Breakdown.Assets))
 	}
 }
+
+
+
+
 

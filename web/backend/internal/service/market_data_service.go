@@ -1,33 +1,48 @@
 package service
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"math"
-	"net/http"
 	"os"
-	"sort"
-	"strconv"
+	"path/filepath"
+	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
+	"github.com/wnjoon/go-yfinance/pkg/models"
+	"github.com/wnjoon/go-yfinance/pkg/ticker"
 )
+
+type TrackerCacheEntry struct {
+	Returns   []float64 `json:"returns"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
 type MarketDataService struct {
 	cacheRepo *repository.CacheRepository
-	apiKey    string
+	dataDir   string
 }
 
-func NewMarketDataService(cache *repository.CacheRepository) *MarketDataService {
+func NewMarketDataService(cache *repository.CacheRepository, dataDir string) *MarketDataService {
 	return &MarketDataService{
 		cacheRepo: cache,
-		apiKey:    "PR7DAI0RVKGOQ3U2", // From GAS implementation
+		dataDir:   dataDir,
 	}
 }
 
 func (s *MarketDataService) GetCachedReturns(ticker string) ([]float64, bool) {
+	// Try the new file-based cache first
+	cache, err := s.loadTrackerCache()
+	if err == nil {
+		if entry, ok := cache[ticker]; ok {
+			// Check if cache is still valid (1 week)
+			if time.Since(entry.UpdatedAt) < 7*24*time.Hour {
+				return entry.Returns, true
+			}
+		}
+	}
+
+	// Fallback to the old DB-based cache (might be useful for transition)
 	cacheKey := fmt.Sprintf("returns:%s", ticker)
 	if data, ok, _ := s.cacheRepo.Get(cacheKey); ok {
 		var returns []float64
@@ -35,127 +50,145 @@ func (s *MarketDataService) GetCachedReturns(ticker string) ([]float64, bool) {
 			return returns, true
 		}
 	}
+
 	return nil, false
 }
 
-func (s *MarketDataService) tryLoadFromLocalIndex(ticker string) ([]float64, error) {
-	path := fmt.Sprintf("index/%s.csv", ticker)
-	f, err := os.Open(path)
+func (s *MarketDataService) loadTrackerCache() (map[string]TrackerCacheEntry, error) {
+	cachePath := filepath.Join(s.dataDir, "caches", "tracker_history.json")
+	f, err := os.Open(cachePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]TrackerCacheEntry), nil
+		}
 		return nil, err
 	}
 	defer f.Close()
 
-	reader := csv.NewReader(f)
-	// Skip header
-	_, err = reader.Read()
-	if err != nil {
+	var cache map[string]TrackerCacheEntry
+	if err := json.NewDecoder(f).Decode(&cache); err != nil {
 		return nil, err
 	}
-
-	var returns []float64
-	var prevValue float64
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(record) < 2 {
-			continue
-		}
-
-		value, err := strconv.ParseFloat(record[1], 64)
-		if err != nil {
-			continue
-		}
-
-		if prevValue > 0 {
-			// Calculate monthly return
-			monthlyReturn := (value - prevValue) / prevValue
-
-			// Convert monthly return to weekly return
-			// (1 + wr)^4.33 = (1 + mr)  => 1 + wr = (1 + mr)^(1/4.33)
-			weeklyReturn := math.Pow(1+monthlyReturn, 1.0/4.3333) - 1
-
-			// Append 4.33 equivalent weekly returns to the pool
-			// We can append 4 returns per month to keep it close to weekly frequency
-			for i := 0; i < 4; i++ {
-				returns = append(returns, weeklyReturn)
-			}
-		}
-		prevValue = value
-	}
-
-	return returns, nil
+	return cache, nil
 }
 
-func (s *MarketDataService) GetHistoricalWeeklyReturns(ticker string) ([]float64, error) {
-	log.Printf("[MARKET_DATA] Fetching historical weekly returns for ticker %s", ticker)
-
-	// 1. Try Local Index
-	if returns, err := s.tryLoadFromLocalIndex(ticker); err == nil {
-		return returns, nil
+func (s *MarketDataService) saveTrackerCache(cache map[string]TrackerCacheEntry) error {
+	cachePath := filepath.Join(s.dataDir, "caches", "tracker_history.json")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return err
 	}
 
-	cacheKey := fmt.Sprintf("returns:%s", ticker)
-	if data, ok, _ := s.cacheRepo.Get(cacheKey); ok {
-		var returns []float64
-		if err := json.Unmarshal([]byte(data), &returns); err == nil {
-			return returns, nil
+	f, err := os.Create(cachePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return json.NewEncoder(f).Encode(cache)
+}
+
+func (s *MarketDataService) GetHistoricalWeeklyReturns(tSymbol string, conversionSymbol string) ([]float64, error) {
+	log.Printf("[MARKET_DATA] Fetching historical weekly returns for ticker %s (conversion: %s)", tSymbol, conversionSymbol)
+
+	cacheKey := tSymbol
+	if conversionSymbol != "" {
+		cacheKey = fmt.Sprintf("%s_%s", tSymbol, conversionSymbol)
+	}
+
+	// 1. Try Cache
+	cache, _ := s.loadTrackerCache()
+	if entry, ok := cache[cacheKey]; ok {
+		if time.Since(entry.UpdatedAt) < 7*24*time.Hour {
+			log.Printf("[MARKET_DATA] Using cached returns for %s (age: %v)", cacheKey, time.Since(entry.UpdatedAt))
+			return entry.Returns, nil
 		}
 	}
 
-	// Fetch from Alpha Vantage
-	url := fmt.Sprintf("https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=%s&apikey=%s", ticker, s.apiKey)
-	resp, err := http.Get(url)
+	// 2. Fetch from Yahoo Finance
+	t, err := ticker.New(tSymbol)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create yfinance ticker: %w", err)
 	}
-	defer resp.Body.Close()
+	defer t.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	var avResp map[string]interface{}
-	json.Unmarshal(body, &avResp)
-
-	// Rate limit check
-	if _, ok := avResp["Note"]; ok {
-		return nil, fmt.Errorf("alpha vantage rate limit exceeded")
+	params := models.HistoryParams{
+		Interval: "1wk",
+		Period:   "max",
 	}
 
-	weeklyData, ok := avResp["Weekly Adjusted Time Series"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no weekly data found for ticker %s", ticker)
+	bars, err := t.History(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch history from yfinance: %w", err)
 	}
 
-	// Extract prices and calculate returns
-	var dates []string
-	for date := range weeklyData {
-		dates = append(dates, date)
+	if len(bars) < 2 {
+		return nil, fmt.Errorf("not enough data points for ticker %s", tSymbol)
 	}
-	sort.Strings(dates) // Oldest first
 
+	// Handle Conversion
+	if conversionSymbol != "" {
+		ct, err := ticker.New(conversionSymbol)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create conversion ticker: %w", err)
+		}
+		defer ct.Close()
+
+		cBars, err := ct.History(params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch conversion history: %w", err)
+		}
+
+		// Align bars by date
+		cMap := make(map[string]float64)
+		for _, b := range cBars {
+			cMap[b.Date.Format("2006-01-02")] = b.AdjClose
+		}
+
+		var alignedBars []models.Bar
+		for _, b := range bars {
+			dateStr := b.Date.Format("2006-01-02")
+			if cPrice, ok := cMap[dateStr]; ok && cPrice > 0 {
+				// We assume conversion is Division (e.g. Index is USD, Conversion is EURUSD=X)
+				// Price_EUR = Price_USD / Rate_EURUSD
+				b.AdjClose = b.AdjClose / cPrice
+				alignedBars = append(alignedBars, b)
+			}
+		}
+		bars = alignedBars
+	}
+
+	if len(bars) < 2 {
+		return nil, fmt.Errorf("not enough aligned data points for ticker %s after conversion", tSymbol)
+	}
+
+	// Calculate returns (Newest First)
 	var returns []float64
-	var prevPrice float64
-	for _, date := range dates {
-		node := weeklyData[date].(map[string]interface{})
-		priceStr := node["5. adjusted close"].(string)
-		price, _ := strconv.ParseFloat(priceStr, 64)
+	for i := len(bars) - 1; i > 0; i-- {
+		newer := bars[i].AdjClose
+		older := bars[i-1].AdjClose
 
-		if prevPrice > 0 {
-			ret := (price - prevPrice) / prevPrice
+		if older > 0 {
+			ret := (newer - older) / older
 			returns = append(returns, ret)
 		}
-		prevPrice = price
 	}
 
-	// Cache result
+	// 3. Update Cache
+	if cache == nil {
+		cache = make(map[string]TrackerCacheEntry)
+	}
+	cache[cacheKey] = TrackerCacheEntry{
+		Returns:   returns,
+		UpdatedAt: time.Now(),
+	}
+	if err := s.saveTrackerCache(cache); err != nil {
+		log.Printf("[MARKET_DATA] Failed to save cache: %v", err)
+	}
+
+	// Also update DB-based cache for compatibility
+	dbCacheKey := fmt.Sprintf("returns:%s", cacheKey)
 	jsonBytes, _ := json.Marshal(returns)
-	s.cacheRepo.Set(cacheKey, string(jsonBytes))
+	s.cacheRepo.Set(dbCacheKey, string(jsonBytes))
 
 	return returns, nil
 }

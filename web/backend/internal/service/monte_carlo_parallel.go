@@ -14,13 +14,20 @@ import (
 func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, history [][]float64, simulations, years int, percent float64) float64 {
 	const stepsPerYear = 52
 	totalSteps := years * stepsPerYear
-	poolSize := 9999
-	for _, h := range history {
-		if len(h) < poolSize {
-			poolSize = len(h)
+	numTrackers := len(history)
+	if numTrackers == 0 {
+		return 0.05
+	}
+
+	// Use shortest history for date-aligned correlated sampling
+	poolSize := len(history[0])
+	for i := 1; i < numTrackers; i++ {
+		if len(history[i]) < poolSize {
+			poolSize = len(history[i])
 		}
 	}
-	if poolSize == 9999 || poolSize == 0 {
+
+	if poolSize == 0 {
 		return 0.05
 	}
 
@@ -42,7 +49,6 @@ func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, histor
 			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
 
 			// Pre-calculate weights and TERs
-			numTrackers := len(history)
 			weights := make([]float64, numTrackers)
 			terPerStep := make([]float64, numTrackers)
 			for i := 0; i < numTrackers; i++ {
@@ -66,13 +72,14 @@ func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, histor
 				// The tight loop: process batchSize simulations in log-space
 				for step := 0; step < totalSteps; step++ {
 					for b := 0; b < batchSize; b++ {
+						// Correlated sampling
 						weekIndex := r.IntN(poolSize)
 						stepReturn := 0.0
 						// Inner loop across trackers
 						for t := 0; t < numTrackers; t++ {
 							stepReturn += (history[t][weekIndex] - terPerStep[t]) * weights[t]
 						}
-						logReturns[b] += stepReturn
+						logReturns[b] += math.Log(1.0 + stepReturn)
 					}
 				}
 
@@ -91,7 +98,7 @@ func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, histor
 					for t := 0; t < numTrackers; t++ {
 						stepReturn += (history[t][weekIndex] - terPerStep[t]) * weights[t]
 					}
-					totalLogReturn += stepReturn
+					totalLogReturn += math.Log(1.0 + stepReturn)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}
@@ -146,8 +153,7 @@ func (s *ProjectionService) runTrackerMonteCarloParallel(history []float64, ter 
 				}
 				for step := 0; step < totalSteps; step++ {
 					for b := 0; b < batchSize; b++ {
-						weekIndex := r.IntN(poolSize)
-						logReturns[b] += history[weekIndex] - terPerStep
+						logReturns[b] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
 					}
 				}
 				for b := 0; b < batchSize; b++ {
@@ -159,7 +165,7 @@ func (s *ProjectionService) runTrackerMonteCarloParallel(history []float64, ter 
 				totalLogReturn := 0.0
 				for step := 0; step < totalSteps; step++ {
 					weekIndex := r.IntN(poolSize)
-					totalLogReturn += history[weekIndex] - terPerStep
+					totalLogReturn += math.Log(1.0 + history[weekIndex] - terPerStep)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}

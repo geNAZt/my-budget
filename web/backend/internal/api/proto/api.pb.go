@@ -2281,6 +2281,166 @@ func (x *PerformanceMetrics) GetPerAssetMcMs() int64 {
 	return 0
 }
 
+type PenaltyEvent struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Type              string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // 'BUY' or 'SELL'
+	Date              string                 `protobuf:"bytes,2,opt,name=date,proto3" json:"date,omitempty"`
+	AssetName         string                 `protobuf:"bytes,3,opt,name=asset_name,json=assetName,proto3" json:"asset_name,omitempty"`
+	LotId             string                 `protobuf:"bytes,4,opt,name=lot_id,json=lotId,proto3" json:"lot_id,omitempty"`
+	LotCreatedAt      string                 `protobuf:"bytes,5,opt,name=lot_created_at,json=lotCreatedAt,proto3" json:"lot_created_at,omitempty"`
+	Amount            float64                `protobuf:"fixed64,6,opt,name=amount,proto3" json:"amount,omitempty"`
+	PrincipalSold     float64                `protobuf:"fixed64,7,opt,name=principal_sold,json=principalSold,proto3" json:"principal_sold,omitempty"`
+	PenaltyPaid       float64                `protobuf:"fixed64,8,opt,name=penalty_paid,json=penaltyPaid,proto3" json:"penalty_paid,omitempty"`
+	MonthsHeld        int32                  `protobuf:"varint,9,opt,name=months_held,json=monthsHeld,proto3" json:"months_held,omitempty"`
+	InterestGenerated float64                `protobuf:"fixed64,10,opt,name=interest_generated,json=interestGenerated,proto3" json:"interest_generated,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *PenaltyEvent) Reset() {
+	*x = PenaltyEvent{}
+	mi := &file_api_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PenaltyEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PenaltyEvent) ProtoMessage() {}
+
+func (x *PenaltyEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PenaltyEvent.ProtoReflect.Descriptor instead.
+func (*PenaltyEvent) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *PenaltyEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *PenaltyEvent) GetDate() string {
+	if x != nil {
+		return x.Date
+	}
+	return ""
+}
+
+func (x *PenaltyEvent) GetAssetName() string {
+	if x != nil {
+		return x.AssetName
+	}
+	return ""
+}
+
+func (x *PenaltyEvent) GetLotId() string {
+	if x != nil {
+		return x.LotId
+	}
+	return ""
+}
+
+func (x *PenaltyEvent) GetLotCreatedAt() string {
+	if x != nil {
+		return x.LotCreatedAt
+	}
+	return ""
+}
+
+func (x *PenaltyEvent) GetAmount() float64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *PenaltyEvent) GetPrincipalSold() float64 {
+	if x != nil {
+		return x.PrincipalSold
+	}
+	return 0
+}
+
+func (x *PenaltyEvent) GetPenaltyPaid() float64 {
+	if x != nil {
+		return x.PenaltyPaid
+	}
+	return 0
+}
+
+func (x *PenaltyEvent) GetMonthsHeld() int32 {
+	if x != nil {
+		return x.MonthsHeld
+	}
+	return 0
+}
+
+func (x *PenaltyEvent) GetInterestGenerated() float64 {
+	if x != nil {
+		return x.InterestGenerated
+	}
+	return 0
+}
+
+type PenaltyAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*PenaltyEvent        `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PenaltyAnalysis) Reset() {
+	*x = PenaltyAnalysis{}
+	mi := &file_api_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PenaltyAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PenaltyAnalysis) ProtoMessage() {}
+
+func (x *PenaltyAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PenaltyAnalysis.ProtoReflect.Descriptor instead.
+func (*PenaltyAnalysis) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *PenaltyAnalysis) GetEvents() []*PenaltyEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
 type ScenarioEntity struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EntityId      string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
@@ -2292,7 +2452,7 @@ type ScenarioEntity struct {
 
 func (x *ScenarioEntity) Reset() {
 	*x = ScenarioEntity{}
-	mi := &file_api_proto_msgTypes[31]
+	mi := &file_api_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2304,7 +2464,7 @@ func (x *ScenarioEntity) String() string {
 func (*ScenarioEntity) ProtoMessage() {}
 
 func (x *ScenarioEntity) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[31]
+	mi := &file_api_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2317,7 +2477,7 @@ func (x *ScenarioEntity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScenarioEntity.ProtoReflect.Descriptor instead.
 func (*ScenarioEntity) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{31}
+	return file_api_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ScenarioEntity) GetEntityId() string {
@@ -2353,7 +2513,7 @@ type ETFScenarioParams struct {
 
 func (x *ETFScenarioParams) Reset() {
 	*x = ETFScenarioParams{}
-	mi := &file_api_proto_msgTypes[32]
+	mi := &file_api_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2365,7 +2525,7 @@ func (x *ETFScenarioParams) String() string {
 func (*ETFScenarioParams) ProtoMessage() {}
 
 func (x *ETFScenarioParams) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[32]
+	mi := &file_api_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2378,7 +2538,7 @@ func (x *ETFScenarioParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ETFScenarioParams.ProtoReflect.Descriptor instead.
 func (*ETFScenarioParams) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{32}
+	return file_api_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ETFScenarioParams) GetSimulations() int32 {
@@ -2435,7 +2595,7 @@ type Scenario struct {
 
 func (x *Scenario) Reset() {
 	*x = Scenario{}
-	mi := &file_api_proto_msgTypes[33]
+	mi := &file_api_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2447,7 +2607,7 @@ func (x *Scenario) String() string {
 func (*Scenario) ProtoMessage() {}
 
 func (x *Scenario) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[33]
+	mi := &file_api_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2460,7 +2620,7 @@ func (x *Scenario) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Scenario.ProtoReflect.Descriptor instead.
 func (*Scenario) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{33}
+	return file_api_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *Scenario) GetId() string {
@@ -2598,7 +2758,7 @@ type ScenarioList struct {
 
 func (x *ScenarioList) Reset() {
 	*x = ScenarioList{}
-	mi := &file_api_proto_msgTypes[34]
+	mi := &file_api_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2610,7 +2770,7 @@ func (x *ScenarioList) String() string {
 func (*ScenarioList) ProtoMessage() {}
 
 func (x *ScenarioList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[34]
+	mi := &file_api_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2623,7 +2783,7 @@ func (x *ScenarioList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScenarioList.ProtoReflect.Descriptor instead.
 func (*ScenarioList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{34}
+	return file_api_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ScenarioList) GetScenarios() []*Scenario {
@@ -2634,17 +2794,19 @@ func (x *ScenarioList) GetScenarios() []*Scenario {
 }
 
 type ETFTracker struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tracker       string                 `protobuf:"bytes,1,opt,name=tracker,proto3" json:"tracker,omitempty"`
-	Percentage    float64                `protobuf:"fixed64,2,opt,name=percentage,proto3" json:"percentage,omitempty"`
-	Ter           float64                `protobuf:"fixed64,3,opt,name=ter,proto3" json:"ter,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Tracker           string                 `protobuf:"bytes,1,opt,name=tracker,proto3" json:"tracker,omitempty"`
+	Percentage        float64                `protobuf:"fixed64,2,opt,name=percentage,proto3" json:"percentage,omitempty"`
+	Ter               float64                `protobuf:"fixed64,3,opt,name=ter,proto3" json:"ter,omitempty"`
+	HistoricalTracker string                 `protobuf:"bytes,4,opt,name=historical_tracker,json=historicalTracker,proto3" json:"historical_tracker,omitempty"`
+	ConversionTracker string                 `protobuf:"bytes,5,opt,name=conversion_tracker,json=conversionTracker,proto3" json:"conversion_tracker,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ETFTracker) Reset() {
 	*x = ETFTracker{}
-	mi := &file_api_proto_msgTypes[35]
+	mi := &file_api_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2656,7 +2818,7 @@ func (x *ETFTracker) String() string {
 func (*ETFTracker) ProtoMessage() {}
 
 func (x *ETFTracker) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[35]
+	mi := &file_api_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2669,7 +2831,7 @@ func (x *ETFTracker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ETFTracker.ProtoReflect.Descriptor instead.
 func (*ETFTracker) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{35}
+	return file_api_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ETFTracker) GetTracker() string {
@@ -2693,6 +2855,20 @@ func (x *ETFTracker) GetTer() float64 {
 	return 0
 }
 
+func (x *ETFTracker) GetHistoricalTracker() string {
+	if x != nil {
+		return x.HistoricalTracker
+	}
+	return ""
+}
+
+func (x *ETFTracker) GetConversionTracker() string {
+	if x != nil {
+		return x.ConversionTracker
+	}
+	return ""
+}
+
 type AssetPenalty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -2704,7 +2880,7 @@ type AssetPenalty struct {
 
 func (x *AssetPenalty) Reset() {
 	*x = AssetPenalty{}
-	mi := &file_api_proto_msgTypes[36]
+	mi := &file_api_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2716,7 +2892,7 @@ func (x *AssetPenalty) String() string {
 func (*AssetPenalty) ProtoMessage() {}
 
 func (x *AssetPenalty) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[36]
+	mi := &file_api_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2729,7 +2905,7 @@ func (x *AssetPenalty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetPenalty.ProtoReflect.Descriptor instead.
 func (*AssetPenalty) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{36}
+	return file_api_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AssetPenalty) GetName() string {
@@ -2771,7 +2947,7 @@ type SubAsset struct {
 
 func (x *SubAsset) Reset() {
 	*x = SubAsset{}
-	mi := &file_api_proto_msgTypes[37]
+	mi := &file_api_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2783,7 +2959,7 @@ func (x *SubAsset) String() string {
 func (*SubAsset) ProtoMessage() {}
 
 func (x *SubAsset) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[37]
+	mi := &file_api_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2796,7 +2972,7 @@ func (x *SubAsset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubAsset.ProtoReflect.Descriptor instead.
 func (*SubAsset) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{37}
+	return file_api_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SubAsset) GetId() string {
@@ -2893,7 +3069,7 @@ type AssetVersion struct {
 
 func (x *AssetVersion) Reset() {
 	*x = AssetVersion{}
-	mi := &file_api_proto_msgTypes[38]
+	mi := &file_api_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2905,7 +3081,7 @@ func (x *AssetVersion) String() string {
 func (*AssetVersion) ProtoMessage() {}
 
 func (x *AssetVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[38]
+	mi := &file_api_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2918,7 +3094,7 @@ func (x *AssetVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetVersion.ProtoReflect.Descriptor instead.
 func (*AssetVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{38}
+	return file_api_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *AssetVersion) GetId() string {
@@ -3050,7 +3226,7 @@ type Asset struct {
 
 func (x *Asset) Reset() {
 	*x = Asset{}
-	mi := &file_api_proto_msgTypes[39]
+	mi := &file_api_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3062,7 +3238,7 @@ func (x *Asset) String() string {
 func (*Asset) ProtoMessage() {}
 
 func (x *Asset) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[39]
+	mi := &file_api_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3075,7 +3251,7 @@ func (x *Asset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Asset.ProtoReflect.Descriptor instead.
 func (*Asset) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{39}
+	return file_api_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *Asset) GetId() string {
@@ -3150,7 +3326,7 @@ type AssetList struct {
 
 func (x *AssetList) Reset() {
 	*x = AssetList{}
-	mi := &file_api_proto_msgTypes[40]
+	mi := &file_api_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3162,7 +3338,7 @@ func (x *AssetList) String() string {
 func (*AssetList) ProtoMessage() {}
 
 func (x *AssetList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[40]
+	mi := &file_api_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3175,7 +3351,7 @@ func (x *AssetList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetList.ProtoReflect.Descriptor instead.
 func (*AssetList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{40}
+	return file_api_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *AssetList) GetAssets() []*Asset {
@@ -3206,7 +3382,7 @@ type LoanVersion struct {
 
 func (x *LoanVersion) Reset() {
 	*x = LoanVersion{}
-	mi := &file_api_proto_msgTypes[41]
+	mi := &file_api_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3218,7 +3394,7 @@ func (x *LoanVersion) String() string {
 func (*LoanVersion) ProtoMessage() {}
 
 func (x *LoanVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[41]
+	mi := &file_api_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3231,7 +3407,7 @@ func (x *LoanVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoanVersion.ProtoReflect.Descriptor instead.
 func (*LoanVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{41}
+	return file_api_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *LoanVersion) GetId() string {
@@ -3342,7 +3518,7 @@ type Loan struct {
 
 func (x *Loan) Reset() {
 	*x = Loan{}
-	mi := &file_api_proto_msgTypes[42]
+	mi := &file_api_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3354,7 +3530,7 @@ func (x *Loan) String() string {
 func (*Loan) ProtoMessage() {}
 
 func (x *Loan) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[42]
+	mi := &file_api_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3367,7 +3543,7 @@ func (x *Loan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Loan.ProtoReflect.Descriptor instead.
 func (*Loan) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{42}
+	return file_api_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Loan) GetId() string {
@@ -3442,7 +3618,7 @@ type LoanList struct {
 
 func (x *LoanList) Reset() {
 	*x = LoanList{}
-	mi := &file_api_proto_msgTypes[43]
+	mi := &file_api_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3454,7 +3630,7 @@ func (x *LoanList) String() string {
 func (*LoanList) ProtoMessage() {}
 
 func (x *LoanList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[43]
+	mi := &file_api_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3467,7 +3643,7 @@ func (x *LoanList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoanList.ProtoReflect.Descriptor instead.
 func (*LoanList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{43}
+	return file_api_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *LoanList) GetLoans() []*Loan {
@@ -3493,7 +3669,7 @@ type IncomeVersion struct {
 
 func (x *IncomeVersion) Reset() {
 	*x = IncomeVersion{}
-	mi := &file_api_proto_msgTypes[44]
+	mi := &file_api_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3505,7 +3681,7 @@ func (x *IncomeVersion) String() string {
 func (*IncomeVersion) ProtoMessage() {}
 
 func (x *IncomeVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[44]
+	mi := &file_api_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3518,7 +3694,7 @@ func (x *IncomeVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IncomeVersion.ProtoReflect.Descriptor instead.
 func (*IncomeVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{44}
+	return file_api_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *IncomeVersion) GetId() string {
@@ -3594,7 +3770,7 @@ type Income struct {
 
 func (x *Income) Reset() {
 	*x = Income{}
-	mi := &file_api_proto_msgTypes[45]
+	mi := &file_api_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3606,7 +3782,7 @@ func (x *Income) String() string {
 func (*Income) ProtoMessage() {}
 
 func (x *Income) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[45]
+	mi := &file_api_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3619,7 +3795,7 @@ func (x *Income) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Income.ProtoReflect.Descriptor instead.
 func (*Income) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{45}
+	return file_api_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *Income) GetId() string {
@@ -3694,7 +3870,7 @@ type IncomeList struct {
 
 func (x *IncomeList) Reset() {
 	*x = IncomeList{}
-	mi := &file_api_proto_msgTypes[46]
+	mi := &file_api_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3706,7 +3882,7 @@ func (x *IncomeList) String() string {
 func (*IncomeList) ProtoMessage() {}
 
 func (x *IncomeList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[46]
+	mi := &file_api_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3719,7 +3895,7 @@ func (x *IncomeList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IncomeList.ProtoReflect.Descriptor instead.
 func (*IncomeList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{46}
+	return file_api_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *IncomeList) GetIncomes() []*Income {
@@ -3744,7 +3920,7 @@ type BillVersion struct {
 
 func (x *BillVersion) Reset() {
 	*x = BillVersion{}
-	mi := &file_api_proto_msgTypes[47]
+	mi := &file_api_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3756,7 +3932,7 @@ func (x *BillVersion) String() string {
 func (*BillVersion) ProtoMessage() {}
 
 func (x *BillVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[47]
+	mi := &file_api_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3769,7 +3945,7 @@ func (x *BillVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BillVersion.ProtoReflect.Descriptor instead.
 func (*BillVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{47}
+	return file_api_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *BillVersion) GetId() string {
@@ -3838,7 +4014,7 @@ type Bill struct {
 
 func (x *Bill) Reset() {
 	*x = Bill{}
-	mi := &file_api_proto_msgTypes[48]
+	mi := &file_api_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3850,7 +4026,7 @@ func (x *Bill) String() string {
 func (*Bill) ProtoMessage() {}
 
 func (x *Bill) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[48]
+	mi := &file_api_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3863,7 +4039,7 @@ func (x *Bill) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bill.ProtoReflect.Descriptor instead.
 func (*Bill) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{48}
+	return file_api_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *Bill) GetId() string {
@@ -3938,7 +4114,7 @@ type BillList struct {
 
 func (x *BillList) Reset() {
 	*x = BillList{}
-	mi := &file_api_proto_msgTypes[49]
+	mi := &file_api_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3950,7 +4126,7 @@ func (x *BillList) String() string {
 func (*BillList) ProtoMessage() {}
 
 func (x *BillList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[49]
+	mi := &file_api_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3963,7 +4139,7 @@ func (x *BillList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BillList.ProtoReflect.Descriptor instead.
 func (*BillList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{49}
+	return file_api_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *BillList) GetBills() []*Bill {
@@ -3986,7 +4162,7 @@ type ExpenseVersion struct {
 
 func (x *ExpenseVersion) Reset() {
 	*x = ExpenseVersion{}
-	mi := &file_api_proto_msgTypes[50]
+	mi := &file_api_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3998,7 +4174,7 @@ func (x *ExpenseVersion) String() string {
 func (*ExpenseVersion) ProtoMessage() {}
 
 func (x *ExpenseVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[50]
+	mi := &file_api_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4011,7 +4187,7 @@ func (x *ExpenseVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpenseVersion.ProtoReflect.Descriptor instead.
 func (*ExpenseVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{50}
+	return file_api_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ExpenseVersion) GetId() string {
@@ -4066,7 +4242,7 @@ type Expense struct {
 
 func (x *Expense) Reset() {
 	*x = Expense{}
-	mi := &file_api_proto_msgTypes[51]
+	mi := &file_api_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4078,7 +4254,7 @@ func (x *Expense) String() string {
 func (*Expense) ProtoMessage() {}
 
 func (x *Expense) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[51]
+	mi := &file_api_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4091,7 +4267,7 @@ func (x *Expense) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Expense.ProtoReflect.Descriptor instead.
 func (*Expense) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{51}
+	return file_api_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *Expense) GetId() string {
@@ -4166,7 +4342,7 @@ type ExpenseList struct {
 
 func (x *ExpenseList) Reset() {
 	*x = ExpenseList{}
-	mi := &file_api_proto_msgTypes[52]
+	mi := &file_api_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4178,7 +4354,7 @@ func (x *ExpenseList) String() string {
 func (*ExpenseList) ProtoMessage() {}
 
 func (x *ExpenseList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[52]
+	mi := &file_api_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4191,7 +4367,7 @@ func (x *ExpenseList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpenseList.ProtoReflect.Descriptor instead.
 func (*ExpenseList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{52}
+	return file_api_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ExpenseList) GetExpenses() []*Expense {
@@ -4217,7 +4393,7 @@ type ModificationVersion struct {
 
 func (x *ModificationVersion) Reset() {
 	*x = ModificationVersion{}
-	mi := &file_api_proto_msgTypes[53]
+	mi := &file_api_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4229,7 +4405,7 @@ func (x *ModificationVersion) String() string {
 func (*ModificationVersion) ProtoMessage() {}
 
 func (x *ModificationVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[53]
+	mi := &file_api_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4242,7 +4418,7 @@ func (x *ModificationVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModificationVersion.ProtoReflect.Descriptor instead.
 func (*ModificationVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{53}
+	return file_api_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ModificationVersion) GetId() string {
@@ -4318,7 +4494,7 @@ type Modification struct {
 
 func (x *Modification) Reset() {
 	*x = Modification{}
-	mi := &file_api_proto_msgTypes[54]
+	mi := &file_api_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4330,7 +4506,7 @@ func (x *Modification) String() string {
 func (*Modification) ProtoMessage() {}
 
 func (x *Modification) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[54]
+	mi := &file_api_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4343,7 +4519,7 @@ func (x *Modification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Modification.ProtoReflect.Descriptor instead.
 func (*Modification) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{54}
+	return file_api_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *Modification) GetId() string {
@@ -4418,7 +4594,7 @@ type ModificationList struct {
 
 func (x *ModificationList) Reset() {
 	*x = ModificationList{}
-	mi := &file_api_proto_msgTypes[55]
+	mi := &file_api_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4430,7 +4606,7 @@ func (x *ModificationList) String() string {
 func (*ModificationList) ProtoMessage() {}
 
 func (x *ModificationList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[55]
+	mi := &file_api_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4443,7 +4619,7 @@ func (x *ModificationList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModificationList.ProtoReflect.Descriptor instead.
 func (*ModificationList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{55}
+	return file_api_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ModificationList) GetModifications() []*Modification {
@@ -4467,7 +4643,7 @@ type VirtualAccountVersion struct {
 
 func (x *VirtualAccountVersion) Reset() {
 	*x = VirtualAccountVersion{}
-	mi := &file_api_proto_msgTypes[56]
+	mi := &file_api_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4479,7 +4655,7 @@ func (x *VirtualAccountVersion) String() string {
 func (*VirtualAccountVersion) ProtoMessage() {}
 
 func (x *VirtualAccountVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[56]
+	mi := &file_api_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4492,7 +4668,7 @@ func (x *VirtualAccountVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualAccountVersion.ProtoReflect.Descriptor instead.
 func (*VirtualAccountVersion) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{56}
+	return file_api_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *VirtualAccountVersion) GetId() string {
@@ -4551,7 +4727,7 @@ type VirtualAccount struct {
 
 func (x *VirtualAccount) Reset() {
 	*x = VirtualAccount{}
-	mi := &file_api_proto_msgTypes[57]
+	mi := &file_api_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4563,7 +4739,7 @@ func (x *VirtualAccount) String() string {
 func (*VirtualAccount) ProtoMessage() {}
 
 func (x *VirtualAccount) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[57]
+	mi := &file_api_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4576,7 +4752,7 @@ func (x *VirtualAccount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualAccount.ProtoReflect.Descriptor instead.
 func (*VirtualAccount) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{57}
+	return file_api_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *VirtualAccount) GetId() string {
@@ -4630,7 +4806,7 @@ type VirtualAccountList struct {
 
 func (x *VirtualAccountList) Reset() {
 	*x = VirtualAccountList{}
-	mi := &file_api_proto_msgTypes[58]
+	mi := &file_api_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4642,7 +4818,7 @@ func (x *VirtualAccountList) String() string {
 func (*VirtualAccountList) ProtoMessage() {}
 
 func (x *VirtualAccountList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[58]
+	mi := &file_api_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4655,7 +4831,7 @@ func (x *VirtualAccountList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualAccountList.ProtoReflect.Descriptor instead.
 func (*VirtualAccountList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{58}
+	return file_api_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *VirtualAccountList) GetVirtualAccounts() []*VirtualAccount {
@@ -4680,7 +4856,7 @@ type TransactionPool struct {
 
 func (x *TransactionPool) Reset() {
 	*x = TransactionPool{}
-	mi := &file_api_proto_msgTypes[59]
+	mi := &file_api_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4692,7 +4868,7 @@ func (x *TransactionPool) String() string {
 func (*TransactionPool) ProtoMessage() {}
 
 func (x *TransactionPool) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[59]
+	mi := &file_api_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4705,7 +4881,7 @@ func (x *TransactionPool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionPool.ProtoReflect.Descriptor instead.
 func (*TransactionPool) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{59}
+	return file_api_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *TransactionPool) GetId() string {
@@ -4766,7 +4942,7 @@ type TransactionPoolList struct {
 
 func (x *TransactionPoolList) Reset() {
 	*x = TransactionPoolList{}
-	mi := &file_api_proto_msgTypes[60]
+	mi := &file_api_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4778,7 +4954,7 @@ func (x *TransactionPoolList) String() string {
 func (*TransactionPoolList) ProtoMessage() {}
 
 func (x *TransactionPoolList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[60]
+	mi := &file_api_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4791,7 +4967,7 @@ func (x *TransactionPoolList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionPoolList.ProtoReflect.Descriptor instead.
 func (*TransactionPoolList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{60}
+	return file_api_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *TransactionPoolList) GetPools() []*TransactionPool {
@@ -4823,7 +4999,7 @@ type TransactionRule struct {
 
 func (x *TransactionRule) Reset() {
 	*x = TransactionRule{}
-	mi := &file_api_proto_msgTypes[61]
+	mi := &file_api_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4835,7 +5011,7 @@ func (x *TransactionRule) String() string {
 func (*TransactionRule) ProtoMessage() {}
 
 func (x *TransactionRule) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[61]
+	mi := &file_api_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4848,7 +5024,7 @@ func (x *TransactionRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionRule.ProtoReflect.Descriptor instead.
 func (*TransactionRule) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{61}
+	return file_api_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *TransactionRule) GetId() string {
@@ -4958,7 +5134,7 @@ type TransactionRuleList struct {
 
 func (x *TransactionRuleList) Reset() {
 	*x = TransactionRuleList{}
-	mi := &file_api_proto_msgTypes[62]
+	mi := &file_api_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4970,7 +5146,7 @@ func (x *TransactionRuleList) String() string {
 func (*TransactionRuleList) ProtoMessage() {}
 
 func (x *TransactionRuleList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[62]
+	mi := &file_api_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4983,7 +5159,7 @@ func (x *TransactionRuleList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionRuleList.ProtoReflect.Descriptor instead.
 func (*TransactionRuleList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{62}
+	return file_api_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *TransactionRuleList) GetRules() []*TransactionRule {
@@ -5014,7 +5190,7 @@ type IntegrationSaveRequest struct {
 
 func (x *IntegrationSaveRequest) Reset() {
 	*x = IntegrationSaveRequest{}
-	mi := &file_api_proto_msgTypes[63]
+	mi := &file_api_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5026,7 +5202,7 @@ func (x *IntegrationSaveRequest) String() string {
 func (*IntegrationSaveRequest) ProtoMessage() {}
 
 func (x *IntegrationSaveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[63]
+	mi := &file_api_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5039,7 +5215,7 @@ func (x *IntegrationSaveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationSaveRequest.ProtoReflect.Descriptor instead.
 func (*IntegrationSaveRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{63}
+	return file_api_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *IntegrationSaveRequest) GetId() string {
@@ -5122,7 +5298,7 @@ type EBAspspsRequest struct {
 
 func (x *EBAspspsRequest) Reset() {
 	*x = EBAspspsRequest{}
-	mi := &file_api_proto_msgTypes[64]
+	mi := &file_api_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5134,7 +5310,7 @@ func (x *EBAspspsRequest) String() string {
 func (*EBAspspsRequest) ProtoMessage() {}
 
 func (x *EBAspspsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[64]
+	mi := &file_api_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5147,7 +5323,7 @@ func (x *EBAspspsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EBAspspsRequest.ProtoReflect.Descriptor instead.
 func (*EBAspspsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{64}
+	return file_api_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *EBAspspsRequest) GetId() string {
@@ -5174,7 +5350,7 @@ type EBAspsp struct {
 
 func (x *EBAspsp) Reset() {
 	*x = EBAspsp{}
-	mi := &file_api_proto_msgTypes[65]
+	mi := &file_api_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5186,7 +5362,7 @@ func (x *EBAspsp) String() string {
 func (*EBAspsp) ProtoMessage() {}
 
 func (x *EBAspsp) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[65]
+	mi := &file_api_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5199,7 +5375,7 @@ func (x *EBAspsp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EBAspsp.ProtoReflect.Descriptor instead.
 func (*EBAspsp) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{65}
+	return file_api_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *EBAspsp) GetName() string {
@@ -5225,7 +5401,7 @@ type EBAspspsList struct {
 
 func (x *EBAspspsList) Reset() {
 	*x = EBAspspsList{}
-	mi := &file_api_proto_msgTypes[66]
+	mi := &file_api_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5237,7 +5413,7 @@ func (x *EBAspspsList) String() string {
 func (*EBAspspsList) ProtoMessage() {}
 
 func (x *EBAspspsList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[66]
+	mi := &file_api_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5250,7 +5426,7 @@ func (x *EBAspspsList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EBAspspsList.ProtoReflect.Descriptor instead.
 func (*EBAspspsList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{66}
+	return file_api_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *EBAspspsList) GetAspsps() []*EBAspsp {
@@ -5273,7 +5449,7 @@ type EBLinkRequest struct {
 
 func (x *EBLinkRequest) Reset() {
 	*x = EBLinkRequest{}
-	mi := &file_api_proto_msgTypes[67]
+	mi := &file_api_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5285,7 +5461,7 @@ func (x *EBLinkRequest) String() string {
 func (*EBLinkRequest) ProtoMessage() {}
 
 func (x *EBLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[67]
+	mi := &file_api_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5298,7 +5474,7 @@ func (x *EBLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EBLinkRequest.ProtoReflect.Descriptor instead.
 func (*EBLinkRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{67}
+	return file_api_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *EBLinkRequest) GetId() string {
@@ -5345,7 +5521,7 @@ type EBLinkResponse struct {
 
 func (x *EBLinkResponse) Reset() {
 	*x = EBLinkResponse{}
-	mi := &file_api_proto_msgTypes[68]
+	mi := &file_api_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5357,7 +5533,7 @@ func (x *EBLinkResponse) String() string {
 func (*EBLinkResponse) ProtoMessage() {}
 
 func (x *EBLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[68]
+	mi := &file_api_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5370,7 +5546,7 @@ func (x *EBLinkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EBLinkResponse.ProtoReflect.Descriptor instead.
 func (*EBLinkResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{68}
+	return file_api_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *EBLinkResponse) GetUrl() string {
@@ -5390,7 +5566,7 @@ type GCInstitutionsRequest struct {
 
 func (x *GCInstitutionsRequest) Reset() {
 	*x = GCInstitutionsRequest{}
-	mi := &file_api_proto_msgTypes[69]
+	mi := &file_api_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5402,7 +5578,7 @@ func (x *GCInstitutionsRequest) String() string {
 func (*GCInstitutionsRequest) ProtoMessage() {}
 
 func (x *GCInstitutionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[69]
+	mi := &file_api_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5415,7 +5591,7 @@ func (x *GCInstitutionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCInstitutionsRequest.ProtoReflect.Descriptor instead.
 func (*GCInstitutionsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{69}
+	return file_api_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *GCInstitutionsRequest) GetId() string {
@@ -5442,7 +5618,7 @@ type GCInstitution struct {
 
 func (x *GCInstitution) Reset() {
 	*x = GCInstitution{}
-	mi := &file_api_proto_msgTypes[70]
+	mi := &file_api_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5454,7 +5630,7 @@ func (x *GCInstitution) String() string {
 func (*GCInstitution) ProtoMessage() {}
 
 func (x *GCInstitution) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[70]
+	mi := &file_api_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5467,7 +5643,7 @@ func (x *GCInstitution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCInstitution.ProtoReflect.Descriptor instead.
 func (*GCInstitution) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{70}
+	return file_api_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GCInstitution) GetId() string {
@@ -5493,7 +5669,7 @@ type GCInstitutionsList struct {
 
 func (x *GCInstitutionsList) Reset() {
 	*x = GCInstitutionsList{}
-	mi := &file_api_proto_msgTypes[71]
+	mi := &file_api_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5505,7 +5681,7 @@ func (x *GCInstitutionsList) String() string {
 func (*GCInstitutionsList) ProtoMessage() {}
 
 func (x *GCInstitutionsList) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[71]
+	mi := &file_api_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5518,7 +5694,7 @@ func (x *GCInstitutionsList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCInstitutionsList.ProtoReflect.Descriptor instead.
 func (*GCInstitutionsList) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{71}
+	return file_api_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *GCInstitutionsList) GetInstitutions() []*GCInstitution {
@@ -5539,7 +5715,7 @@ type GCLinkRequest struct {
 
 func (x *GCLinkRequest) Reset() {
 	*x = GCLinkRequest{}
-	mi := &file_api_proto_msgTypes[72]
+	mi := &file_api_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5551,7 +5727,7 @@ func (x *GCLinkRequest) String() string {
 func (*GCLinkRequest) ProtoMessage() {}
 
 func (x *GCLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[72]
+	mi := &file_api_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5564,7 +5740,7 @@ func (x *GCLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCLinkRequest.ProtoReflect.Descriptor instead.
 func (*GCLinkRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{72}
+	return file_api_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GCLinkRequest) GetId() string {
@@ -5597,7 +5773,7 @@ type GCLinkResponse struct {
 
 func (x *GCLinkResponse) Reset() {
 	*x = GCLinkResponse{}
-	mi := &file_api_proto_msgTypes[73]
+	mi := &file_api_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5609,7 +5785,7 @@ func (x *GCLinkResponse) String() string {
 func (*GCLinkResponse) ProtoMessage() {}
 
 func (x *GCLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[73]
+	mi := &file_api_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5622,7 +5798,7 @@ func (x *GCLinkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCLinkResponse.ProtoReflect.Descriptor instead.
 func (*GCLinkResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{73}
+	return file_api_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *GCLinkResponse) GetLink() string {
@@ -5642,7 +5818,7 @@ type IntegrationSyncRequest struct {
 
 func (x *IntegrationSyncRequest) Reset() {
 	*x = IntegrationSyncRequest{}
-	mi := &file_api_proto_msgTypes[74]
+	mi := &file_api_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5654,7 +5830,7 @@ func (x *IntegrationSyncRequest) String() string {
 func (*IntegrationSyncRequest) ProtoMessage() {}
 
 func (x *IntegrationSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[74]
+	mi := &file_api_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5667,7 +5843,7 @@ func (x *IntegrationSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationSyncRequest.ProtoReflect.Descriptor instead.
 func (*IntegrationSyncRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{74}
+	return file_api_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *IntegrationSyncRequest) GetId() string {
@@ -5693,7 +5869,7 @@ type IntegrationAccountsRequest struct {
 
 func (x *IntegrationAccountsRequest) Reset() {
 	*x = IntegrationAccountsRequest{}
-	mi := &file_api_proto_msgTypes[75]
+	mi := &file_api_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5705,7 +5881,7 @@ func (x *IntegrationAccountsRequest) String() string {
 func (*IntegrationAccountsRequest) ProtoMessage() {}
 
 func (x *IntegrationAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[75]
+	mi := &file_api_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5718,7 +5894,7 @@ func (x *IntegrationAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationAccountsRequest.ProtoReflect.Descriptor instead.
 func (*IntegrationAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{75}
+	return file_api_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *IntegrationAccountsRequest) GetId() string {
@@ -5741,7 +5917,7 @@ type IntegrationAccountUpdate struct {
 
 func (x *IntegrationAccountUpdate) Reset() {
 	*x = IntegrationAccountUpdate{}
-	mi := &file_api_proto_msgTypes[76]
+	mi := &file_api_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5753,7 +5929,7 @@ func (x *IntegrationAccountUpdate) String() string {
 func (*IntegrationAccountUpdate) ProtoMessage() {}
 
 func (x *IntegrationAccountUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[76]
+	mi := &file_api_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5766,7 +5942,7 @@ func (x *IntegrationAccountUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationAccountUpdate.ProtoReflect.Descriptor instead.
 func (*IntegrationAccountUpdate) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{76}
+	return file_api_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *IntegrationAccountUpdate) GetIntegrationId() string {
@@ -5813,7 +5989,7 @@ type TransactionDeleteRequest struct {
 
 func (x *TransactionDeleteRequest) Reset() {
 	*x = TransactionDeleteRequest{}
-	mi := &file_api_proto_msgTypes[77]
+	mi := &file_api_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5825,7 +6001,7 @@ func (x *TransactionDeleteRequest) String() string {
 func (*TransactionDeleteRequest) ProtoMessage() {}
 
 func (x *TransactionDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[77]
+	mi := &file_api_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5838,7 +6014,7 @@ func (x *TransactionDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionDeleteRequest.ProtoReflect.Descriptor instead.
 func (*TransactionDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{77}
+	return file_api_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *TransactionDeleteRequest) GetId() string {
@@ -5857,7 +6033,7 @@ type TransactionUnlinkRequest struct {
 
 func (x *TransactionUnlinkRequest) Reset() {
 	*x = TransactionUnlinkRequest{}
-	mi := &file_api_proto_msgTypes[78]
+	mi := &file_api_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5869,7 +6045,7 @@ func (x *TransactionUnlinkRequest) String() string {
 func (*TransactionUnlinkRequest) ProtoMessage() {}
 
 func (x *TransactionUnlinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[78]
+	mi := &file_api_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5882,7 +6058,7 @@ func (x *TransactionUnlinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionUnlinkRequest.ProtoReflect.Descriptor instead.
 func (*TransactionUnlinkRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{78}
+	return file_api_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *TransactionUnlinkRequest) GetId() string {
@@ -5902,7 +6078,7 @@ type TransactionLinkRequest struct {
 
 func (x *TransactionLinkRequest) Reset() {
 	*x = TransactionLinkRequest{}
-	mi := &file_api_proto_msgTypes[79]
+	mi := &file_api_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5914,7 +6090,7 @@ func (x *TransactionLinkRequest) String() string {
 func (*TransactionLinkRequest) ProtoMessage() {}
 
 func (x *TransactionLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[79]
+	mi := &file_api_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5927,7 +6103,7 @@ func (x *TransactionLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionLinkRequest.ProtoReflect.Descriptor instead.
 func (*TransactionLinkRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{79}
+	return file_api_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *TransactionLinkRequest) GetId() string {
@@ -5954,7 +6130,7 @@ type TransactionDuplicateRequest struct {
 
 func (x *TransactionDuplicateRequest) Reset() {
 	*x = TransactionDuplicateRequest{}
-	mi := &file_api_proto_msgTypes[80]
+	mi := &file_api_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5966,7 +6142,7 @@ func (x *TransactionDuplicateRequest) String() string {
 func (*TransactionDuplicateRequest) ProtoMessage() {}
 
 func (x *TransactionDuplicateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[80]
+	mi := &file_api_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5979,7 +6155,7 @@ func (x *TransactionDuplicateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionDuplicateRequest.ProtoReflect.Descriptor instead.
 func (*TransactionDuplicateRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{80}
+	return file_api_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *TransactionDuplicateRequest) GetId() string {
@@ -6007,7 +6183,7 @@ type TransactionSaveBulkRequest struct {
 
 func (x *TransactionSaveBulkRequest) Reset() {
 	*x = TransactionSaveBulkRequest{}
-	mi := &file_api_proto_msgTypes[81]
+	mi := &file_api_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6019,7 +6195,7 @@ func (x *TransactionSaveBulkRequest) String() string {
 func (*TransactionSaveBulkRequest) ProtoMessage() {}
 
 func (x *TransactionSaveBulkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_msgTypes[81]
+	mi := &file_api_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6032,7 +6208,7 @@ func (x *TransactionSaveBulkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionSaveBulkRequest.ProtoReflect.Descriptor instead.
 func (*TransactionSaveBulkRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_rawDescGZIP(), []int{81}
+	return file_api_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *TransactionSaveBulkRequest) GetIntegrationId() string {
@@ -6266,7 +6442,23 @@ const file_api_proto_rawDesc = "" +
 	"\x17monte_carlo_duration_ms\x18\x03 \x01(\x03R\x14monteCarloDurationMs\x12.\n" +
 	"\x13catchup_duration_ms\x18\x04 \x01(\x03R\x11catchupDurationMs\x124\n" +
 	"\x16projection_duration_ms\x18\x05 \x01(\x03R\x14projectionDurationMs\x12%\n" +
-	"\x0fper_asset_mc_ms\x18\x06 \x01(\x03R\fperAssetMcMs\"m\n" +
+	"\x0fper_asset_mc_ms\x18\x06 \x01(\x03R\fperAssetMcMs\"\xc4\x02\n" +
+	"\fPenaltyEvent\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
+	"\x04date\x18\x02 \x01(\tR\x04date\x12\x1d\n" +
+	"\n" +
+	"asset_name\x18\x03 \x01(\tR\tassetName\x12\x15\n" +
+	"\x06lot_id\x18\x04 \x01(\tR\x05lotId\x12$\n" +
+	"\x0elot_created_at\x18\x05 \x01(\tR\flotCreatedAt\x12\x16\n" +
+	"\x06amount\x18\x06 \x01(\x01R\x06amount\x12%\n" +
+	"\x0eprincipal_sold\x18\a \x01(\x01R\rprincipalSold\x12!\n" +
+	"\fpenalty_paid\x18\b \x01(\x01R\vpenaltyPaid\x12\x1f\n" +
+	"\vmonths_held\x18\t \x01(\x05R\n" +
+	"monthsHeld\x12-\n" +
+	"\x12interest_generated\x18\n" +
+	" \x01(\x01R\x11interestGenerated\"<\n" +
+	"\x0fPenaltyAnalysis\x12)\n" +
+	"\x06events\x18\x01 \x03(\v2\x11.api.PenaltyEventR\x06events\"m\n" +
 	"\x0eScenarioEntity\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -6307,14 +6499,16 @@ const file_api_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.api.ETFScenarioParamsR\x05value:\x028\x01\";\n" +
 	"\fScenarioList\x12+\n" +
-	"\tscenarios\x18\x01 \x03(\v2\r.api.ScenarioR\tscenarios\"X\n" +
+	"\tscenarios\x18\x01 \x03(\v2\r.api.ScenarioR\tscenarios\"\xb6\x01\n" +
 	"\n" +
 	"ETFTracker\x12\x18\n" +
 	"\atracker\x18\x01 \x01(\tR\atracker\x12\x1e\n" +
 	"\n" +
 	"percentage\x18\x02 \x01(\x01R\n" +
 	"percentage\x12\x10\n" +
-	"\x03ter\x18\x03 \x01(\x01R\x03ter\"e\n" +
+	"\x03ter\x18\x03 \x01(\x01R\x03ter\x12-\n" +
+	"\x12historical_tracker\x18\x04 \x01(\tR\x11historicalTracker\x12-\n" +
+	"\x12conversion_tracker\x18\x05 \x01(\tR\x11conversionTracker\"e\n" +
 	"\fAssetPenalty\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\ftrigger_type\x18\x02 \x01(\tR\vtriggerType\x12\x1e\n" +
@@ -6642,7 +6836,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 87)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 89)
 var file_api_proto_goTypes = []any{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Error)(nil),                       // 1: api.Error
@@ -6675,62 +6869,64 @@ var file_api_proto_goTypes = []any{
 	(*MonthBreakdown)(nil),              // 28: api.MonthBreakdown
 	(*ProjectionMonth)(nil),             // 29: api.ProjectionMonth
 	(*PerformanceMetrics)(nil),          // 30: api.PerformanceMetrics
-	(*ScenarioEntity)(nil),              // 31: api.ScenarioEntity
-	(*ETFScenarioParams)(nil),           // 32: api.ETFScenarioParams
-	(*Scenario)(nil),                    // 33: api.Scenario
-	(*ScenarioList)(nil),                // 34: api.ScenarioList
-	(*ETFTracker)(nil),                  // 35: api.ETFTracker
-	(*AssetPenalty)(nil),                // 36: api.AssetPenalty
-	(*SubAsset)(nil),                    // 37: api.SubAsset
-	(*AssetVersion)(nil),                // 38: api.AssetVersion
-	(*Asset)(nil),                       // 39: api.Asset
-	(*AssetList)(nil),                   // 40: api.AssetList
-	(*LoanVersion)(nil),                 // 41: api.LoanVersion
-	(*Loan)(nil),                        // 42: api.Loan
-	(*LoanList)(nil),                    // 43: api.LoanList
-	(*IncomeVersion)(nil),               // 44: api.IncomeVersion
-	(*Income)(nil),                      // 45: api.Income
-	(*IncomeList)(nil),                  // 46: api.IncomeList
-	(*BillVersion)(nil),                 // 47: api.BillVersion
-	(*Bill)(nil),                        // 48: api.Bill
-	(*BillList)(nil),                    // 49: api.BillList
-	(*ExpenseVersion)(nil),              // 50: api.ExpenseVersion
-	(*Expense)(nil),                     // 51: api.Expense
-	(*ExpenseList)(nil),                 // 52: api.ExpenseList
-	(*ModificationVersion)(nil),         // 53: api.ModificationVersion
-	(*Modification)(nil),                // 54: api.Modification
-	(*ModificationList)(nil),            // 55: api.ModificationList
-	(*VirtualAccountVersion)(nil),       // 56: api.VirtualAccountVersion
-	(*VirtualAccount)(nil),              // 57: api.VirtualAccount
-	(*VirtualAccountList)(nil),          // 58: api.VirtualAccountList
-	(*TransactionPool)(nil),             // 59: api.TransactionPool
-	(*TransactionPoolList)(nil),         // 60: api.TransactionPoolList
-	(*TransactionRule)(nil),             // 61: api.TransactionRule
-	(*TransactionRuleList)(nil),         // 62: api.TransactionRuleList
-	(*IntegrationSaveRequest)(nil),      // 63: api.IntegrationSaveRequest
-	(*EBAspspsRequest)(nil),             // 64: api.EBAspspsRequest
-	(*EBAspsp)(nil),                     // 65: api.EBAspsp
-	(*EBAspspsList)(nil),                // 66: api.EBAspspsList
-	(*EBLinkRequest)(nil),               // 67: api.EBLinkRequest
-	(*EBLinkResponse)(nil),              // 68: api.EBLinkResponse
-	(*GCInstitutionsRequest)(nil),       // 69: api.GCInstitutionsRequest
-	(*GCInstitution)(nil),               // 70: api.GCInstitution
-	(*GCInstitutionsList)(nil),          // 71: api.GCInstitutionsList
-	(*GCLinkRequest)(nil),               // 72: api.GCLinkRequest
-	(*GCLinkResponse)(nil),              // 73: api.GCLinkResponse
-	(*IntegrationSyncRequest)(nil),      // 74: api.IntegrationSyncRequest
-	(*IntegrationAccountsRequest)(nil),  // 75: api.IntegrationAccountsRequest
-	(*IntegrationAccountUpdate)(nil),    // 76: api.IntegrationAccountUpdate
-	(*TransactionDeleteRequest)(nil),    // 77: api.TransactionDeleteRequest
-	(*TransactionUnlinkRequest)(nil),    // 78: api.TransactionUnlinkRequest
-	(*TransactionLinkRequest)(nil),      // 79: api.TransactionLinkRequest
-	(*TransactionDuplicateRequest)(nil), // 80: api.TransactionDuplicateRequest
-	(*TransactionSaveBulkRequest)(nil),  // 81: api.TransactionSaveBulkRequest
-	nil,                                 // 82: api.YieldMap.YieldsEntry
-	nil,                                 // 83: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 84: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 85: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 86: api.Scenario.EtfParamsEntry
+	(*PenaltyEvent)(nil),                // 31: api.PenaltyEvent
+	(*PenaltyAnalysis)(nil),             // 32: api.PenaltyAnalysis
+	(*ScenarioEntity)(nil),              // 33: api.ScenarioEntity
+	(*ETFScenarioParams)(nil),           // 34: api.ETFScenarioParams
+	(*Scenario)(nil),                    // 35: api.Scenario
+	(*ScenarioList)(nil),                // 36: api.ScenarioList
+	(*ETFTracker)(nil),                  // 37: api.ETFTracker
+	(*AssetPenalty)(nil),                // 38: api.AssetPenalty
+	(*SubAsset)(nil),                    // 39: api.SubAsset
+	(*AssetVersion)(nil),                // 40: api.AssetVersion
+	(*Asset)(nil),                       // 41: api.Asset
+	(*AssetList)(nil),                   // 42: api.AssetList
+	(*LoanVersion)(nil),                 // 43: api.LoanVersion
+	(*Loan)(nil),                        // 44: api.Loan
+	(*LoanList)(nil),                    // 45: api.LoanList
+	(*IncomeVersion)(nil),               // 46: api.IncomeVersion
+	(*Income)(nil),                      // 47: api.Income
+	(*IncomeList)(nil),                  // 48: api.IncomeList
+	(*BillVersion)(nil),                 // 49: api.BillVersion
+	(*Bill)(nil),                        // 50: api.Bill
+	(*BillList)(nil),                    // 51: api.BillList
+	(*ExpenseVersion)(nil),              // 52: api.ExpenseVersion
+	(*Expense)(nil),                     // 53: api.Expense
+	(*ExpenseList)(nil),                 // 54: api.ExpenseList
+	(*ModificationVersion)(nil),         // 55: api.ModificationVersion
+	(*Modification)(nil),                // 56: api.Modification
+	(*ModificationList)(nil),            // 57: api.ModificationList
+	(*VirtualAccountVersion)(nil),       // 58: api.VirtualAccountVersion
+	(*VirtualAccount)(nil),              // 59: api.VirtualAccount
+	(*VirtualAccountList)(nil),          // 60: api.VirtualAccountList
+	(*TransactionPool)(nil),             // 61: api.TransactionPool
+	(*TransactionPoolList)(nil),         // 62: api.TransactionPoolList
+	(*TransactionRule)(nil),             // 63: api.TransactionRule
+	(*TransactionRuleList)(nil),         // 64: api.TransactionRuleList
+	(*IntegrationSaveRequest)(nil),      // 65: api.IntegrationSaveRequest
+	(*EBAspspsRequest)(nil),             // 66: api.EBAspspsRequest
+	(*EBAspsp)(nil),                     // 67: api.EBAspsp
+	(*EBAspspsList)(nil),                // 68: api.EBAspspsList
+	(*EBLinkRequest)(nil),               // 69: api.EBLinkRequest
+	(*EBLinkResponse)(nil),              // 70: api.EBLinkResponse
+	(*GCInstitutionsRequest)(nil),       // 71: api.GCInstitutionsRequest
+	(*GCInstitution)(nil),               // 72: api.GCInstitution
+	(*GCInstitutionsList)(nil),          // 73: api.GCInstitutionsList
+	(*GCLinkRequest)(nil),               // 74: api.GCLinkRequest
+	(*GCLinkResponse)(nil),              // 75: api.GCLinkResponse
+	(*IntegrationSyncRequest)(nil),      // 76: api.IntegrationSyncRequest
+	(*IntegrationAccountsRequest)(nil),  // 77: api.IntegrationAccountsRequest
+	(*IntegrationAccountUpdate)(nil),    // 78: api.IntegrationAccountUpdate
+	(*TransactionDeleteRequest)(nil),    // 79: api.TransactionDeleteRequest
+	(*TransactionUnlinkRequest)(nil),    // 80: api.TransactionUnlinkRequest
+	(*TransactionLinkRequest)(nil),      // 81: api.TransactionLinkRequest
+	(*TransactionDuplicateRequest)(nil), // 82: api.TransactionDuplicateRequest
+	(*TransactionSaveBulkRequest)(nil),  // 83: api.TransactionSaveBulkRequest
+	nil,                                 // 84: api.YieldMap.YieldsEntry
+	nil,                                 // 85: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 86: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 87: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 88: api.Scenario.EtfParamsEntry
 }
 var file_api_proto_depIdxs = []int32{
 	9,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -6739,10 +6935,10 @@ var file_api_proto_depIdxs = []int32{
 	20, // 3: api.IntegrationList.integrations:type_name -> api.Integration
 	22, // 4: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	19, // 5: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	82, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	83, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	84, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	85, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	84, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	85, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	86, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	87, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	27, // 10: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	27, // 11: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	27, // 12: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -6750,38 +6946,39 @@ var file_api_proto_depIdxs = []int32{
 	27, // 14: api.MonthBreakdown.loans:type_name -> api.EntryBreakdown
 	26, // 15: api.ProjectionMonth.virtual_accounts:type_name -> api.VirtualAccountMonthBalance
 	28, // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
-	31, // 17: api.Scenario.entities:type_name -> api.ScenarioEntity
-	86, // 18: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
-	33, // 19: api.ScenarioList.scenarios:type_name -> api.Scenario
-	35, // 20: api.AssetVersion.etf_config:type_name -> api.ETFTracker
-	36, // 21: api.AssetVersion.penalties:type_name -> api.AssetPenalty
-	37, // 22: api.AssetVersion.sub_assets:type_name -> api.SubAsset
-	38, // 23: api.Asset.active_version:type_name -> api.AssetVersion
-	39, // 24: api.AssetList.assets:type_name -> api.Asset
-	41, // 25: api.Loan.active_version:type_name -> api.LoanVersion
-	42, // 26: api.LoanList.loans:type_name -> api.Loan
-	44, // 27: api.Income.active_version:type_name -> api.IncomeVersion
-	45, // 28: api.IncomeList.incomes:type_name -> api.Income
-	47, // 29: api.Bill.active_version:type_name -> api.BillVersion
-	48, // 30: api.BillList.bills:type_name -> api.Bill
-	50, // 31: api.Expense.active_version:type_name -> api.ExpenseVersion
-	51, // 32: api.ExpenseList.expenses:type_name -> api.Expense
-	53, // 33: api.Modification.active_version:type_name -> api.ModificationVersion
-	54, // 34: api.ModificationList.modifications:type_name -> api.Modification
-	56, // 35: api.VirtualAccount.active_version:type_name -> api.VirtualAccountVersion
-	57, // 36: api.VirtualAccountList.virtual_accounts:type_name -> api.VirtualAccount
-	59, // 37: api.TransactionPoolList.pools:type_name -> api.TransactionPool
-	61, // 38: api.TransactionRule.children:type_name -> api.TransactionRule
-	61, // 39: api.TransactionRuleList.rules:type_name -> api.TransactionRule
-	65, // 40: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
-	70, // 41: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
-	19, // 42: api.TransactionSaveBulkRequest.transactions:type_name -> api.Transaction
-	32, // 43: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
-	44, // [44:44] is the sub-list for method output_type
-	44, // [44:44] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	31, // 17: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
+	33, // 18: api.Scenario.entities:type_name -> api.ScenarioEntity
+	88, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	35, // 20: api.ScenarioList.scenarios:type_name -> api.Scenario
+	37, // 21: api.AssetVersion.etf_config:type_name -> api.ETFTracker
+	38, // 22: api.AssetVersion.penalties:type_name -> api.AssetPenalty
+	39, // 23: api.AssetVersion.sub_assets:type_name -> api.SubAsset
+	40, // 24: api.Asset.active_version:type_name -> api.AssetVersion
+	41, // 25: api.AssetList.assets:type_name -> api.Asset
+	43, // 26: api.Loan.active_version:type_name -> api.LoanVersion
+	44, // 27: api.LoanList.loans:type_name -> api.Loan
+	46, // 28: api.Income.active_version:type_name -> api.IncomeVersion
+	47, // 29: api.IncomeList.incomes:type_name -> api.Income
+	49, // 30: api.Bill.active_version:type_name -> api.BillVersion
+	50, // 31: api.BillList.bills:type_name -> api.Bill
+	52, // 32: api.Expense.active_version:type_name -> api.ExpenseVersion
+	53, // 33: api.ExpenseList.expenses:type_name -> api.Expense
+	55, // 34: api.Modification.active_version:type_name -> api.ModificationVersion
+	56, // 35: api.ModificationList.modifications:type_name -> api.Modification
+	58, // 36: api.VirtualAccount.active_version:type_name -> api.VirtualAccountVersion
+	59, // 37: api.VirtualAccountList.virtual_accounts:type_name -> api.VirtualAccount
+	61, // 38: api.TransactionPoolList.pools:type_name -> api.TransactionPool
+	63, // 39: api.TransactionRule.children:type_name -> api.TransactionRule
+	63, // 40: api.TransactionRuleList.rules:type_name -> api.TransactionRule
+	67, // 41: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
+	72, // 42: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
+	19, // 43: api.TransactionSaveBulkRequest.transactions:type_name -> api.Transaction
+	34, // 44: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
+	45, // [45:45] is the sub-list for method output_type
+	45, // [45:45] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -6795,7 +6992,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_rawDesc), len(file_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   87,
+			NumMessages:   89,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

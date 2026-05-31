@@ -27,6 +27,7 @@
         Wallet,
         PieChart,
         ChevronRight,
+        Download,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
@@ -38,8 +39,22 @@
         ProjectionMonthSchema,
         YieldMapSchema,
         PerformanceMetricsSchema,
+        PenaltyAnalysisSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
+
+    interface PenaltyEvent {
+        type: string;
+        date: string;
+        assetName: string;
+        lotId: string;
+        lotCreatedAt: string;
+        amount: number;
+        principalSold: number;
+        penaltyPaid: number;
+        monthsHeld: number;
+        interestGenerated: number;
+    }
 
     const PALETTE = [
         {
@@ -141,6 +156,7 @@
             scenario_name: scenarios.find((s) => s.id === id)?.name || "",
             simulated_yields: {},
             months: [],
+            penalty_events: [],
         };
 
         try {
@@ -152,6 +168,7 @@
                     ProjectionMonthSchema,
                     YieldMapSchema,
                     PerformanceMetricsSchema,
+                    PenaltyAnalysisSchema,
                     ErrorSchema,
                 ],
             );
@@ -166,11 +183,17 @@
                         if (message) {
                             const typeName = (message as any).$typeName;
                             if (typeName === "api.YieldMap") {
-                                projections[id].simulated_yields = { ...((message as any).yields || {}) };
+                                projections[id].simulated_yields = {
+                                    ...((message as any).yields || {}),
+                                };
                             } else if (typeName === "api.ProjectionMonth") {
                                 projections[id].months = [
                                     ...projections[id].months,
                                     message,
+                                ];
+                            } else if (typeName === "api.PenaltyAnalysis") {
+                                projections[id].penalty_events = [
+                                    ...((message as any).events || []),
                                 ];
                             }
                         }
@@ -236,6 +259,63 @@
     // Reactive choosing of scenario and asset for detailed explorer
     let selectedAssetScenarioId = $state<string>("");
     let selectedAssetName = $state<string>("");
+
+    function exportTaxAnalysisCSV(sid: string) {
+        const events = projections[sid]?.penalty_events || [];
+        if (events.length === 0) return;
+
+        const headers = [
+            "Date",
+            "Asset",
+            "Lot ID",
+            "Created",
+            "Type",
+            "Amount",
+            "Principal Sold",
+            "Penalty/Tax",
+            "Interest Generated",
+            "Months Held",
+            "Net Impact",
+        ];
+
+        const rows = events.map((e) => [
+            new Date(e.date).toLocaleDateString("de-DE", {
+                month: "2-digit",
+                year: "numeric",
+            }),
+            e.assetName,
+            e.lotId,
+            new Date(e.lotCreatedAt).toLocaleDateString("de-DE", {
+                month: "2-digit",
+                year: "numeric",
+            }),
+            e.type,
+            e.amount.toFixed(2),
+            e.principalSold.toFixed(2),
+            e.penaltyPaid.toFixed(2),
+            e.interestGenerated.toFixed(2),
+            e.monthsHeld,
+            (e.amount - e.penaltyPaid).toFixed(2),
+        ]);
+
+        const csvContent = [
+            headers.join(";"),
+            ...rows.map((r) => r.join(";")),
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute(
+            "download",
+            `tax_analysis_${projections[sid].scenario_name.replace(/\s+/g, "_")}.csv`,
+        );
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 
     let selectedAssetInfo = $derived.by(() => {
         return allAssets.find((a) => a.name === selectedAssetName) || null;
@@ -3025,6 +3105,224 @@
                                 </div>
                             </div>
                         </div>
+                    {/each}
+                </div>
+            </div>
+
+            <!-- Tax & Penalty Analysis -->
+            <div
+                class="md:col-span-12 space-y-6 pt-12 border-t border-slate-200"
+            >
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4
+                            class="text-xl font-black text-slate-900 tracking-tight"
+                        >
+                            Tax & Penalty Analysis
+                        </h4>
+                        <p class="text-slate-500 font-medium text-sm">
+                            Detailed log of individual asset lots being bought
+                            or sold, including simulated tax/penalties.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6">
+                    {#each selectedScenarioIds as sid}
+                        {#if projections[sid]?.penalty_events?.length > 0}
+                            <div class="glass-card p-6 border overflow-hidden">
+                                <div class="flex items-center justify-between mb-6">
+                                    <div class="flex items-center gap-3">
+                                        <div
+                                            class="w-10 h-10 rounded-xl flex items-center justify-center {PALETTE[
+                                                selectedScenarioIds.indexOf(sid) %
+                                                    PALETTE.length
+                                            ].bgClass} shadow-sm border"
+                                        >
+                                            <HandCoins class="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h5 class="font-black text-slate-900">
+                                                {projections[sid].scenario_name}
+                                            </h5>
+                                            <p
+                                                class="text-[10px] text-slate-400 font-bold uppercase tracking-wider"
+                                            >
+                                                Lot Transaction History
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onclick={() => exportTaxAnalysisCSV(sid)}
+                                        class="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-indigo-600 transition-all active:scale-95 shadow-lg shadow-slate-200"
+                                    >
+                                        <Download class="w-3.5 h-3.5" />
+                                        Export CSV
+                                    </button>
+                                </div>
+
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead>
+                                            <tr class="border-b border-slate-100">
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                                                    >Date</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                                                    >Asset</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                                                    >Lot ID</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                                                    >Type</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
+                                                    >Amount</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
+                                                    >Profit</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-center"
+                                                    >Hold</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
+                                                    >Penalty/Tax</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
+                                                    >Net Impact</th
+                                                >
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-50">
+                                            {#each projections[sid].penalty_events as event}
+                                                <tr>
+                                                    <td
+                                                        class="py-4 text-xs font-bold text-slate-600"
+                                                    >
+                                                        {new Date(
+                                                            event.date,
+                                                        ).toLocaleDateString(
+                                                            "de-DE",
+                                                            {
+                                                                month: "2-digit",
+                                                                year: "numeric",
+                                                            },
+                                                        )}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-black text-slate-900"
+                                                        >{event.assetName}</td
+                                                    >
+                                                    <td class="py-4">
+                                                        <div
+                                                            class="flex flex-col"
+                                                        >
+                                                            <span
+                                                                class="text-[10px] font-mono font-bold text-slate-500"
+                                                                >{event.lotId}</span
+                                                            >
+                                                            <span
+                                                                class="text-[8px] text-slate-400"
+                                                                >Created: {new Date(
+                                                                    event.lotCreatedAt,
+                                                                ).toLocaleDateString(
+                                                                    "de-DE",
+                                                                    {
+                                                                        month: "2-digit",
+                                                                        year: "numeric",
+                                                                    },
+                                                                )}</span
+                                                            >
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-4">
+                                                        <span
+                                                            class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider {event.type ===
+                                                            'BUY'
+                                                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                                                : 'bg-rose-50 text-rose-600 border border-rose-100'}"
+                                                        >
+                                                            {event.type}
+                                                        </span>
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-black text-right text-slate-900"
+                                                    >
+                                                        € {formatGermanAmount(
+                                                            event.amount,
+                                                        )}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-black text-right {event.interestGenerated >
+                                                        0
+                                                            ? 'text-emerald-600'
+                                                            : 'text-slate-300'}"
+                                                    >
+                                                        {event.interestGenerated >
+                                                        0
+                                                            ? `+€ ${formatGermanAmount(
+                                                                  event.interestGenerated,
+                                                              )}`
+                                                            : "€ 0,00"}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-bold text-center text-slate-500"
+                                                    >
+                                                        {event.type === "SELL"
+                                                            ? `${event.monthsHeld}m`
+                                                            : "-"}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-black text-right {event.penaltyPaid >
+                                                        0
+                                                            ? 'text-rose-500'
+                                                            : 'text-slate-300'}"
+                                                    >
+                                                        {event.penaltyPaid > 0
+                                                            ? `-€ ${formatGermanAmount(
+                                                                  event.penaltyPaid,
+                                                              )}`
+                                                            : "€ 0,00"}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-black text-right {event.type ===
+                                                        'BUY'
+                                                            ? 'text-slate-900'
+                                                            : 'text-emerald-600'}"
+                                                    >
+                                                        € {formatGermanAmount(
+                                                            event.amount -
+                                                                event.penaltyPaid,
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            {/each}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        {:else if selectedScenarioIds.length > 0}
+                             <div class="glass-card p-12 border flex flex-col items-center justify-center text-center space-y-4">
+                                <div class="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-300">
+                                    <HandCoins class="w-8 h-8" />
+                                </div>
+                                <div class="max-w-xs">
+                                    <h5 class="font-black text-slate-900 uppercase text-xs tracking-widest">No Lot Transactions</h5>
+                                    <p class="text-slate-400 text-sm font-medium mt-1">This scenario doesn't have any asset withdrawals or lot creations yet.</p>
+                                </div>
+                            </div>
+                        {/if}
                     {/each}
                 </div>
             </div>

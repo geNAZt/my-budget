@@ -251,6 +251,23 @@ message PerformanceMetrics {
   int64 per_asset_mc_ms = 6;
 }
 
+message PenaltyEvent {
+  string type = 1; // 'BUY' or 'SELL'
+  string date = 2;
+  string asset_name = 3;
+  string lot_id = 4;
+  string lot_created_at = 5;
+  double amount = 6;
+  double principal_sold = 7;
+  double penalty_paid = 8;
+  int32 months_held = 9;
+  double interest_generated = 10;
+}
+
+message PenaltyAnalysis {
+  repeated PenaltyEvent events = 1;
+}
+
 message ScenarioEntity {
   string entity_id = 1;
   string entity_type = 2;
@@ -295,6 +312,8 @@ message ETFTracker {
   string tracker = 1;
   double percentage = 2;
   double ter = 3;
+  string historical_tracker = 4;
+  string conversion_tracker = 5;
 }
 
 message AssetPenalty {

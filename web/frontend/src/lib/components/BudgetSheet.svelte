@@ -553,7 +553,7 @@
 
                         <!-- Premium Tooltip Popover -->
                         <div
-                            class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 absolute left-0 top-full mt-2 w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-slate-100 dark:border-slate-800/60 rounded-2xl shadow-xl z-[150] p-4 text-left pointer-events-none"
+                            class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 absolute left-0 top-full mt-2 w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-slate-100 dark:border-slate-800/60 rounded-2xl shadow-xl z-[150] p-4 text-left pointer-events-auto"
                         >
                             <!-- Top accent color bar -->
                             <div
@@ -661,7 +661,7 @@
                                         <span class="text-[8px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 block">
                                             Mapped Items ({va.mappedEntities.length})
                                         </span>
-                                        <div class="max-h-36 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                                        <div class="max-h-48 overflow-y-auto overscroll-contain space-y-1.5 pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 scrollbar-track-transparent">
                                             {#each va.mappedEntities as entity}
                                                 <div class="flex items-center justify-between gap-2 text-[10px] py-0.5">
                                                     <div class="flex flex-col min-w-0">

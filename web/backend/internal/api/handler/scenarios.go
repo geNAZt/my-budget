@@ -323,6 +323,23 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 	}
 	sc.handler.SendResponse(s, reqID, wsYields, false)
 
+	wsPenalty := &apiproto.PenaltyAnalysis{}
+	for _, event := range result.PenaltyAnalysis {
+		wsPenalty.Events = append(wsPenalty.Events, &apiproto.PenaltyEvent{
+			Type:              event.Type,
+			Date:              event.Date.Format(time.RFC3339),
+			AssetName:         event.AssetName,
+			LotId:             event.LotID,
+			LotCreatedAt:      event.LotCreatedAt.Format(time.RFC3339),
+			Amount:            event.Amount,
+			PrincipalSold:     event.PrincipalSold,
+			PenaltyPaid:       event.PenaltyPaid,
+			MonthsHeld:        int32(event.MonthsHeld),
+			InterestGenerated: event.InterestGenerated,
+		})
+	}
+	sc.handler.SendResponse(s, reqID, wsPenalty, false)
+
 	wsMetrics := &apiproto.PerformanceMetrics{
 		TotalDurationMs:      result.Metrics.TotalDurationMS,
 		ResolutionDurationMs: result.Metrics.ResolutionDurationMS,

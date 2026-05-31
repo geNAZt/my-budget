@@ -58,6 +58,8 @@
 
     interface ETFTracker {
         tracker: string;
+        historicalTracker: string;
+        conversionTracker: string;
         percentage: number;
         ter: number;
     }
@@ -380,9 +382,8 @@
                 interestInput,
                 "DE",
             );
-        } else {
+        } else if (currentAsset.activeVersion.type === "ETF") {
             currentAsset.activeVersion.interestRate = 0;
-            currentAsset.activeVersion.interestInterval = "Yearly";
         }
 
         if (
@@ -456,6 +457,8 @@
                             currentAsset.activeVersion.etfConfig || []
                         ).map((t: any) => ({
                             tracker: t.tracker || "",
+                            historicalTracker: t.historicalTracker || "",
+                            conversionTracker: t.conversionTracker || "",
                             percentage: parseFloat(t.percentage) || 0,
                             ter: parseFloat(t.ter) || 0,
                         })),
@@ -557,6 +560,8 @@
                                       a.activeVersion.etfConfig || []
                                   ).map((t: any) => ({
                                       tracker: t.tracker || "",
+                                      historicalTracker: t.historicalTracker || "",
+                                      conversionTracker: t.conversionTracker || "",
                                       percentage: parseFloat(t.percentage) || 0,
                                       ter: parseFloat(t.ter) || 0,
                                   })),
@@ -949,7 +954,15 @@
                                         >
                                             <span
                                                 class="font-bold text-slate-600"
-                                                >{tracker.tracker}</span
+                                                >{tracker.tracker}
+                                                {#if tracker.historicalTracker}
+                                                    <span
+                                                        class="text-slate-400 font-medium ml-1"
+                                                        >({tracker.historicalTracker}{tracker.conversionTracker
+                                                            ? ` / ${tracker.conversionTracker}`
+                                                            : ""})</span
+                                                    >
+                                                {/if}</span
                                             >
                                             <div
                                                 class="flex items-center gap-3"
@@ -1237,7 +1250,7 @@
                                     />
                                 </div>
                             {/if}
-                            {#if currentAsset.activeVersion.type === "STATIC"}
+                            {#if currentAsset.activeVersion.type === "STATIC" || currentAsset.activeVersion.type === "ETF"}
                                 <div
                                     class="space-y-2 {currentAsset.activeVersion
                                         .subAssets?.length > 0
@@ -1246,19 +1259,20 @@
                                 >
                                     <label
                                         class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >Interest %</label
+                                        >{currentAsset.activeVersion.type === "ETF" ? 'Payout' : 'Interest'} %</label
                                     >
                                     <input
                                         type="text"
                                         bind:value={interestInput}
                                         placeholder="2,50"
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
+                                        disabled={currentAsset.activeVersion.type === "ETF"}
+                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold disabled:opacity-50"
                                     />
                                 </div>
                                 <div class="space-y-2">
                                     <label
                                         class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >Interval</label
+                                        >{currentAsset.activeVersion.type === "ETF" ? 'Mode' : 'Interval'}</label
                                     >
                                     <select
                                         bind:value={
@@ -1267,8 +1281,13 @@
                                         }
                                         class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer"
                                     >
-                                        <option value="Monthly">Monthly</option>
-                                        <option value="Yearly">Yearly</option>
+                                        {#if currentAsset.activeVersion.type === "ETF"}
+                                            <option value="Yearly">Accumulating</option>
+                                            <option value="Monthly">Distributing (Monthly Payout)</option>
+                                        {:else}
+                                            <option value="Monthly">Monthly</option>
+                                            <option value="Yearly">Yearly</option>
+                                        {/if}
                                     </select>
                                 </div>
                             {/if}
@@ -1780,6 +1799,8 @@
                                         currentAsset.activeVersion.etfConfig.push(
                                             {
                                                 tracker: "",
+                                                historicalTracker: "",
+                                                conversionTracker: "",
                                                 percentage: 0.7,
                                                 ter: 0.2,
                                             },
@@ -1790,26 +1811,36 @@
                             </div>
                             {#each currentAsset.activeVersion.etfConfig as etf, i}
                                 <div
-                                    class="grid grid-cols-12 gap-3 items-center"
+                                    class="grid grid-cols-12 gap-2 items-center"
                                 >
                                     <input
                                         bind:value={etf.tracker}
-                                        placeholder="ISIN/Ticker"
-                                        class="col-span-6 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                                        placeholder="Ticker"
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
+                                    />
+                                    <input
+                                        bind:value={etf.historicalTracker}
+                                        placeholder="Index"
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
+                                    />
+                                    <input
+                                        bind:value={etf.conversionTracker}
+                                        placeholder="Conv"
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
                                     <input
                                         type="number"
                                         bind:value={etf.percentage}
                                         step="0.001"
                                         placeholder="0.7"
-                                        class="col-span-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                                        class="col-span-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
                                     <input
                                         type="number"
                                         bind:value={etf.ter}
                                         step="0.001"
                                         placeholder="0.2"
-                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
                                     <button
                                         type="button"

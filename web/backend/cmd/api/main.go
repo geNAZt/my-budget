@@ -107,7 +107,7 @@ func main() {
 	// Initialize Event Bus
 	eventBus := bus.NewBus()
 
-	marketDataService := service.NewMarketDataService(cacheRepo)
+	marketDataService := service.NewMarketDataService(cacheRepo, dataDir)
 	gcService := service.NewGoCardlessService()
 	t212Service := service.NewTrading212Service()
 	ebService := service.NewEnableBankingService()

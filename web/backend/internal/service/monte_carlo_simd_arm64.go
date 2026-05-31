@@ -16,13 +16,20 @@ import (
 func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history [][]float64, simulations, years int, percent float64) float64 {
 	const stepsPerYear = 52
 	totalSteps := years * stepsPerYear
-	poolSize := 9999
-	for _, h := range history {
-		if len(h) < poolSize {
-			poolSize = len(h)
+	numTrackers := len(history)
+	if numTrackers == 0 {
+		return 0.05
+	}
+
+	// Use shortest history for date-aligned correlated sampling
+	poolSize := len(history[0])
+	for i := 1; i < numTrackers; i++ {
+		if len(history[i]) < poolSize {
+			poolSize = len(history[i])
 		}
 	}
-	if poolSize == 9999 || poolSize == 0 {
+
+	if poolSize == 0 {
 		return 0.05
 	}
 
@@ -44,7 +51,6 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 			// Use math/rand/v2 for better performance
 			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
 
-			numTrackers := len(history)
 			weights := make([]float64, numTrackers)
 			terPerStep := make([]float64, numTrackers)
 			for i := 0; i < numTrackers; i++ {
@@ -57,30 +63,38 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 			batchEnd := startIndex + ((endIndex-startIndex)/batchSize)*batchSize
 
 			for sim := startIndex; sim < batchEnd; sim += batchSize {
-				var logReturns [batchSize]float64
+				var accumulatedLogReturns [batchSize]float64
 
 				for step := 0; step < totalSteps; step++ {
-					// Pre-fetch random indices for the batch
-					idx0 := r.IntN(poolSize)
-					idx1 := r.IntN(poolSize)
-					idx2 := r.IntN(poolSize)
-					idx3 := r.IntN(poolSize)
+					var stepReturns [batchSize]float64
 
-					// Tight loop designed for compiler auto-vectorization
+					// Correlated sampling: same weekIndex for all trackers in one simulation
+					indices := [batchSize]int{
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+						r.IntN(poolSize),
+					}
+
 					for t := 0; t < numTrackers; t++ {
 						hist := history[t]
 						w := weights[t]
 						ter := terPerStep[t]
 
-						logReturns[0] += (hist[idx0] - ter) * w
-						logReturns[1] += (hist[idx1] - ter) * w
-						logReturns[2] += (hist[idx2] - ter) * w
-						logReturns[3] += (hist[idx3] - ter) * w
+						stepReturns[0] += (hist[indices[0]] - ter) * w
+						stepReturns[1] += (hist[indices[1]] - ter) * w
+						stepReturns[2] += (hist[indices[2]] - ter) * w
+						stepReturns[3] += (hist[indices[3]] - ter) * w
 					}
+
+					accumulatedLogReturns[0] += math.Log(1.0 + stepReturns[0])
+					accumulatedLogReturns[1] += math.Log(1.0 + stepReturns[1])
+					accumulatedLogReturns[2] += math.Log(1.0 + stepReturns[2])
+					accumulatedLogReturns[3] += math.Log(1.0 + stepReturns[3])
 				}
 
 				for b := 0; b < batchSize; b++ {
-					results[sim+b] = math.Exp(logReturns[b]/float64(years)) - 1.0
+					results[sim+b] = math.Exp(accumulatedLogReturns[b]/float64(years)) - 1.0
 				}
 			}
 
@@ -93,7 +107,7 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 					for t := 0; t < numTrackers; t++ {
 						stepReturn += (history[t][weekIndex] - terPerStep[t]) * weights[t]
 					}
-					totalLogReturn += stepReturn
+					totalLogReturn += math.Log(1.0 + stepReturn)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}
@@ -139,20 +153,15 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 			batchEnd := startIndex + ((endIndex-startIndex)/batchSize)*batchSize
 
 			for sim := startIndex; sim < batchEnd; sim += batchSize {
-				var logReturns [batchSize]float64
+				var accumulatedLogReturns [batchSize]float64
 				for step := 0; step < totalSteps; step++ {
-					idx0 := r.IntN(poolSize)
-					idx1 := r.IntN(poolSize)
-					idx2 := r.IntN(poolSize)
-					idx3 := r.IntN(poolSize)
-
-					logReturns[0] += history[idx0] - terPerStep
-					logReturns[1] += history[idx1] - terPerStep
-					logReturns[2] += history[idx2] - terPerStep
-					logReturns[3] += history[idx3] - terPerStep
+					accumulatedLogReturns[0] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[1] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[2] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
+					accumulatedLogReturns[3] += math.Log(1.0 + history[r.IntN(poolSize)] - terPerStep)
 				}
 				for b := 0; b < batchSize; b++ {
-					results[sim+b] = math.Exp(logReturns[b]/float64(years)) - 1.0
+					results[sim+b] = math.Exp(accumulatedLogReturns[b]/float64(years)) - 1.0
 				}
 			}
 
@@ -160,7 +169,7 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 				totalLogReturn := 0.0
 				for step := 0; step < totalSteps; step++ {
 					weekIndex := r.IntN(poolSize)
-					totalLogReturn += history[weekIndex] - terPerStep
+					totalLogReturn += math.Log(1.0 + history[weekIndex] - terPerStep)
 				}
 				results[sim] = math.Exp(totalLogReturn/float64(years)) - 1.0
 			}

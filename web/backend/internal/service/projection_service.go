@@ -156,6 +156,8 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 }
 
 type etfLot struct {
+	id           string
+	createdAt    time.Time
 	principal    float64
 	currentValue float64
 }
@@ -189,6 +191,44 @@ type assetState struct {
 	trackerYields        map[string]float64
 	activeFlows          map[string]float64
 	activeSubAssetFlows  map[string]float64
+
+	lotCounter      *int
+	penaltyAnalysis *[]domain.PenaltyEvent
+	currentMonth    time.Time
+}
+
+func (as *assetState) addLot(amount float64) {
+	if amount <= 0 {
+		return
+	}
+
+	lotID := "INITIAL"
+	if as.asset.ActiveVersion.Type == domain.AssetTypeStatic {
+		lotID = "STATIC"
+	} else if as.lotCounter != nil {
+		*as.lotCounter++
+		lotID = fmt.Sprintf("LOT-%06d", *as.lotCounter)
+	}
+
+	if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
+		as.lots = append(as.lots, etfLot{
+			id:           lotID,
+			createdAt:    as.currentMonth,
+			principal:    amount,
+			currentValue: amount,
+		})
+	}
+
+	if as.penaltyAnalysis != nil {
+		*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+			Type:         "BUY",
+			Date:         as.currentMonth,
+			AssetName:    as.asset.Name,
+			LotID:        lotID,
+			LotCreatedAt: as.currentMonth,
+			Amount:       amount,
+		})
+	}
 }
 
 func depositToTrackers(as *assetState, amount float64) {
@@ -373,7 +413,7 @@ func depositToSubAsset(as *assetState, subID string, amount float64) {
 	}
 	as.currentBalance += amount
 	if as.asset.ActiveVersion.Type == domain.AssetTypeETF && amount > 0 {
-		as.lots = append(as.lots, etfLot{principal: amount, currentValue: amount})
+		as.addLot(amount)
 		depositToTrackers(as, amount)
 	}
 }
@@ -440,15 +480,17 @@ func depositAsset(as *assetState, amount float64, loanByID map[string]*loanState
 		deposited := amount - remaining
 		as.currentBalance += deposited
 		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && deposited > 0 {
-			as.lots = append(as.lots, etfLot{principal: deposited, currentValue: deposited})
+			as.addLot(deposited)
 			depositToTrackers(as, deposited)
 		}
 		return deposited
 	} else {
 		as.currentBalance += amount
-		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && amount > 0 {
-			as.lots = append(as.lots, etfLot{principal: amount, currentValue: amount})
-			depositToTrackers(as, amount)
+		if amount > 0 {
+			as.addLot(amount)
+			if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
+				depositToTrackers(as, amount)
+			}
 		}
 		return amount
 	}
@@ -500,15 +542,17 @@ func depositAssetProportionally(as *assetState, amount float64, loanByID map[str
 		deposited := amount - remaining
 		as.currentBalance += deposited
 		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && deposited > 0 {
-			as.lots = append(as.lots, etfLot{principal: deposited, currentValue: deposited})
+			as.addLot(deposited)
 			depositToTrackers(as, deposited)
 		}
 		return deposited
 	} else {
 		as.currentBalance += amount
-		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && amount > 0 {
-			as.lots = append(as.lots, etfLot{principal: amount, currentValue: amount})
-			depositToTrackers(as, amount)
+		if amount > 0 {
+			as.addLot(amount)
+			if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
+				depositToTrackers(as, amount)
+			}
 		}
 		return amount
 	}
@@ -611,6 +655,22 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 		}
 
 		as.currentBalance -= grossSold
+
+		if as.penaltyAnalysis != nil {
+			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+				Type:          "SELL",
+				Date:          as.currentMonth,
+				AssetName:     as.asset.Name,
+				LotID:             "STATIC",
+				LotCreatedAt:      as.currentMonth,
+				Amount:            grossSold,
+				PrincipalSold:     grossSold,
+				PenaltyPaid:       grossSold - netFulfilled,
+				MonthsHeld:        0,
+				InterestGenerated: 0,
+			})
+		}
+
 		return grossSold, netFulfilled
 	}
 
@@ -646,8 +706,26 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			targetSA.currentBalance -= grossNeeded
 
 			fractionSold := grossNeeded / lot.currentValue
+			principalSold := lot.principal * fractionSold
+			penaltyPaid := grossNeeded - remainingNet
+
+			if as.penaltyAnalysis != nil {
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:              "SELL",
+					Date:              as.currentMonth,
+					AssetName:         as.asset.Name,
+					LotID:             lot.id,
+					LotCreatedAt:      lot.createdAt,
+					Amount:            grossNeeded,
+					PrincipalSold:     principalSold,
+					PenaltyPaid:       penaltyPaid,
+					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated: grossNeeded - principalSold,
+				})
+			}
+
 			lot.currentValue -= grossNeeded
-			lot.principal -= lot.principal * fractionSold
+			lot.principal -= principalSold
 
 			remainingNet = 0
 			newLots = append(newLots, lot)
@@ -657,6 +735,22 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			netFulfilled += netFromLot
 			remainingNet -= netFromLot
 			targetSA.currentBalance -= maxGrossFromLot
+
+			penaltyPaid := maxGrossFromLot - netFromLot
+			if as.penaltyAnalysis != nil {
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:              "SELL",
+					Date:              as.currentMonth,
+					AssetName:         as.asset.Name,
+					LotID:             lot.id,
+					LotCreatedAt:      lot.createdAt,
+					Amount:            maxGrossFromLot,
+					PrincipalSold:     lot.principal,
+					PenaltyPaid:       penaltyPaid,
+					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated: maxGrossFromLot - lot.principal,
+				})
+			}
 
 			fractionSold := maxGrossFromLot / lot.currentValue
 			lot.currentValue -= maxGrossFromLot
@@ -736,6 +830,22 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 				}
 			}
 		}
+
+		if as.penaltyAnalysis != nil {
+			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+				Type:          "SELL",
+				Date:          as.currentMonth,
+				AssetName:     as.asset.Name,
+				LotID:             "STATIC",
+				LotCreatedAt:      as.currentMonth,
+				Amount:            grossSold,
+				PrincipalSold:     grossSold,
+				PenaltyPaid:       grossSold - netFulfilled,
+				MonthsHeld:        0,
+				InterestGenerated: 0,
+			})
+		}
+
 		return grossSold, netFulfilled
 	}
 
@@ -764,8 +874,26 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			netFulfilled += remainingNet
 
 			fractionSold := grossNeeded / lot.currentValue
+			principalSold := lot.principal * fractionSold
+			penaltyPaid := grossNeeded - remainingNet
+
+			if as.penaltyAnalysis != nil {
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:              "SELL",
+					Date:              as.currentMonth,
+					AssetName:         as.asset.Name,
+					LotID:             lot.id,
+					LotCreatedAt:      lot.createdAt,
+					Amount:            grossNeeded,
+					PrincipalSold:     principalSold,
+					PenaltyPaid:       penaltyPaid,
+					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated: grossNeeded - principalSold,
+				})
+			}
+
 			lot.currentValue -= grossNeeded
-			lot.principal -= lot.principal * fractionSold
+			lot.principal -= principalSold
 
 			remainingNet = 0
 			newLots = append(newLots, lot)
@@ -774,6 +902,22 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			netFromLot := lot.currentValue * (1.0 - (profitMargin * penalty))
 			netFulfilled += netFromLot
 			remainingNet -= netFromLot
+
+			penaltyPaid := lot.currentValue - netFromLot
+			if as.penaltyAnalysis != nil {
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:              "SELL",
+					Date:              as.currentMonth,
+					AssetName:         as.asset.Name,
+					LotID:             lot.id,
+					LotCreatedAt:      lot.createdAt,
+					Amount:            lot.currentValue,
+					PrincipalSold:     lot.principal,
+					PenaltyPaid:       penaltyPaid,
+					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated: lot.currentValue - lot.principal,
+				})
+			}
 		}
 	}
 	as.lots = newLots
@@ -854,6 +998,17 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 	triggeredMods := make(map[string]bool)
 	simulatedYields := make(map[string]float64)
+	lotCounter := 0
+	penaltyAnalysis := []domain.PenaltyEvent{}
+
+	now := time.Now().UTC()
+	if scenario.StartDate != nil {
+		scenarioStart := scenario.StartDate.UTC()
+		if scenarioStart.After(now) {
+			now = scenarioStart
+		}
+	}
+	startDate := projectionMonthForDate(now, monthStartDay)
 
 	// Setup file logging
 	logFile, err := os.OpenFile(fmt.Sprintf("logs/scenarios/%s.log", scenario.ID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
@@ -885,16 +1040,24 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			initialBalance += vaRunningBalances[vacctID]
 		}
 		state := &assetState{
-			asset:          a,
-			currentBalance: initialBalance,
+			asset:           a,
+			currentBalance:  initialBalance,
+			lotCounter:      &lotCounter,
+			penaltyAnalysis: &penaltyAnalysis,
+			currentMonth:    startDate,
 		}
 		if a.ActiveVersion.Type == domain.AssetTypeETF && initialBalance > 0 {
-			state.lots = append(state.lots, etfLot{principal: initialBalance, currentValue: initialBalance})
+			state.addLot(initialBalance)
 		}
 		if a.ActiveVersion.Type == domain.AssetTypeETF {
 			assetMCStart := time.Now()
 			for _, t := range a.ActiveVersion.ETFConfig {
-				returns, _ := s.marketData.GetHistoricalWeeklyReturns(t.Tracker)
+				fetchTicker := t.HistoricalTracker
+				if fetchTicker == "" {
+					fetchTicker = t.Tracker
+				}
+
+				returns, _ := s.marketData.GetHistoricalWeeklyReturns(fetchTicker, t.ConversionTracker)
 				if returns != nil {
 					state.etfHistory = append(state.etfHistory, returns)
 				}
@@ -921,7 +1084,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			var histories [][]float64
 			for _, returns := range state.etfHistory {
 				if lookbackYears > 0 && len(returns) > lookbackYears*52 {
-					histories = append(histories, returns[len(returns)-lookbackYears*52:])
+					histories = append(histories, returns[:lookbackYears*52])
 				} else {
 					histories = append(histories, returns)
 				}
@@ -1043,19 +1206,13 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		loanByID[l.ID] = state
 	}
 
-	now := time.Now().UTC()
-	if scenario.StartDate != nil {
-		scenarioStart := scenario.StartDate.UTC()
-		if scenarioStart.After(now) {
-			now = scenarioStart
-		}
-	}
-	startDate := projectionMonthForDate(now, monthStartDay)
-
 	// --- CATCH UP PHASE ---
 	// Calculate true balances by simulating from original StartDate up to startDate
 	log.Printf("[PROJECTION] Catching up historical data from entity start dates to %s", startDate.Format("01/2006"))
 	for curr := s.findEarliestStart(assets, loans, monthStartDay); curr.Before(startDate); curr = curr.AddDate(0, 1, 0) {
+		for _, as := range assetStates {
+			as.currentMonth = curr
+		}
 		// 1. Process Asset Interest/Returns
 		for _, as := range assetStates {
 			if as.isClosed {
@@ -1345,11 +1502,15 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
 			var newBal float64
 
+			isDistributing := v.InterestInterval == "Monthly"
+
 			if monthlyRate > 0 {
 				for i := range as.lots {
 					grossGrowth := as.lots[i].currentValue * monthlyRate
-					netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
-					as.lots[i].currentValue += netGrowth
+					if !isDistributing {
+						netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
+						as.lots[i].currentValue += netGrowth
+					}
 					newBal += as.lots[i].currentValue
 				}
 			} else {
@@ -1363,14 +1524,39 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			as.currentBalance = newBal
 			netGrowth := newBal - oldBal
 
+			if isDistributing && monthlyRate > 0 {
+				totalGrossGrowth := 0.0
+				for i := range as.lots {
+					totalGrossGrowth += as.lots[i].currentValue * monthlyRate
+				}
+				interestPenaltyPaid := totalGrossGrowth * interestPenaltyRate
+
+				if as.penaltyAnalysis != nil {
+					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+						Type:              "SELL",
+						Date:              as.currentMonth,
+						AssetName:         as.asset.Name,
+						LotID:             "DIVIDEND",
+						LotCreatedAt:      as.currentMonth,
+						Amount:            totalGrossGrowth,
+						PrincipalSold:     0,
+						PenaltyPaid:       interestPenaltyPaid,
+						MonthsHeld:        0,
+						InterestGenerated: totalGrossGrowth,
+					})
+				}
+			}
+
 			totalTrackersNew := 0.0
 			for tracker, yield := range as.trackerYields {
 				mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
 				bal := as.trackerBalances[tracker]
 				if mRate > 0 {
-					grossGrowth := bal * mRate
-					netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
-					as.trackerBalances[tracker] += netGrowthVal
+					if !isDistributing {
+						grossGrowth := bal * mRate
+						netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
+						as.trackerBalances[tracker] += netGrowthVal
+					}
 				} else {
 					as.trackerBalances[tracker] *= (1.0 + mRate)
 				}
@@ -1387,7 +1573,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 
-			if len(as.subAssets) > 0 && netGrowth != 0 {
+			if !isDistributing && len(as.subAssets) > 0 && netGrowth != 0 {
 				totalBal := 0.0
 				for _, sa := range as.subAssets {
 					if !sa.isClosed {
@@ -1478,6 +1664,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	currentBalance := 0.0
 	for i := 0; i < scenario.ProjectionMonths; i++ {
 		currentDate := startDate.AddDate(0, i, 0)
+		for _, as := range assetStates {
+			as.currentMonth = currentDate
+		}
 		periodStart, periodEnd := projectionPeriodBounds(currentDate, monthStartDay)
 		log.Printf("[PROJECTION] --- MONTH: %s ---", currentDate.Format("01/2006"))
 		month := domain.ProjectionMonth{
@@ -1945,13 +2134,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							month.Income += netPayout
 							availableFunds += netPayout
 							month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-								Name:    as.asset.Name + " (" + sa.name + " Payout)",
-								Amount:  netPayout,
-								Penalty: penaltyPaid,
+								Name:       as.asset.Name + " (" + sa.name + " Payout)",
+								Amount:     netPayout,
+								Penalty:    penaltyPaid,
+								AccountIDs: as.asset.AccountIDs,
 							})
-
-							month.Assets -= netPayout
-							month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Payout)", -netPayout, 0, penaltyPaid))
 						}
 						sa.isClosed = true
 					}
@@ -2025,13 +2212,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								month.Income += netPayout
 								availableFunds += netPayout
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-									Name:    as.asset.Name + " (" + sa.name + " Payout)",
-									Amount:  netPayout,
-									Penalty: penaltyPaid,
+									Name:       as.asset.Name + " (" + sa.name + " Payout)",
+									Amount:     netPayout,
+									Penalty:    penaltyPaid,
+									AccountIDs: as.asset.AccountIDs,
 								})
-
-								month.Assets -= netPayout
-								month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Payout)", -netPayout, 0, penaltyPaid))
 							}
 							sa.isClosed = true
 						}
@@ -2092,13 +2277,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							month.Income += netPayout
 							availableFunds += netPayout
 							month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-								Name:    as.asset.Name + " (Payout)",
-								Amount:  netPayout,
-								Penalty: penaltyPaid,
+								Name:       as.asset.Name + " (Payout)",
+								Amount:     netPayout,
+								Penalty:    penaltyPaid,
+								AccountIDs: as.asset.AccountIDs,
 							})
-
-							month.Assets -= netPayout
-							month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Payout)", -netPayout, 0, penaltyPaid))
 						}
 					}
 					as.isClosed = true
@@ -2258,13 +2441,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								month.Income += netPayout
 								availableFunds += netPayout
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-									Name:    as.asset.Name + " (" + sa.name + " Orphaned Dump Payout)",
-									Amount:  netPayout,
-									Penalty: penaltyPaid,
+									Name:       as.asset.Name + " (" + sa.name + " Orphaned Dump Payout)",
+									Amount:     netPayout,
+									Penalty:    penaltyPaid,
+									AccountIDs: as.asset.AccountIDs,
 								})
-
-								month.Assets -= netPayout
-								month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Orphaned Payout)", -netPayout, 0, penaltyPaid))
 							}
 							sa.isClosed = true
 						}
@@ -2286,13 +2467,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						month.Income += netPayout
 						availableFunds += netPayout
 						month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-							Name:    as.asset.Name + " (Orphaned Dump Payout)",
-							Amount:  netPayout,
-							Penalty: penaltyPaid,
+							Name:       as.asset.Name + " (Orphaned Dump Payout)",
+							Amount:     netPayout,
+							Penalty:    penaltyPaid,
+							AccountIDs: as.asset.AccountIDs,
 						})
-
-						month.Assets -= netPayout
-						month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Orphaned Payout)", -netPayout, 0, penaltyPaid))
 					}
 					as.isClosed = true
 				}
@@ -2554,13 +2733,17 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			var newBal float64
 			var totalGrossGrowth float64
 
+			isDistributing := v.InterestInterval == "Monthly"
+
 			if monthlyRate > 0 {
 				for i := range as.lots {
 					grossGrowth := as.lots[i].currentValue * monthlyRate
 					totalGrossGrowth += grossGrowth
 
-					netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
-					as.lots[i].currentValue += netGrowth
+					if !isDistributing {
+						netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
+						as.lots[i].currentValue += netGrowth
+					}
 					newBal += as.lots[i].currentValue
 				}
 				interestEarned = totalGrossGrowth
@@ -2578,14 +2761,50 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			as.currentBalance = newBal
 			netGrowth := newBal - oldBal
 
+			if isDistributing && interestEarned > 0 {
+				payout := interestEarned - interestPenaltyPaid
+				month.Income += payout
+				availableFunds += payout
+				month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
+					Name:       as.asset.Name + " (Dividend)",
+					Amount:     payout,
+					AccountIDs: as.asset.AccountIDs,
+				})
+
+				if as.penaltyAnalysis != nil {
+					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+						Type:          "SELL",
+						Date:          as.currentMonth,
+						AssetName:     as.asset.Name,
+						LotID:             "DIVIDEND",
+						LotCreatedAt:      as.currentMonth,
+						Amount:            totalGrossGrowth,
+						PrincipalSold:     0, // It's pure profit/growth
+						PenaltyPaid:       interestPenaltyPaid,
+						MonthsHeld:        0,
+						InterestGenerated: totalGrossGrowth,
+						})
+
+				}
+
+				// Reset netGrowth to 0 so it doesn't propagate to sub-assets
+				netGrowth = 0
+
+				// Ensure interestEarned/PenaltyPaid are NOT processed again at the end of loop
+				interestEarned = 0
+				interestPenaltyPaid = 0
+			}
+
 			totalTrackersNew := 0.0
 			for tracker, yield := range as.trackerYields {
 				mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
 				bal := as.trackerBalances[tracker]
 				if mRate > 0 {
-					grossGrowth := bal * mRate
-					netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
-					as.trackerBalances[tracker] += netGrowthVal
+					if !isDistributing {
+						grossGrowth := bal * mRate
+						netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
+						as.trackerBalances[tracker] += netGrowthVal
+					}
 				} else {
 					as.trackerBalances[tracker] *= (1.0 + mRate)
 				}
@@ -2602,7 +2821,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 
-			if len(as.subAssets) > 0 && netGrowth != 0 {
+			if !isDistributing && len(as.subAssets) > 0 && netGrowth != 0 {
 				totalBal := 0.0
 				for _, sa := range as.subAssets {
 					if !sa.isClosed {
@@ -3080,6 +3299,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	result.SimulatedYields = simulatedYields
 
 	result.TotalRemainder = currentBalance
+	result.PenaltyAnalysis = penaltyAnalysis
 	return result, nil
 }
 
@@ -3394,4 +3614,10 @@ func (s *ProjectionService) isDateActive(start time.Time, end *time.Time, curren
 		}
 	}
 	return true
+}
+
+func diffMonths(start, end time.Time) int {
+	y1, m1, _ := start.Date()
+	y2, m2, _ := end.Date()
+	return int(y2-y1)*12 + int(m2-m1)
 }
