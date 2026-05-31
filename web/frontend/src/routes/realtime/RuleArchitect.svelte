@@ -557,6 +557,23 @@
             children: activeBuilderRule.children,
         };
 
+        const mapRuleToSchema = (r: any): any => {
+            return {
+                id: r.id || "",
+                parentId: r.parentId || "",
+                integrationId: r.integrationId || "",
+                targetPoolId: r.targetPoolId || "",
+                operator: r.operator || "NONE",
+                field: r.field || "RECEIVER",
+                regex: (r.regex || "").trim(),
+                amountOperator: r.amountOperator || ">",
+                amountValue: r.field === "AMOUNT" ? Number(r.amountValue || 0) : 0,
+                priority: Number(r.priority !== undefined ? r.priority : (payload.priority || 0)),
+                negate: !!r.negate,
+                children: (r.children || []).map((c: any) => mapRuleToSchema(c)),
+            };
+        };
+
         try {
             const [rule, err] = await wsCall(
                 "rules::save",
@@ -573,20 +590,7 @@
                     amountValue: payload.amountValue,
                     priority: payload.priority,
                     negate: payload.negate,
-                    children: payload.children.map((c: any) => ({
-                        id: c.id || "",
-                        parentId: c.parentId || "",
-                        integrationId: c.integrationId || "",
-                        targetPoolId: c.targetPoolId || "",
-                        operator: c.operator,
-                        field: c.field,
-                        regex: c.regex,
-                        amountOperator: c.amountOperator,
-                        amountValue: c.amountValue,
-                        priority: c.priority,
-                        negate: c.negate,
-                        children: [],
-                    })),
+                    children: (payload.children || []).map((c: any) => mapRuleToSchema(c)),
                 },
                 [TransactionRuleSchema],
             ).one();

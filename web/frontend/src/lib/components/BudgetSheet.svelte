@@ -28,6 +28,8 @@
         allocatedExpenses?: number;
         assetWorth?: number;
         loanDebt?: number;
+        outstandingInflow?: number;
+        outstandingOutflow?: number;
     }
 
     let {
@@ -76,8 +78,104 @@
     }
 
     const normalizedVirtualAccounts = $derived.by(() => {
+        // Find all active virtual account IDs (excluding "unassigned")
+        const activeVAIDs = new Set<string>();
+        for (const va of virtualAccounts || []) {
+            const vaID = va.id || va.account_id || va.accountId || "";
+            if (vaID && vaID !== "unassigned") {
+                activeVAIDs.add(vaID);
+            }
+        }
+
+        // Helper to check assignment factor
+        const getAssignmentFactor = (accountIds: string[] | undefined, vaID: string) => {
+            if (vaID === "unassigned") {
+                if (!accountIds || accountIds.length === 0) {
+                    return 1.0;
+                }
+                const hasAnyActive = accountIds.some(id => activeVAIDs.has(id));
+                return hasAnyActive ? 0.0 : 1.0;
+            }
+
+            if (!accountIds || accountIds.length === 0) {
+                return 0.0;
+            }
+            let hasVA = false;
+            let validCount = 0;
+            for (const id of accountIds) {
+                if (activeVAIDs.has(id)) {
+                    validCount++;
+                    if (id === vaID) {
+                        hasVA = true;
+                    }
+                }
+            }
+            if (hasVA && validCount > 0) {
+                return 1.0 / validCount;
+            }
+            return 0.0;
+        };
+
         return (virtualAccounts || []).map((va: any, index: number) => {
             const id = va.id || va.account_id || va.accountId || "";
+            
+            // Calculate outstanding in and outflows
+            let outstandingInflow = 0;
+            let outstandingOutflow = 0;
+
+            const isOutstanding = (entry: any) => {
+                return entry.realtimeBalance === undefined || entry.realtimeBalance === null || entry.realtimeBalance === 0;
+            };
+
+            for (const entry of breakdown.incomes || []) {
+                if (isOutstanding(entry)) {
+                    const factor = getAssignmentFactor(entry.accountIds, id);
+                    if (factor > 0) {
+                        outstandingInflow += entry.amount * factor;
+                    }
+                }
+            }
+
+            for (const entry of breakdown.bills || []) {
+                if (isOutstanding(entry)) {
+                    const factor = getAssignmentFactor(entry.accountIds, id);
+                    if (factor > 0) {
+                        outstandingOutflow += entry.amount * factor;
+                    }
+                }
+            }
+
+            for (const entry of breakdown.expenses || []) {
+                if (isOutstanding(entry)) {
+                    const factor = getAssignmentFactor(entry.accountIds, id);
+                    if (factor > 0) {
+                        outstandingOutflow += entry.amount * factor;
+                    }
+                }
+            }
+
+            for (const entry of breakdown.assets || []) {
+                if (isOutstanding(entry)) {
+                    const factor = getAssignmentFactor(entry.accountIds, id);
+                    if (factor > 0) {
+                        if (entry.amount >= 0) {
+                            outstandingOutflow += entry.amount * factor;
+                        } else {
+                            outstandingInflow += Math.abs(entry.amount) * factor;
+                        }
+                    }
+                }
+            }
+
+            for (const entry of breakdown.loans || []) {
+                if (isOutstanding(entry)) {
+                    const factor = getAssignmentFactor(entry.accountIds, id);
+                    if (factor > 0) {
+                        outstandingOutflow += entry.amount * factor;
+                    }
+                }
+            }
+
             return {
                 id,
                 name: va.name || "",
@@ -87,6 +185,8 @@
                 outflow: va.outflow !== undefined ? va.outflow : (va.allocatedExpenses !== undefined ? va.allocatedExpenses : 0),
                 asset_worth: va.asset_worth !== undefined ? va.asset_worth : (va.assetWorth !== undefined ? va.assetWorth : 0),
                 loan_debt: va.loan_debt !== undefined ? va.loan_debt : (va.loanDebt !== undefined ? va.loanDebt : 0),
+                outstandingInflow,
+                outstandingOutflow,
             };
         });
     });
@@ -124,6 +224,7 @@
         realSplit?: Record<string, number>;
         trackerFlows?: Record<string, number>;
         subAssetFlows?: Record<string, number>;
+        accountIds?: string[];
     }
 
     const groupedAssets = $derived.by(() => {
@@ -474,8 +575,14 @@
                                     >
                                     <span
                                         class="text-emerald-600 font-black tabular-nums"
-                                        >+€ {formatCurrency(va.inflow)}</span
                                     >
+                                        +€ {formatCurrency(va.inflow)}
+                                        {#if va.outstandingInflow > 0}
+                                            <span class="text-[10px] font-bold text-slate-400">
+                                                (+€ {formatCurrency(va.outstandingInflow)})
+                                            </span>
+                                        {/if}
+                                    </span>
                                 </div>
                                 <div class="flex flex-col text-right">
                                     <span
@@ -484,8 +591,14 @@
                                     >
                                     <span
                                         class="text-rose-500 font-black tabular-nums"
-                                        >-€ {formatCurrency(va.outflow)}</span
                                     >
+                                        -€ {formatCurrency(va.outflow)}
+                                        {#if va.outstandingOutflow > 0}
+                                            <span class="text-[10px] font-bold text-slate-400">
+                                                (-€ {formatCurrency(va.outstandingOutflow)})
+                                            </span>
+                                        {/if}
+                                    </span>
                                 </div>
                             </div>
                             {#if va.asset_worth > 0 || va.loan_debt > 0}

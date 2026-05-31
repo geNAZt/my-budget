@@ -1350,6 +1350,10 @@
     }
 </script>
 
+<svelte:head>
+    <title>Analytics &amp; Projection — BudgetScript</title>
+</svelte:head>
+
 <div class="space-y-12 pb-20">
     <header
         class="flex flex-col md:flex-row md:items-end justify-between gap-6"

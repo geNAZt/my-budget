@@ -168,7 +168,11 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 
 		// Fetch Account Details (Metadata)
 		if (!force && meta != nil && meta.MetadataCheckedAt != nil && now.Sub(*meta.MetadataCheckedAt) < 24*time.Hour) || (meta != nil && meta.IBAN != "") {
-			log.Printf("[SYNC][%s] [ENABLEBANKING] Skipping metadata check for account %s (checked %v ago)", correlationID, accID, now.Sub(*meta.MetadataCheckedAt))
+			if meta.MetadataCheckedAt != nil {
+				log.Printf("[SYNC][%s] [ENABLEBANKING] Skipping metadata check for account %s (checked %v ago)", correlationID, accID, now.Sub(*meta.MetadataCheckedAt))
+			} else {
+				log.Printf("[SYNC][%s] [ENABLEBANKING] Skipping metadata check for account %s (IBAN already present)", correlationID, accID)
+			}
 		} else {
 			details, err := p.enableBanking.GetAccountDetails(ctx, token, accID)
 			if handleRateLimit(err) {

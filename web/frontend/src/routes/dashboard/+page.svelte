@@ -22,7 +22,6 @@
         PerformanceMetricsSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
-
     let scenarios = $state<any[]>([]);
     let selectedScenarioId = $state<string | null>(null);
     let isLoading = $state(true);
@@ -153,6 +152,10 @@
 
     onMount(fetchScenarios);
 </script>
+
+<svelte:head>
+    <title>Dashboard — BudgetScript</title>
+</svelte:head>
 
 <div class="space-y-12">
     <!-- Header Section -->

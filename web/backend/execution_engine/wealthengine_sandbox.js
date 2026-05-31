@@ -1,14 +1,52 @@
-const { encode } = require("@msgpack/msgpack");
+const fs = require("fs");
+
+const pendingAsyncRequests = new Map(); // msg_id -> { resolve, reject }
+
+function callRpcAsync(correlationId, method, params) {
+  return new Promise((resolve, reject) => {
+    if (!correlationId) {
+      return reject(new Error("No active correlation ID for RPC execution context."));
+    }
+    const msg_id = Math.random().toString(36).substring(2);
+    const request = {
+      correlation_id: correlationId,
+      type: "RPC_REQUEST",
+      msg_id: msg_id,
+      method: method,
+      params: params
+    };
+    const requestBytes = Buffer.from(JSON.stringify(request), "utf8");
+    const lengthBytes = Buffer.alloc(4);
+    lengthBytes.writeUInt32BE(requestBytes.length, 0);
+    
+    // Register the promise
+    pendingAsyncRequests.set(msg_id, { resolve, reject });
+    
+    // Write request to stdout
+    process.stdout.write(Buffer.concat([lengthBytes, requestBytes]));
+  });
+}
+
+function resolveAsyncRpc(msg_id, success, result, error) {
+  const pending = pendingAsyncRequests.get(msg_id);
+  if (pending) {
+    pendingAsyncRequests.delete(msg_id);
+    if (success) {
+      pending.resolve(result);
+    } else {
+      pending.reject(new Error(error || "Asynchronous RPC call failed"));
+    }
+  }
+}
 
 class Income {
   constructor(data) {
     this.data = data || {};
   }
   plannedValue() {
-    if (this.data.active_version) {
-      return this.data.active_version.amount || 0;
-    }
-    return this.data.amount || 0;
+    if (this.data.active_version) return this.data.active_version.amount || 0;
+    if (this.data.ActiveVersion) return this.data.ActiveVersion.Amount || 0;
+    return this.data.amount || this.data.Amount || 0;
   }
 }
 
@@ -20,6 +58,12 @@ class BudgetSheet {
     const inc = (this.state.incomes || []).find((i) => i.name === name);
     return new Income(inc);
   }
+  asset(name) {
+    return (this.state.assets || []).find((a) => a.Name === name || a.name === name);
+  }
+  loan(name) {
+    return (this.state.loans || []).find((l) => l.Name === name || l.name === name);
+  }
 }
 
 class RealtimeAccount {
@@ -28,57 +72,26 @@ class RealtimeAccount {
     this.state = state || {};
   }
   balance() {
-    return this.data.balance || 0;
+    return this.data.amount || this.data.Amount || this.data.balance || this.data.Balance || 0;
   }
   async sync() {
-    const integrationId = this.data.integration_id;
-    const token = this.state.execution_token;
-    const apiPort = this.state.api_port || "8080";
+    const integrationId = this.data.integration_id || this.data.IntegrationID;
     if (!integrationId) {
       throw new Error("No integration associated with this account.");
     }
-    if (!token) {
-      console.log(
-        `[Offline Mode] Simulated sync for integration ${integrationId}`,
-      );
-      return;
+    
+    // Perform asynchronous RPC call to Go backend
+    const res = await callRpcAsync(this.state.correlation_id, "sync", { integration_id: integrationId });
+    if (res && res.realtime_accounts) {
+      // Update the realtime_accounts cache in our state!
+      this.state.realtime_accounts = res.realtime_accounts;
+      // Also update our own data balance!
+      const myKey = this.data.id || this.data.alias || this.data.name;
+      if (myKey && res.realtime_accounts[myKey]) {
+        this.data = res.realtime_accounts[myKey];
+      }
     }
-
-    const http = require("http");
-    return new Promise((resolve, reject) => {
-      const reqData = encode({ integration_id: integrationId, token: token });
-      const req = http.request(
-        {
-          hostname: "localhost",
-          port: parseInt(apiPort),
-          path: "/api/internal/sync",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/msgpack",
-            "Content-Length": reqData.length,
-          },
-        },
-        (res) => {
-          let chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on("end", () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve();
-            } else {
-              const body = Buffer.concat(chunks).toString();
-              reject(
-                new Error(
-                  `Sync failed with status code ${res.statusCode}: ${body}`,
-                ),
-              );
-            }
-          });
-        },
-      );
-      req.on("error", (err) => reject(err));
-      req.write(reqData);
-      req.end();
-    });
+    return res;
   }
 }
 
@@ -95,12 +108,7 @@ class Realtime {
 
 class WealthEngine {
   constructor(state) {
-    this.state = state || {
-      incomes: [],
-      assets: [],
-      loans: [],
-      realtime_accounts: {},
-    };
+    this.state = state || {};
   }
   currentBudgetSheet() {
     return new BudgetSheet(this.state);
@@ -110,4 +118,4 @@ class WealthEngine {
   }
 }
 
-module.exports = { WealthEngine };
+module.exports = { WealthEngine, callRpcAsync, resolveAsyncRpc };

@@ -1018,6 +1018,10 @@
     });
 </script>
 
+<svelte:head>
+    <title>Realtime Tracker — BudgetScript</title>
+</svelte:head>
+
 <div class="space-y-12">
     <!-- Fluid Premium Header -->
     <header

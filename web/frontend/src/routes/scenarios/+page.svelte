@@ -392,6 +392,10 @@
     });
 </script>
 
+<svelte:head>
+    <title>Scenarios &amp; Playbooks — BudgetScript</title>
+</svelte:head>
+
 <div class="max-w-[1440px] mx-auto p-4 md:p-8 space-y-8 min-h-screen">
     <!-- Header -->
     <div

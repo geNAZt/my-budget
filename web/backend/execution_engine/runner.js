@@ -6,7 +6,7 @@ const vm = require("vm");
 const executionEngineDir = __dirname;
 
 // In-memory persistent cache for compiled VM scripts
-const compiledPlans = new Map(); // maps plan_id -> { script, code }
+const compiledPlans = new Map(); // maps plan_id -> { script, code_hash }
 
 // Stdin buffer chunk accumulator
 let buffer = Buffer.alloc(0);
@@ -50,31 +50,62 @@ async function handleFrame(frameBytes) {
   try {
     const request = JSON.parse(frameBytes.toString("utf8"));
     correlation_id = request.correlation_id;
-    const plan_id = request.plan_id;
-    const code = request.code;
-    const state = request.state || { incomes: [], assets: [], loans: [] };
-    const secrets = request.secrets || {};
-    const trigger = request.trigger || { type: "CRON", data: {} };
 
-    if (!code) {
-      sendErrorResponse(
-        correlation_id,
-        "[Runner Error] No code provided for execution",
-      );
+    // Handle RPC response from Go backend for asynchronous calls
+    if (request.type === "RPC_RESPONSE" && request.msg_id) {
+      const { resolveAsyncRpc } = require("./wealthengine_sandbox");
+      resolveAsyncRpc(request.msg_id, request.success, request.result, request.error);
       return;
     }
 
-    // Ensure esbuild and dependency files are fully available
-    ensureDependenciesInstalled();
+    // Handle check_compiled RPC request from Go backend
+    if (request.type === "RPC_REQUEST" && request.method === "check_compiled") {
+      const { plan_id, code_hash } = request.params || {};
+      const cached = plan_id ? compiledPlans.get(plan_id) : null;
+      const compiled = !!(cached && cached.code_hash === code_hash);
+      
+      const responseBytes = Buffer.from(JSON.stringify({
+        correlation_id: request.correlation_id,
+        type: "RPC_RESPONSE",
+        msg_id: request.msg_id,
+        success: true,
+        result: { compiled }
+      }), "utf8");
+      writeFrame(responseBytes);
+      return;
+    }
 
-    const esbuild = require("esbuild");
+    if (request.type !== "EXECUTE" && request.type !== undefined) {
+      // Ignore other frames or unknown messages
+      return;
+    }
+
+    const plan_id = request.plan_id;
+    const code = request.code;
+    const code_hash = request.code_hash;
+    const state = request.state || {};
+    const secrets = request.secrets || {};
+    const trigger = request.trigger || { type: "CRON", data: {} };
 
     // Check persistent in-memory compilation cache
     let cached = plan_id ? compiledPlans.get(plan_id) : null;
     let script;
 
     // Compile only if we don't have a cache or if code has changed
-    if (!cached || cached.code !== code) {
+    if (!cached || cached.code_hash !== code_hash) {
+      if (!code) {
+        sendErrorResponse(
+          correlation_id,
+          `[Runner Error] Script execution failed: No pre-compiled script cached for plan ${plan_id} and no code provided.`,
+        );
+        return;
+      }
+
+      // Ensure esbuild and dependency files are fully available
+      ensureDependenciesInstalled();
+
+      const esbuild = require("esbuild");
+
       // A. Dynamically install missing packages inside execution_engine directory
       const depRegex =
         /\/\*\*\s*depend\s+on\s+([a-zA-Z0-9_\-]+):([0-9\.]+)\s*\*\*\//g;
@@ -155,7 +186,7 @@ async function handleFrame(frameBytes) {
           filename: `plan_${plan_id || "temp"}.ts`,
         });
         if (plan_id) {
-          compiledPlans.set(plan_id, { script, code });
+          compiledPlans.set(plan_id, { script, code_hash });
         }
       } catch (err) {
         sendErrorResponse(
@@ -182,13 +213,23 @@ async function handleFrame(frameBytes) {
         stdoutLogs.push("[INFO] " + args.map((a) => String(a)).join(" ")),
     };
 
+    const executionContextState = {
+      correlation_id,
+      execution_token: state.execution_token,
+      api_port: state.api_port || "8080",
+      incomes: state.incomes || [],
+      assets: state.assets || [],
+      loans: state.loans || [],
+      realtime_accounts: state.realtime_accounts || {}
+    };
+
     const sandboxRequire = (moduleName) => {
       if (moduleName === "wealthengine") {
         const { WealthEngine } = require("./wealthengine_sandbox");
         return {
           WealthEngine: class extends WealthEngine {
             constructor() {
-              super(state);
+              super(executionContextState);
             }
           },
         };
@@ -236,7 +277,6 @@ async function handleFrame(frameBytes) {
     }
 
     // Return multiplexed response frame
-    // Response format: [correlation_id, success, stdout, stderr, exit_code, not_cached]
     const responseBytes = Buffer.from(JSON.stringify({
       correlation_id,
       success,
@@ -271,7 +311,6 @@ function sendErrorResponse(correlation_id, stderrMsg) {
 function writeFrame(responseBytes) {
   const lengthBytes = Buffer.alloc(4);
   lengthBytes.writeUInt32BE(responseBytes.length, 0);
-  // Write thread-safely by joining Buffer allocations in process.stdout
   process.stdout.write(Buffer.concat([lengthBytes, responseBytes]));
 }
 

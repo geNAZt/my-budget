@@ -294,6 +294,10 @@ console.log("Current budget sheet loaded:", budget);
     ];
 </script>
 
+<svelte:head>
+    <title>Automations &amp; Workflows — BudgetScript</title>
+</svelte:head>
+
 <div class="max-w-[1440px] mx-auto p-4 md:p-8 space-y-8 min-h-screen">
     <!-- Header Hero Section -->
     <div

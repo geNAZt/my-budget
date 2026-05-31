@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,11 +26,23 @@ import (
 )
 
 type StdioResponse struct {
-	CorrelationID string `json:"correlation_id"`
-	Success       bool   `json:"success"`
-	Stdout        string `json:"stdout"`
-	Stderr        string `json:"stderr"`
-	ExitCode      int    `json:"exit_code"`
+	CorrelationID string          `json:"correlation_id"`
+	Type          string          `json:"type,omitempty"`
+	MsgID         string          `json:"msg_id,omitempty"`
+	Method        string          `json:"method,omitempty"`
+	Params        json.RawMessage `json:"params,omitempty"`
+	Success       bool            `json:"success"`
+	Stdout        string          `json:"stdout"`
+	Stderr        string          `json:"stderr"`
+	ExitCode      int             `json:"exit_code"`
+	Result        interface{}     `json:"result,omitempty"`
+	Error         string          `json:"error,omitempty"`
+}
+
+type ActiveExecutionContext struct {
+	UserID   string
+	Secrets  map[string]string
+	StateMap map[string]interface{}
 }
 
 type ExecutionService struct {
@@ -61,6 +74,9 @@ type ExecutionService struct {
 	syncService  *SyncService
 	activeRuns   map[string]string // maps execution token -> userID
 	activeRunsMu sync.RWMutex
+
+	activeContexts   map[string]*ActiveExecutionContext
+	activeContextsMu sync.RWMutex
 }
 
 func NewExecutionService(
@@ -85,6 +101,7 @@ func NewExecutionService(
 		compiledPlans:   make(map[string]string),
 		activeRuns:      make(map[string]string),
 		pendingRequests: make(map[string]chan *StdioResponse),
+		activeContexts:   make(map[string]*ActiveExecutionContext),
 	}
 
 	// Proactively fire the persistent subprocess and setup streams
@@ -277,16 +294,258 @@ func (s *ExecutionService) readLoop(readDone chan struct{}) {
 				continue
 			}
 
-			// Route binary response back to the blocked request thread matching correlationID
+			if resp.Type == "RPC_REQUEST" {
+				go s.handleRpcRequest(&resp)
+				continue
+			}
+
+			// Route response back to the blocked request thread matching correlationID or msg_id
 			s.pendingMu.Lock()
-			ch, exists := s.pendingRequests[resp.CorrelationID]
+			targetID := resp.MsgID
+			if targetID == "" {
+				targetID = resp.CorrelationID
+			}
+			ch, exists := s.pendingRequests[targetID]
 			if exists {
 				ch <- &resp
-				delete(s.pendingRequests, resp.CorrelationID)
+				delete(s.pendingRequests, targetID)
 			}
 			s.pendingMu.Unlock()
 		}
 	}
+}
+
+func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
+	s.activeContextsMu.RLock()
+	ctx, exists := s.activeContexts[req.CorrelationID]
+	s.activeContextsMu.RUnlock()
+
+	var result interface{}
+	var errStr string
+
+	if !exists {
+		errStr = "active run execution context not found"
+	} else {
+		switch req.Method {
+		case "sync":
+			var params struct {
+				IntegrationID string `json:"integration_id"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				if s.syncService != nil {
+					errSync := s.syncService.SyncIntegration(ctx.UserID, params.IntegrationID, true)
+					if errSync != nil {
+						errStr = fmt.Sprintf("sync failed: %v", errSync)
+					} else {
+						// Reload realtime accounts in ctx.StateMap
+						if s.integrationRepo != nil {
+							integrations, err := s.integrationRepo.List(ctx.UserID)
+							if err == nil {
+								realtimeAccounts := make(map[string]interface{})
+								for _, integration := range integrations {
+									decrypted, err := s.syncService.DecryptIntegrationConfig(ctx.UserID, &integration)
+									if err != nil {
+										continue
+									}
+
+									var config struct {
+										AccountIDs       []string                       `json:"account_ids"`
+										LegacyAccountIDs []string                       `json:"accounts"`
+										AccountsMetadata map[string]struct {
+											Alias             string     `json:"alias"`
+											Enabled           bool       `json:"enabled"`
+											IBAN              string     `json:"iban"`
+											BIC               string     `json:"bic"`
+											ReferenceCodes    string     `json:"reference_codes"`
+											Tags              string     `json:"tags"`
+											BackoffUntil      *time.Time `json:"backoff_until"`
+											LastSyncedAt      *time.Time `json:"last_synced_at"`
+											MetadataCheckedAt *time.Time `json:"metadata_checked_at"`
+											Balance           float64    `json:"balance"`
+										} `json:"accounts_metadata"`
+									}
+
+									if err := json.Unmarshal(decrypted, &config); err == nil {
+										accIDs := config.AccountIDs
+										if len(accIDs) == 0 {
+											accIDs = config.LegacyAccountIDs
+										}
+										for _, accID := range accIDs {
+											meta, ok := config.AccountsMetadata[accID]
+											if !ok {
+												continue
+											}
+											accMap := make(map[string]interface{})
+											accMap["id"] = accID
+											if meta.Alias != "" {
+												accMap["name"] = meta.Alias
+											} else {
+												accMap["name"] = accID
+											}
+											accMap["alias"] = meta.Alias
+											accMap["currency"] = ""
+											accMap["integration_name"] = integration.Name
+											accMap["service_type"] = integration.ServiceType
+											accMap["amount"] = meta.Balance
+											accMap["iban"] = meta.IBAN
+											accMap["integration_id"] = integration.ID
+
+											realtimeAccounts[accID] = accMap
+											if meta.Alias != "" {
+												realtimeAccounts[meta.Alias] = accMap
+											}
+										}
+									}
+								}
+								ctx.StateMap["realtime_accounts"] = realtimeAccounts
+							}
+						}
+						result = map[string]bool{"synced": true}
+					}
+				} else {
+					errStr = "sync service not initialized in backend"
+				}
+			} else {
+				errStr = "invalid params for sync"
+			}
+
+		case "get_secret":
+			var params struct {
+				Key string `json:"key"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				if val, ok := ctx.Secrets[params.Key]; ok {
+					result = map[string]string{"value": val}
+				} else {
+					errStr = fmt.Sprintf("secret key '%s' not found", params.Key)
+				}
+			} else {
+				errStr = "invalid params for get_secret"
+			}
+
+		case "get_realtime_account":
+			var params struct {
+				Key string `json:"key"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				if realtimeAccounts, ok := ctx.StateMap["realtime_accounts"].(map[string]interface{}); ok {
+					if acc, ok := realtimeAccounts[params.Key]; ok {
+						result = acc
+					} else {
+						errStr = fmt.Sprintf("realtime account '%s' not found", params.Key)
+					}
+				} else {
+					errStr = "realtime accounts not initialized"
+				}
+			} else {
+				errStr = "invalid params for get_realtime_account"
+			}
+
+		case "get_income":
+			var params struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				var found interface{}
+				if incomes, ok := ctx.StateMap["incomes"].([]domain.Income); ok {
+					for _, inc := range incomes {
+						if inc.Name == params.Name {
+							found = inc
+							break
+						}
+					}
+				} else if incomes, ok := ctx.StateMap["incomes"].([]*domain.Income); ok {
+					for _, inc := range incomes {
+						if inc != nil && inc.Name == params.Name {
+							found = inc
+							break
+						}
+					}
+				}
+				if found != nil {
+					result = found
+				} else {
+					errStr = fmt.Sprintf("income '%s' not found", params.Name)
+				}
+			} else {
+				errStr = "invalid params for get_income"
+			}
+
+		case "get_asset":
+			var params struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				var found interface{}
+				if assets, ok := ctx.StateMap["assets"].([]domain.Asset); ok {
+					for _, asset := range assets {
+						if asset.Name == params.Name {
+							found = asset
+							break
+						}
+					}
+				} else if assets, ok := ctx.StateMap["assets"].([]*domain.Asset); ok {
+					for _, asset := range assets {
+						if asset != nil && asset.Name == params.Name {
+							found = asset
+							break
+						}
+					}
+				}
+				if found != nil {
+					result = found
+				} else {
+					errStr = fmt.Sprintf("asset '%s' not found", params.Name)
+				}
+			} else {
+				errStr = "invalid params for get_asset"
+			}
+
+		case "get_loan":
+			var params struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil {
+				var found interface{}
+				if loans, ok := ctx.StateMap["loans"].([]domain.Loan); ok {
+					for _, loan := range loans {
+						if loan.Name == params.Name {
+							found = loan
+							break
+						}
+					}
+				} else if loans, ok := ctx.StateMap["loans"].([]*domain.Loan); ok {
+					for _, loan := range loans {
+						if loan != nil && loan.Name == params.Name {
+							found = loan
+							break
+						}
+					}
+				}
+				if found != nil {
+					result = found
+				} else {
+					errStr = fmt.Sprintf("loan '%s' not found", params.Name)
+				}
+			} else {
+				errStr = "invalid params for get_loan"
+			}
+
+		default:
+			errStr = fmt.Sprintf("unknown RPC method '%s'", req.Method)
+		}
+	}
+
+	resp := StdioResponse{
+		CorrelationID: req.CorrelationID,
+		Type:          "RPC_RESPONSE",
+		MsgID:         req.MsgID,
+		Success:       errStr == "",
+		Result:        result,
+		Error:         errStr,
+	}
+	respBytes, _ := json.Marshal(resp)
+	_ = s.writeFrame(respBytes)
 }
 
 // Length-Prefixed Framing Stream IO Helpers
@@ -376,7 +635,7 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 		return fmt.Errorf("plan not found: %w", err)
 	}
 
-	// Compile income, asset, loan details into a single state payload
+	// 1. Compile state Map (to be stored in context and queried on-demand)
 	stateMap := make(map[string]interface{})
 	incomes, _ := s.incomeRepo.List(userID)
 	stateMap["incomes"] = incomes
@@ -475,23 +734,134 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 		}
 	}
 
-	hash := md5.Sum([]byte(plan.Code))
+	// Calculate SHA-256 code hash
+	hash := sha256.Sum256([]byte(plan.Code))
 	codeHash := hex.EncodeToString(hash[:])
 
-	// Construct multiplexed StdioRequest
-	type StdioRequest struct {
-		CorrelationID string      `json:"correlation_id"`
-		PlanID        string      `json:"plan_id"`
-		Code          string      `json:"code"`
-		State         interface{} `json:"state"`
-		Secrets       interface{} `json:"secrets"`
-		Trigger       interface{} `json:"trigger"`
+	correlationID := uuid.New().String()
+
+	// 2. Register Active Execution Context for this correlationID
+	s.activeContextsMu.Lock()
+	s.activeContexts[correlationID] = &ActiveExecutionContext{
+		UserID:   userID,
+		Secrets:  secretsMap,
+		StateMap: stateMap,
+	}
+	s.activeContextsMu.Unlock()
+
+	defer func() {
+		s.activeContextsMu.Lock()
+		delete(s.activeContexts, correlationID)
+		s.activeContextsMu.Unlock()
+	}()
+
+	// 3. Bidirectional RPC checking: Ask daemon if it already has this code compiled
+	isCompiled := false
+	checkMsgID := uuid.New().String()
+	checkReq := StdioResponse{
+		CorrelationID: correlationID,
+		Type:          "RPC_REQUEST",
+		MsgID:         checkMsgID,
+		Method:        "check_compiled",
+		Params:        json.RawMessage([]byte(fmt.Sprintf(`{"plan_id":"%s","code_hash":"%s"}`, plan.ID, codeHash))),
+	}
+	checkBytes, _ := json.Marshal(checkReq)
+
+	checkCh := make(chan *StdioResponse, 1)
+	s.pendingMu.Lock()
+	s.pendingRequests[checkMsgID] = checkCh
+	s.pendingMu.Unlock()
+
+	defer func() {
+		s.pendingMu.Lock()
+		delete(s.pendingRequests, checkMsgID)
+		s.pendingMu.Unlock()
+	}()
+
+	if err := s.writeFrame(checkBytes); err == nil {
+		select {
+		case checkResp := <-checkCh:
+			if checkResp.Success && checkResp.Result != nil {
+				if resMap, ok := checkResp.Result.(map[string]interface{}); ok {
+					if cmpVal, exists := resMap["compiled"].(bool); exists {
+						isCompiled = cmpVal
+					}
+				}
+			}
+		case <-time.After(3 * time.Second):
+			// Timeout checking compiled state - default to false
+		}
 	}
 
-	correlationID := uuid.New().String()
-	ch := make(chan *StdioResponse, 1)
+	// Filter referenced data to optimize transfer size and maintain synchronous execution safety
+	referencedIncomes := []domain.Income{}
+	incomeRegex := regexp.MustCompile(`income\(['"\x60]([^'"\x60]+)['"\x60]\)`)
+	for _, match := range incomeRegex.FindAllStringSubmatch(plan.Code, -1) {
+		name := match[1]
+		for _, inc := range incomes {
+			if inc.Name == name {
+				referencedIncomes = append(referencedIncomes, inc)
+				break
+			}
+		}
+	}
 
-	// Register pending channel
+	referencedAssets := []domain.Asset{}
+	assetRegex := regexp.MustCompile(`asset\(['"\x60]([^'"\x60]+)['"\x60]\)`)
+	for _, match := range assetRegex.FindAllStringSubmatch(plan.Code, -1) {
+		name := match[1]
+		for _, ast := range assets {
+			if ast.Name == name {
+				referencedAssets = append(referencedAssets, ast)
+				break
+			}
+		}
+	}
+
+	referencedLoans := []domain.Loan{}
+	loanRegex := regexp.MustCompile(`loan\(['"\x60]([^'"\x60]+)['"\x60]\)`)
+	for _, match := range loanRegex.FindAllStringSubmatch(plan.Code, -1) {
+		name := match[1]
+		for _, ln := range loans {
+			if ln.Name == name {
+				referencedLoans = append(referencedLoans, ln)
+				break
+			}
+		}
+	}
+
+	referencedRealtimeAccounts := make(map[string]interface{})
+	accountRegex := regexp.MustCompile(`account\(['"\x60]([^'"\x60]+)['"\x60]\)`)
+	for _, match := range accountRegex.FindAllStringSubmatch(plan.Code, -1) {
+		key := match[1]
+		if acc, ok := realtimeAccounts[key]; ok {
+			referencedRealtimeAccounts[key] = acc
+		}
+	}
+
+	// Find all secrets referenced in the code to preload ONLY the needed ones
+	referencedSecrets := make(map[string]string)
+	secretsRegex := regexp.MustCompile(`secrets\.([a-zA-Z0-9_]+)`)
+	for _, match := range secretsRegex.FindAllStringSubmatch(plan.Code, -1) {
+		secretKey := match[1]
+		if val, ok := secretsMap[secretKey]; ok {
+			referencedSecrets[secretKey] = val
+		}
+	}
+
+	// 4. Construct multiplexed StdioRequest for execution
+	type StdioRequest struct {
+		CorrelationID string            `json:"correlation_id"`
+		Type          string            `json:"type"`
+		PlanID        string            `json:"plan_id"`
+		Code          string            `json:"code,omitempty"`
+		CodeHash      string            `json:"code_hash"`
+		State         interface{}       `json:"state"`
+		Secrets       map[string]string `json:"secrets"`
+		Trigger       interface{}       `json:"trigger"`
+	}
+
+	ch := make(chan *StdioResponse, 1)
 	s.pendingMu.Lock()
 	s.pendingRequests[correlationID] = ch
 	s.pendingMu.Unlock()
@@ -502,12 +872,30 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 		s.pendingMu.Unlock()
 	}()
 
+	// Send code only if NOT already compiled on the daemon
+	codeToSend := ""
+	if !isCompiled {
+		codeToSend = plan.Code
+	}
+
+	// Send minimal preloaded state map (only referenced items, token, and api_base)
+	minimalStateMap := map[string]interface{}{
+		"api_base":          "http://localhost:8080",
+		"execution_token":   token,
+		"incomes":           referencedIncomes,
+		"assets":            referencedAssets,
+		"loans":             referencedLoans,
+		"realtime_accounts": referencedRealtimeAccounts,
+	}
+
 	req := StdioRequest{
 		CorrelationID: correlationID,
+		Type:          "EXECUTE",
 		PlanID:        plan.ID,
-		Code:          plan.Code,
-		State:         stateMap,
-		Secrets:       secretsMap,
+		Code:          codeToSend,
+		CodeHash:      codeHash,
+		State:         minimalStateMap,
+		Secrets:       referencedSecrets,
 		Trigger:       triggerPayload,
 	}
 

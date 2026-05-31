@@ -3,6 +3,10 @@
     import { fade, slide } from 'svelte/transition';
 </script>
 
+<svelte:head>
+	<title>BudgetScript — Projected Wealth &amp; Simulation Engine</title>
+</svelte:head>
+
 <div class="relative min-h-screen bg-slate-50 overflow-hidden">
 	<!-- Background Ambient Glow -->
 	<div class="absolute inset-0 z-0 pointer-events-none">
