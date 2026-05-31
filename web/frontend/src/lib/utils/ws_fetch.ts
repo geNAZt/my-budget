@@ -112,6 +112,21 @@ export function connect(): Promise<void> {
                 }
               }
 
+              // Robust fallback: brute-force try parsing against all exported schemas in api
+              if (!parseSuccessful) {
+                for (const key of Object.keys(api)) {
+                  if (key.endsWith("Schema") && key !== "ErrorSchema" && key !== "WSResponseSchema") {
+                    const schema = (api as any)[key];
+                    const parsed = tryProtoParse(schema, streamMsg.data);
+                    if (parsed !== null) {
+                      decodedPayload = parsed;
+                      parseSuccessful = true;
+                      break; // Successfully parsed with a known schema!
+                    }
+                  }
+                }
+              }
+
               // Check if server sent an error (only if we haven't matched an expected schema)
               if (!parseSuccessful) {
                 const parsed = tryProtoParse(api.ErrorSchema, streamMsg.data);

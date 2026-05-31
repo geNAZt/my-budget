@@ -201,7 +201,7 @@
                     },
                     linkToScenarios: currentBill.linkToScenarios || [],
                 },
-                [ErrorSchema],
+                [BillSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -239,7 +239,7 @@
                 "bills::delete",
                 GenericIDSchema,
                 { id: billToDelete },
-                [ErrorSchema],
+                [GenericIDSchema],
             ).one();
             if (err) throw err;
             await fetchData();
@@ -280,7 +280,7 @@
                         linkToScenarios: b.linkToScenarios || [],
                     })),
                 },
-                [ErrorSchema],
+                [BillListSchema],
             ).one();
             if (err) throw err;
             showImportModal = false;

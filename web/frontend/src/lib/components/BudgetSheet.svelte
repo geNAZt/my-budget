@@ -127,52 +127,84 @@
                 return entry.realtimeBalance === undefined || entry.realtimeBalance === null || entry.realtimeBalance === 0;
             };
 
+            const mappedEntities: { name: string; type: string; amount: number; outstanding: boolean }[] = [];
+
             for (const entry of breakdown.incomes || []) {
-                if (isOutstanding(entry)) {
-                    const factor = getAssignmentFactor(entry.accountIds, id);
-                    if (factor > 0) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    if (isOutstanding(entry)) {
                         outstandingInflow += entry.amount * factor;
                     }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Income",
+                        amount: entry.amount * factor,
+                        outstanding: isOutstanding(entry),
+                    });
                 }
             }
 
             for (const entry of breakdown.bills || []) {
-                if (isOutstanding(entry)) {
-                    const factor = getAssignmentFactor(entry.accountIds, id);
-                    if (factor > 0) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    if (isOutstanding(entry)) {
                         outstandingOutflow += entry.amount * factor;
                     }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Bill",
+                        amount: entry.amount * factor,
+                        outstanding: isOutstanding(entry),
+                    });
                 }
             }
 
             for (const entry of breakdown.expenses || []) {
-                if (isOutstanding(entry)) {
-                    const factor = getAssignmentFactor(entry.accountIds, id);
-                    if (factor > 0) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    if (isOutstanding(entry)) {
                         outstandingOutflow += entry.amount * factor;
                     }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Event",
+                        amount: entry.amount * factor,
+                        outstanding: isOutstanding(entry),
+                    });
                 }
             }
 
             for (const entry of breakdown.assets || []) {
-                if (isOutstanding(entry)) {
-                    const factor = getAssignmentFactor(entry.accountIds, id);
-                    if (factor > 0) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    if (isOutstanding(entry)) {
                         if (entry.amount >= 0) {
                             outstandingOutflow += entry.amount * factor;
                         } else {
                             outstandingInflow += Math.abs(entry.amount) * factor;
                         }
                     }
+                    mappedEntities.push({
+                        name: entry.name || entry.entityName || "Asset",
+                        type: "Asset",
+                        amount: entry.amount * factor,
+                        outstanding: isOutstanding(entry),
+                    });
                 }
             }
 
             for (const entry of breakdown.loans || []) {
-                if (isOutstanding(entry)) {
-                    const factor = getAssignmentFactor(entry.accountIds, id);
-                    if (factor > 0) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    if (isOutstanding(entry)) {
                         outstandingOutflow += entry.amount * factor;
                     }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Loan",
+                        amount: entry.amount * factor,
+                        outstanding: isOutstanding(entry),
+                    });
                 }
             }
 
@@ -187,6 +219,7 @@
                 loan_debt: va.loan_debt !== undefined ? va.loan_debt : (va.loanDebt !== undefined ? va.loanDebt : 0),
                 outstandingInflow,
                 outstandingOutflow,
+                mappedEntities,
             };
         });
     });
@@ -421,25 +454,25 @@
     });
 </script>
 
-<div class="space-y-8 animate-in fade-in duration-500">
+<div class="space-y-5 animate-in fade-in duration-500">
     <!-- Summary Header -->
-    <div class="mb-8 space-y-4">
+    <div class="mb-4 space-y-2.5">
         <div>
             <h3
-                class="text-4xl font-black text-slate-900 tracking-tighter mb-2"
+                class="text-2xl font-black text-slate-900 tracking-tight mb-1"
             >
                 {formatDate(date)}
             </h3>
             {#if periodStart && periodEnd}
                 <p
-                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2"
+                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
                 >
                     {formatDayMonth(periodStart)} - {formatDayMonth(periodEnd)}
                 </p>
             {/if}
         </div>
         <div
-            class="flex flex-wrap items-center gap-3 text-[11px] font-medium text-slate-500"
+            class="flex flex-wrap items-center gap-2.5 text-[10px] font-medium text-slate-500"
         >
             <span class="flex items-center gap-1.5"
                 ><span class="text-emerald-600 font-black">+</span> Incomes
@@ -499,157 +532,171 @@
         <!-- Additionally see the virtual account balances of the month -->
         {#if normalizedVirtualAccounts && normalizedVirtualAccounts.length > 0}
             <div
-                class="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100/80"
+                class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100/80 dark:border-slate-800/40"
             >
                 <span
-                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mr-2"
+                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mr-2"
                     >Virtual Accounts:</span
                 >
                 {#each normalizedVirtualAccounts as va}
                     <div
-                        class="flex items-center gap-2 bg-slate-50 border border-slate-100 pl-2.5 pr-3 py-1 rounded-full text-[10px] font-bold text-slate-700 shadow-sm"
+                        class="relative group flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 pl-2.5 pr-3 py-1 rounded-full text-[10px] font-bold text-slate-700 dark:text-slate-300 shadow-sm cursor-help hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-150"
                         style="border-left: 3px solid {va.color}"
                     >
                         <span
-                            class="truncate max-w-[120px] font-black text-slate-900"
+                            class="truncate max-w-[120px] font-black text-slate-900 dark:text-slate-100"
                             >{va.name}</span
                         >
-                        <span class="tabular-nums font-black text-slate-900"
+                        <span class="tabular-nums font-black text-slate-900 dark:text-slate-100"
                             >€ {formatCurrency(va.balance)}</span
                         >
+
+                        <!-- Premium Tooltip Popover -->
+                        <div
+                            class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 absolute left-0 top-full mt-2 w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-slate-100 dark:border-slate-800/60 rounded-2xl shadow-xl z-[150] p-4 text-left pointer-events-none"
+                        >
+                            <!-- Top accent color bar -->
+                            <div
+                                class="absolute top-0 left-0 right-0 h-1.5 rounded-t-2xl"
+                                style="background-color: {va.color}"
+                            ></div>
+                            
+                            <div class="space-y-3.5 pt-1.5">
+                                <div class="flex items-center justify-between">
+                                    <span
+                                        class="text-xs font-black tracking-tight text-slate-900 dark:text-slate-100 break-all"
+                                        >{va.name}</span
+                                    >
+                                    <span
+                                        class="text-[8px] font-black uppercase px-2 py-0.5 rounded-full text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800"
+                                        style="border-left: 3px solid {va.color}"
+                                    >
+                                        Planned
+                                    </span>
+                                </div>
+                                <div class="flex justify-between items-baseline">
+                                    <span
+                                        class="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500"
+                                        >Balance:</span
+                                    >
+                                    <span
+                                        class="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums"
+                                        >€ {formatCurrency(va.balance)}</span
+                                    >
+                                </div>
+                                <div
+                                    class="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2.5"
+                                >
+                                    <div class="flex flex-col">
+                                        <span
+                                            class="text-slate-400 dark:text-slate-500 font-black uppercase text-[8px] tracking-wider"
+                                            >Inflow</span
+                                        >
+                                        <span
+                                            class="text-emerald-600 dark:text-emerald-400 font-black tabular-nums"
+                                        >
+                                            +€ {formatCurrency(va.inflow)}
+                                            {#if va.outstandingInflow > 0}
+                                                <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500">
+                                                    (+€ {formatCurrency(va.outstandingInflow)})
+                                                </span>
+                                            {/if}
+                                        </span>
+                                    </div>
+                                    <div class="flex flex-col text-right">
+                                        <span
+                                            class="text-slate-400 dark:text-slate-500 font-black uppercase text-[8px] tracking-wider"
+                                            >Outflow</span
+                                        >
+                                        <span
+                                            class="text-rose-500 dark:text-rose-400 font-black tabular-nums"
+                                        >
+                                            -€ {formatCurrency(va.outflow)}
+                                            {#if va.outstandingOutflow > 0}
+                                                <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500">
+                                                    (-€ {formatCurrency(va.outstandingOutflow)})
+                                                </span>
+                                            {/if}
+                                        </span>
+                                    </div>
+                                </div>
+                                {#if va.asset_worth > 0 || va.loan_debt > 0}
+                                    <div
+                                        class="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/50 pt-2"
+                                    >
+                                        {#if va.asset_worth > 0}
+                                            <div class="flex flex-col">
+                                                <span
+                                                    class="text-slate-400 dark:text-slate-500 font-black uppercase text-[8px] tracking-wider"
+                                                    >Assets</span
+                                                >
+                                                <span
+                                                    class="text-indigo-600 dark:text-indigo-400 font-black tabular-nums"
+                                                    >€ {formatCurrency(
+                                                        va.asset_worth,
+                                                    )}</span
+                                                >
+                                            </div>
+                                        {/if}
+                                        {#if va.loan_debt > 0}
+                                            <div class="flex flex-col text-right">
+                                                <span
+                                                    class="text-slate-400 dark:text-slate-500 font-black uppercase text-[8px] tracking-wider"
+                                                    >Debt</span
+                                                >
+                                                <span
+                                                    class="text-rose-600 dark:text-rose-400 font-black tabular-nums"
+                                                    >€ {formatCurrency(
+                                                        va.loan_debt,
+                                                    )}</span
+                                                >
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {/if}
+
+                                <!-- Booked / Mapped Entities List -->
+                                {#if va.mappedEntities && va.mappedEntities.length > 0}
+                                    <div class="border-t border-slate-100 dark:border-slate-800/80 pt-2.5 space-y-2">
+                                        <span class="text-[8px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 block">
+                                            Mapped Items ({va.mappedEntities.length})
+                                        </span>
+                                        <div class="max-h-36 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                                            {#each va.mappedEntities as entity}
+                                                <div class="flex items-center justify-between gap-2 text-[10px] py-0.5">
+                                                    <div class="flex flex-col min-w-0">
+                                                        <span class="font-bold text-slate-700 dark:text-slate-200 truncate max-w-[160px]" title={entity.name}>
+                                                            {entity.name}
+                                                        </span>
+                                                        <span class="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                                                            {entity.type} {#if entity.outstanding}• <span class="text-slate-400/80 dark:text-slate-500/80 font-bold lowercase">outstanding</span>{/if}
+                                                        </span>
+                                                    </div>
+                                                    <span class="font-extrabold tabular-nums whitespace-nowrap {entity.type === 'Income' ? 'text-emerald-600 dark:text-emerald-400' : (entity.type === 'Bill' || entity.type === 'Event' || entity.type === 'Loan' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-350')}">
+                                                        {entity.type === 'Income' ? '+' : (entity.type === 'Bill' || entity.type === 'Event' || entity.type === 'Loan' ? '-' : '')}€ {formatCurrency(Math.abs(entity.amount))}
+                                                    </span>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
                     </div>
                 {/each}
             </div>
         {/if}
     </div>
 
-    <!-- Planned Virtual Accounts -->
-    {#if normalizedVirtualAccounts && normalizedVirtualAccounts.length > 0}
-        <div class="space-y-4">
-            <h4
-                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-            >
-                Planned Virtual Accounts Overview
-            </h4>
-            <div
-                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-            >
-                {#each normalizedVirtualAccounts as va}
-                    <div
-                        class="glass-card p-6 border border-slate-100/80 relative overflow-hidden flex flex-col justify-between transition-all hover:shadow-lg"
-                    >
-                        <div
-                            class="absolute top-0 left-0 right-0 h-1"
-                            style="background-color: {va.color}"
-                        ></div>
-                        <div class="space-y-4">
-                            <div class="flex items-center justify-between">
-                                <span
-                                    class="text-xs font-black tracking-tight text-slate-900 break-all"
-                                    >{va.name}</span
-                                >
-                                <span
-                                    class="text-[8px] font-black uppercase px-2 py-0.5 rounded-full text-slate-500 bg-slate-100"
-                                    style="border-left: 3px solid {va.color}"
-                                >
-                                    Planned
-                                </span>
-                            </div>
-                            <div class="flex justify-between items-baseline">
-                                <span
-                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400"
-                                    >Balance:</span
-                                >
-                                <span
-                                    class="text-lg font-black text-slate-900 tabular-nums"
-                                    >€ {formatCurrency(va.balance)}</span
-                                >
-                            </div>
-                            <div
-                                class="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 border-t border-slate-50 pt-2.5"
-                            >
-                                <div class="flex flex-col">
-                                    <span
-                                        class="text-slate-400 font-black uppercase text-[8px] tracking-wider"
-                                        >Inflow</span
-                                    >
-                                    <span
-                                        class="text-emerald-600 font-black tabular-nums"
-                                    >
-                                        +€ {formatCurrency(va.inflow)}
-                                        {#if va.outstandingInflow > 0}
-                                            <span class="text-[10px] font-bold text-slate-400">
-                                                (+€ {formatCurrency(va.outstandingInflow)})
-                                            </span>
-                                        {/if}
-                                    </span>
-                                </div>
-                                <div class="flex flex-col text-right">
-                                    <span
-                                        class="text-slate-400 font-black uppercase text-[8px] tracking-wider"
-                                        >Outflow</span
-                                    >
-                                    <span
-                                        class="text-rose-500 font-black tabular-nums"
-                                    >
-                                        -€ {formatCurrency(va.outflow)}
-                                        {#if va.outstandingOutflow > 0}
-                                            <span class="text-[10px] font-bold text-slate-400">
-                                                (-€ {formatCurrency(va.outstandingOutflow)})
-                                            </span>
-                                        {/if}
-                                    </span>
-                                </div>
-                            </div>
-                            {#if va.asset_worth > 0 || va.loan_debt > 0}
-                                <div
-                                    class="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 border-t border-slate-50/50 pt-2"
-                                >
-                                    {#if va.asset_worth > 0}
-                                        <div class="flex flex-col">
-                                            <span
-                                                class="text-slate-400 font-black uppercase text-[8px] tracking-wider"
-                                                >Assets</span
-                                            >
-                                            <span
-                                                class="text-indigo-600 font-black tabular-nums"
-                                                >€ {formatCurrency(
-                                                    va.asset_worth,
-                                                )}</span
-                                            >
-                                        </div>
-                                    {/if}
-                                    {#if va.loan_debt > 0}
-                                        <div class="flex flex-col text-right">
-                                            <span
-                                                class="text-slate-400 font-black uppercase text-[8px] tracking-wider"
-                                                >Debt</span
-                                            >
-                                            <span
-                                                class="text-rose-600 font-black tabular-nums"
-                                                >€ {formatCurrency(
-                                                    va.loan_debt,
-                                                )}</span
-                                            >
-                                        </div>
-                                    {/if}
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
-                {/each}
-            </div>
-        </div>
-    {/if}
 
     <!-- Main Multi-Column Sheet -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         <!-- Left Side: Incomes & Bills -->
-        <div class="lg:col-span-4 space-y-8">
+        <div class="lg:col-span-4 space-y-4">
             <!-- Incomes -->
             <section class="glass-card overflow-hidden">
                 <div
-                    class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center"
+                    class="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/40 flex justify-between items-center"
                 >
                     <h4
                         class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900"
@@ -672,11 +719,11 @@
                                     class="hover:bg-slate-50/50 transition-colors"
                                 >
                                     <td
-                                        class="px-6 py-3 text-xs font-bold text-slate-700 align-top break-words pr-2"
+                                        class="px-4 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 align-top break-words pr-2"
                                         >{entry.name}</td
                                     >
                                     <td
-                                        class="px-6 py-3 text-xs align-top whitespace-nowrap"
+                                        class="px-4 py-1.5 text-xs align-top whitespace-nowrap"
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2 font-black text-slate-900"
@@ -712,7 +759,7 @@
             <!-- Bills -->
             <section class="glass-card overflow-hidden">
                 <div
-                    class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center"
+                    class="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/40 flex justify-between items-center"
                 >
                     <h4
                         class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900"
@@ -735,11 +782,11 @@
                                     class="hover:bg-slate-50/50 transition-colors"
                                 >
                                     <td
-                                        class="px-6 py-3 text-xs font-bold text-slate-700 align-top break-words pr-2"
+                                        class="px-4 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 align-top break-words pr-2"
                                         >{entry.name}</td
                                     >
                                     <td
-                                        class="px-6 py-3 text-xs align-top whitespace-nowrap"
+                                        class="px-4 py-1.5 text-xs align-top whitespace-nowrap"
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2 font-black text-slate-900"
@@ -774,11 +821,11 @@
         </div>
 
         <!-- Middle: Expenses & Assets -->
-        <div class="lg:col-span-4 space-y-8">
+        <div class="lg:col-span-4 space-y-4">
             <!-- Expenses -->
             <section class="glass-card overflow-hidden">
                 <div
-                    class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center"
+                    class="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/40 flex justify-between items-center"
                 >
                     <h4
                         class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900"
@@ -801,11 +848,11 @@
                                     class="hover:bg-slate-50/50 transition-colors"
                                 >
                                     <td
-                                        class="px-6 py-3 text-xs font-bold text-slate-700 align-top break-words pr-2"
+                                        class="px-4 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 align-top break-words pr-2"
                                         >{entry.name}</td
                                     >
                                     <td
-                                        class="px-6 py-3 text-xs align-top whitespace-nowrap"
+                                        class="px-4 py-1.5 text-xs align-top whitespace-nowrap"
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2 font-black text-slate-900"
@@ -841,14 +888,14 @@
             <!-- Assets -->
             <section class="glass-card overflow-hidden border-emerald-100/50">
                 <div
-                    class="px-6 py-4 bg-emerald-50/30 border-b border-emerald-100/50 flex justify-between items-center"
+                    class="px-4 py-2 bg-emerald-50/30 dark:bg-emerald-950/20 border-b border-emerald-100/50 dark:border-emerald-900/30 flex justify-between items-center"
                 >
                     <h4
-                        class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-900"
+                        class="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-900 dark:text-emerald-300"
                     >
                         Wealth Nodes
                     </h4>
-                    <span class="text-[10px] font-black text-emerald-700"
+                    <span class="text-[10px] font-black text-emerald-700 dark:text-emerald-400"
                         >Inflow: € {formatCurrency(totalAssets)}</span
                     >
                 </div>
@@ -864,7 +911,7 @@
                                     class="hover:bg-emerald-50/20 transition-colors"
                                 >
                                     <td
-                                        class="px-6 py-3 text-xs font-bold text-slate-700 align-top break-words pr-2"
+                                        class="px-4 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 align-top break-words pr-2"
                                     >
                                         {#if editingGroup && editingGroup.type === "asset" && editingGroup.id === allAssets.find((a) => a.name === entry.name)?.id}
                                             <input
@@ -987,7 +1034,7 @@
                                         {/if}
                                     </td>
                                     <td
-                                        class="px-6 py-3 align-top whitespace-nowrap"
+                                        class="px-4 py-1.5 align-top whitespace-nowrap"
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2 text-xs font-black text-slate-900"
@@ -1046,14 +1093,14 @@
         <div class="lg:col-span-4">
             <section class="glass-card overflow-hidden border-rose-100/50">
                 <div
-                    class="px-6 py-4 bg-rose-50/30 border-b border-rose-100/50 flex justify-between items-center"
+                    class="px-4 py-2 bg-rose-50/30 dark:bg-rose-950/20 border-b border-rose-100/50 dark:border-rose-900/30 flex justify-between items-center"
                 >
                     <h4
-                        class="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900"
+                        class="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900 dark:text-rose-300"
                     >
                         Loan Amortization
                     </h4>
-                    <span class="text-[10px] font-black text-rose-700"
+                    <span class="text-[10px] font-black text-rose-700 dark:text-rose-400"
                         >€ {formatCurrency(totalLoans)}</span
                     >
                 </div>
@@ -1069,7 +1116,7 @@
                                     class="hover:bg-rose-50/20 transition-colors"
                                 >
                                     <td
-                                        class="px-6 py-3 text-xs font-bold text-slate-700 align-top break-words pr-2"
+                                        class="px-4 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 align-top break-words pr-2"
                                     >
                                         {#if editingGroup && editingGroup.type === "loan" && editingGroup.id === allLoans.find((l) => l.name === entry.name)?.id}
                                             <input
@@ -1116,7 +1163,7 @@
                                         {/if}
                                     </td>
                                     <td
-                                        class="px-6 py-3 align-top whitespace-nowrap"
+                                        class="px-4 py-1.5 align-top whitespace-nowrap"
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2 text-xs font-black text-slate-900"

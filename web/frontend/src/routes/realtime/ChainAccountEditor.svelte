@@ -55,6 +55,7 @@
                 if (!acc.iban) {
                     acc.iban = acc.id;
                 }
+                acc.alias = acc.name && acc.name !== acc.id ? acc.name : "";
                 return acc;
             });
         } catch (e: any) {
