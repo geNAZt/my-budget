@@ -325,29 +325,53 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					continue
 				}
 
-				receiver := ""
-				receiverIBAN := ""
-				if t.DebtorName != nil {
-					receiver = *t.DebtorName
-					if t.DebtorAccount != nil && t.DebtorAccount.Iban != nil {
-						receiverIBAN = *t.DebtorAccount.Iban
-					}
-				} else if t.CreditorName != nil {
-					receiver = *t.CreditorName
-					if t.CreditorAccount != nil && t.CreditorAccount.Iban != nil {
-						receiverIBAN = *t.CreditorAccount.Iban
-					}
-				}
-				desc := ""
-				if t.RemittanceInformationUnstructured != nil {
-					desc = *t.RemittanceInformationUnstructured
-				}
-
 				amt := 0.0
 				if t.TransactionAmount.Amount != "" {
 					if val, err := strconv.ParseFloat(t.TransactionAmount.Amount, 64); err == nil {
 						amt = val
 					}
+				}
+
+				receiver := ""
+				receiverIBAN := ""
+
+				// Pick peer based on direction:
+				// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
+				// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
+				if amt > 0 {
+					if t.DebtorName != nil {
+						receiver = *t.DebtorName
+						if t.DebtorAccount != nil && t.DebtorAccount.Iban != nil {
+							receiverIBAN = *t.DebtorAccount.Iban
+						}
+					}
+
+					// Fallback to Creditor if Debtor is missing or has no name
+					if receiver == "" && t.CreditorName != nil {
+						receiver = *t.CreditorName
+						if t.CreditorAccount != nil && t.CreditorAccount.Iban != nil {
+							receiverIBAN = *t.CreditorAccount.Iban
+						}
+					}
+				} else {
+					if t.CreditorName != nil {
+						receiver = *t.CreditorName
+						if t.CreditorAccount != nil && t.CreditorAccount.Iban != nil {
+							receiverIBAN = *t.CreditorAccount.Iban
+						}
+					}
+
+					// Fallback to Debtor if Creditor is missing or has no name
+					if receiver == "" && t.DebtorName != nil {
+						receiver = *t.DebtorName
+						if t.DebtorAccount != nil && t.DebtorAccount.Iban != nil {
+							receiverIBAN = *t.DebtorAccount.Iban
+						}
+					}
+				}
+				desc := ""
+				if t.RemittanceInformationUnstructured != nil {
+					desc = *t.RemittanceInformationUnstructured
 				}
 
 				accountTags := ""
@@ -484,23 +508,49 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 	}
 
 	meta := integration.TransactionMetadata{}
-	if gt.DebtorName != nil {
-		meta.Receiver = *gt.DebtorName
-		if gt.DebtorAccount != nil && gt.DebtorAccount.Iban != nil {
-			meta.ReceiverIBAN = *gt.DebtorAccount.Iban
-		}
-	} else if gt.CreditorName != nil {
-		meta.Receiver = *gt.CreditorName
-		if gt.CreditorAccount != nil && gt.CreditorAccount.Iban != nil {
-			meta.ReceiverIBAN = *gt.CreditorAccount.Iban
-		}
-	}
-	if gt.RemittanceInformationUnstructured != nil {
-		meta.Description = *gt.RemittanceInformationUnstructured
-	}
 	if gt.TransactionAmount.Amount != "" {
 		meta.Amount, _ = strconv.ParseFloat(gt.TransactionAmount.Amount, 64)
 	}
+
+	// Pick peer based on direction:
+	// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
+	// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
+	if meta.Amount > 0 {
+		if gt.DebtorName != nil {
+			meta.Receiver = *gt.DebtorName
+			if gt.DebtorAccount != nil && gt.DebtorAccount.Iban != nil {
+				meta.ReceiverIBAN = *gt.DebtorAccount.Iban
+			}
+		}
+
+		// Fallback to Creditor if Debtor is missing or has no name
+		if meta.Receiver == "" && gt.CreditorName != nil {
+			meta.Receiver = *gt.CreditorName
+			if gt.CreditorAccount != nil && gt.CreditorAccount.Iban != nil {
+				meta.ReceiverIBAN = *gt.CreditorAccount.Iban
+			}
+		}
+	} else {
+		if gt.CreditorName != nil {
+			meta.Receiver = *gt.CreditorName
+			if gt.CreditorAccount != nil && gt.CreditorAccount.Iban != nil {
+				meta.ReceiverIBAN = *gt.CreditorAccount.Iban
+			}
+		}
+
+		// Fallback to Debtor if Creditor is missing or has no name
+		if meta.Receiver == "" && gt.DebtorName != nil {
+			meta.Receiver = *gt.DebtorName
+			if gt.DebtorAccount != nil && gt.DebtorAccount.Iban != nil {
+				meta.ReceiverIBAN = *gt.DebtorAccount.Iban
+			}
+		}
+	}
+
+	if gt.RemittanceInformationUnstructured != nil {
+		meta.Description = *gt.RemittanceInformationUnstructured
+	}
+
 
 	if gt.TransactionId != nil && *gt.TransactionId != "" {
 		meta.ExternalID = *gt.TransactionId

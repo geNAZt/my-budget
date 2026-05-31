@@ -880,9 +880,16 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	// Initialize asset states
 	assetStates := make([]*assetState, len(assets))
 	for i, a := range assets {
+		initialBalance := 0.0
+		for _, vacctID := range a.AccountIDs {
+			initialBalance += vaRunningBalances[vacctID]
+		}
 		state := &assetState{
 			asset:          a,
-			currentBalance: 0,
+			currentBalance: initialBalance,
+		}
+		if a.ActiveVersion.Type == domain.AssetTypeETF && initialBalance > 0 {
+			state.lots = append(state.lots, etfLot{principal: initialBalance, currentValue: initialBalance})
 		}
 		if a.ActiveVersion.Type == domain.AssetTypeETF {
 			assetMCStart := time.Now()
@@ -925,6 +932,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				mcImplementation = "STANDARD"
 			}
 
+			log.Printf("[PROJECTION] Running Monte Carlo for asset %s (%s) with implementation %s (%d simulations, %d years, %.2f%% percent, %d history entries)...", a.Name, a.ID, mcImplementation, simulations, simYears, simPercent, len(histories))
 			if mcImplementation == "SIMD" {
 				state.simulatedYield = s.runMonteCarloSIMD(a.ActiveVersion, histories, simulations, simYears, simPercent)
 			} else if mcImplementation == "PARALLEL" {
@@ -933,11 +941,12 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				state.simulatedYield = s.runMonteCarlo(a.ActiveVersion, histories, simulations, simYears, simPercent)
 			}
 			simulatedYields[a.ID] = state.simulatedYield * 100
+			log.Printf("[PROJECTION] Monte Carlo result for %s: %.2f%%", a.Name, simulatedYields[a.ID])
 
 			state.trackerBalances = make(map[string]float64)
 			state.trackerYields = make(map[string]float64)
 			for idx, t := range a.ActiveVersion.ETFConfig {
-				state.trackerBalances[t.Tracker] = 0.0
+				state.trackerBalances[t.Tracker] = state.currentBalance * t.Percentage
 				var history []float64
 				if idx < len(histories) {
 					history = histories[idx]
@@ -954,6 +963,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 				state.trackerYields[t.Tracker] = yield
 				simulatedYields[a.ID+"_"+t.Tracker] = yield * 100
+				log.Printf("[PROJECTION]   - Tracker %s: %.2f%%", t.Tracker, simulatedYields[a.ID+"_"+t.Tracker])
 			}
 			metrics.PerAssetMCMS[a.ID] = time.Since(assetMCStart).Milliseconds()
 		}
@@ -1057,81 +1067,10 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				continue
 			}
 
-			// Interest
+			// Interest (Non-ETF only, ETF processed at end of month)
 			interestPenaltyRate := getInterestPenaltyRate(v)
 
-			if v.Type == domain.AssetTypeETF {
-				monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
-				var newBal float64
-
-				if monthlyRate > 0 {
-					for i := range as.lots {
-						grossGrowth := as.lots[i].currentValue * monthlyRate
-						netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
-						as.lots[i].currentValue += netGrowth
-						newBal += as.lots[i].currentValue
-					}
-				} else {
-					for i := range as.lots {
-						as.lots[i].currentValue *= (1.0 + monthlyRate)
-						newBal += as.lots[i].currentValue
-					}
-				}
-
-				oldBal := as.currentBalance
-				as.currentBalance = newBal
-				netGrowth := newBal - oldBal
-
-				totalTrackersNew := 0.0
-				for tracker, yield := range as.trackerYields {
-					mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
-					bal := as.trackerBalances[tracker]
-					if mRate > 0 {
-						grossGrowth := bal * mRate
-						netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
-						as.trackerBalances[tracker] += netGrowthVal
-					} else {
-						as.trackerBalances[tracker] *= (1.0 + mRate)
-					}
-					totalTrackersNew += as.trackerBalances[tracker]
-				}
-				if totalTrackersNew > 0 && as.currentBalance > 0 {
-					scale := as.currentBalance / totalTrackersNew
-					for tracker := range as.trackerBalances {
-						as.trackerBalances[tracker] *= scale
-					}
-				} else if as.currentBalance <= 0 {
-					for tracker := range as.trackerBalances {
-						as.trackerBalances[tracker] = 0
-					}
-				}
-
-				if len(as.subAssets) > 0 && netGrowth != 0 {
-					totalBal := 0.0
-					for _, sa := range as.subAssets {
-						if !sa.isClosed {
-							totalBal += sa.currentBalance
-						}
-					}
-					if totalBal > 0 {
-						remaining := netGrowth
-						for _, sa := range as.subAssets {
-							if sa.isClosed {
-								continue
-							}
-							share := sa.currentBalance / totalBal
-							toDep := netGrowth * share
-							sa.currentBalance += toDep
-							remaining -= toDep
-						}
-						if math.Abs(remaining) > 0.00001 && len(as.subAssets) > 0 {
-							as.subAssets[0].currentBalance += remaining
-						}
-					} else {
-						as.subAssets[0].currentBalance += netGrowth
-					}
-				}
-			} else {
+			if v.Type != domain.AssetTypeETF {
 				monthlyRate := (v.InterestRate / 100.0) / 12.0
 				grossInterestEarned := as.currentBalance * monthlyRate
 				interestPenaltyPaid := 0.0
@@ -1386,6 +1325,94 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 		}
+
+		// 3.5 Process ETF Asset Interest/Returns (At the end of the catch-up month after modifications and contributions)
+		for _, as := range assetStates {
+			if as.isClosed {
+				continue
+			}
+
+			v := as.asset.ActiveVersion
+			if v.Type != domain.AssetTypeETF {
+				continue
+			}
+
+			if !s.isDateActive(v.StartDate, v.EndDate, curr) {
+				continue
+			}
+
+			interestPenaltyRate := getInterestPenaltyRate(v)
+			monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
+			var newBal float64
+
+			if monthlyRate > 0 {
+				for i := range as.lots {
+					grossGrowth := as.lots[i].currentValue * monthlyRate
+					netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
+					as.lots[i].currentValue += netGrowth
+					newBal += as.lots[i].currentValue
+				}
+			} else {
+				for i := range as.lots {
+					as.lots[i].currentValue *= (1.0 + monthlyRate)
+					newBal += as.lots[i].currentValue
+				}
+			}
+
+			oldBal := as.currentBalance
+			as.currentBalance = newBal
+			netGrowth := newBal - oldBal
+
+			totalTrackersNew := 0.0
+			for tracker, yield := range as.trackerYields {
+				mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
+				bal := as.trackerBalances[tracker]
+				if mRate > 0 {
+					grossGrowth := bal * mRate
+					netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
+					as.trackerBalances[tracker] += netGrowthVal
+				} else {
+					as.trackerBalances[tracker] *= (1.0 + mRate)
+				}
+				totalTrackersNew += as.trackerBalances[tracker]
+			}
+			if totalTrackersNew > 0 && as.currentBalance > 0 {
+				scale := as.currentBalance / totalTrackersNew
+				for tracker := range as.trackerBalances {
+					as.trackerBalances[tracker] *= scale
+				}
+			} else if as.currentBalance <= 0 {
+				for tracker := range as.trackerBalances {
+					as.trackerBalances[tracker] = 0
+				}
+			}
+
+			if len(as.subAssets) > 0 && netGrowth != 0 {
+				totalBal := 0.0
+				for _, sa := range as.subAssets {
+					if !sa.isClosed {
+						totalBal += sa.currentBalance
+					}
+				}
+				if totalBal > 0 {
+					remaining := netGrowth
+					for _, sa := range as.subAssets {
+						if sa.isClosed {
+							continue
+						}
+						share := sa.currentBalance / totalBal
+						toDep := netGrowth * share
+						sa.currentBalance += toDep
+						remaining -= toDep
+					}
+					if math.Abs(remaining) > 0.00001 && len(as.subAssets) > 0 {
+						as.subAssets[0].currentBalance += remaining
+					}
+				} else {
+					as.subAssets[0].currentBalance += netGrowth
+				}
+			}
+		}
 	}
 
 	for _, as := range assetStates {
@@ -1447,6 +1474,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		loanAccountMap[l.Name] = l.AccountIDs
 	}
 
+	unassignedRunningBalance := 0.0
 	currentBalance := 0.0
 	for i := 0; i < scenario.ProjectionMonths; i++ {
 		currentDate := startDate.AddDate(0, i, 0)
@@ -1511,7 +1539,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		availableFunds := month.Income - month.Bills - month.Expenses
 		log.Printf("[PROJECTION] Available Funds (Initial): %.2f", availableFunds)
 
-		// 3. APPLY INTEREST/RETURNS
+		// 3. APPLY INTEREST/RETURNS (Non-ETF only, ETF processed at end of month)
 		for _, as := range assetStates {
 			if as.isClosed {
 				continue
@@ -1524,85 +1552,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			interestPenaltyPaid := 0.0
 			interestPenaltyRate := getInterestPenaltyRate(v)
 
-			if v.Type == domain.AssetTypeETF {
-				monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
-				var newBal float64
-				var totalGrossGrowth float64
-
-				if monthlyRate > 0 {
-					for i := range as.lots {
-						grossGrowth := as.lots[i].currentValue * monthlyRate
-						totalGrossGrowth += grossGrowth
-
-						netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
-						as.lots[i].currentValue += netGrowth
-						newBal += as.lots[i].currentValue
-					}
-					interestEarned = totalGrossGrowth
-					interestPenaltyPaid = totalGrossGrowth * interestPenaltyRate
-				} else {
-					for i := range as.lots {
-						as.lots[i].currentValue *= (1.0 + monthlyRate)
-						newBal += as.lots[i].currentValue
-					}
-					interestEarned = newBal - as.currentBalance
-					interestPenaltyPaid = 0.0
-				}
-
-				oldBal := as.currentBalance
-				as.currentBalance = newBal
-				netGrowth := newBal - oldBal
-
-				totalTrackersNew := 0.0
-				for tracker, yield := range as.trackerYields {
-					mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
-					bal := as.trackerBalances[tracker]
-					if mRate > 0 {
-						grossGrowth := bal * mRate
-						netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
-						as.trackerBalances[tracker] += netGrowthVal
-					} else {
-						as.trackerBalances[tracker] *= (1.0 + mRate)
-					}
-					totalTrackersNew += as.trackerBalances[tracker]
-				}
-				if totalTrackersNew > 0 && as.currentBalance > 0 {
-					scale := as.currentBalance / totalTrackersNew
-					for tracker := range as.trackerBalances {
-						as.trackerBalances[tracker] *= scale
-					}
-				} else if as.currentBalance <= 0 {
-					for tracker := range as.trackerBalances {
-						as.trackerBalances[tracker] = 0
-					}
-				}
-
-				if len(as.subAssets) > 0 && netGrowth != 0 {
-					totalBal := 0.0
-					for _, sa := range as.subAssets {
-						if !sa.isClosed {
-							totalBal += sa.currentBalance
-						}
-					}
-					if totalBal > 0 {
-						remaining := netGrowth
-						for _, sa := range as.subAssets {
-							if sa.isClosed {
-								continue
-							}
-							share := sa.currentBalance / totalBal
-							toDep := netGrowth * share
-							sa.currentBalance += toDep
-							remaining -= toDep
-						}
-						if math.Abs(remaining) > 0.00001 && len(as.subAssets) > 0 {
-							as.subAssets[0].currentBalance += remaining
-						}
-					} else {
-						as.subAssets[0].currentBalance += netGrowth
-					}
-				}
-			} else {
+			if v.Type != domain.AssetTypeETF {
 				monthlyRate := (v.InterestRate / 100.0) / 12.0
 				grossInterestEarned := as.currentBalance * monthlyRate
 
@@ -2584,6 +2534,105 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 		}
 
+		// 8.5 APPLY ETF INTEREST/RETURNS (At the end of the month after all modifications, contributions, and waterfalls)
+		for _, as := range assetStates {
+			if as.isClosed {
+				continue
+			}
+
+			v := as.asset.ActiveVersion
+			if v.Type != domain.AssetTypeETF {
+				continue
+			}
+
+			// Interest/Returns
+			interestEarned := 0.0
+			interestPenaltyPaid := 0.0
+			interestPenaltyRate := getInterestPenaltyRate(v)
+
+			monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
+			var newBal float64
+			var totalGrossGrowth float64
+
+			if monthlyRate > 0 {
+				for i := range as.lots {
+					grossGrowth := as.lots[i].currentValue * monthlyRate
+					totalGrossGrowth += grossGrowth
+
+					netGrowth := grossGrowth * (1.0 - interestPenaltyRate)
+					as.lots[i].currentValue += netGrowth
+					newBal += as.lots[i].currentValue
+				}
+				interestEarned = totalGrossGrowth
+				interestPenaltyPaid = totalGrossGrowth * interestPenaltyRate
+			} else {
+				for i := range as.lots {
+					as.lots[i].currentValue *= (1.0 + monthlyRate)
+					newBal += as.lots[i].currentValue
+				}
+				interestEarned = newBal - as.currentBalance
+				interestPenaltyPaid = 0.0
+			}
+
+			oldBal := as.currentBalance
+			as.currentBalance = newBal
+			netGrowth := newBal - oldBal
+
+			totalTrackersNew := 0.0
+			for tracker, yield := range as.trackerYields {
+				mRate := math.Pow(1.0+yield, 1.0/12.0) - 1.0
+				bal := as.trackerBalances[tracker]
+				if mRate > 0 {
+					grossGrowth := bal * mRate
+					netGrowthVal := grossGrowth * (1.0 - interestPenaltyRate)
+					as.trackerBalances[tracker] += netGrowthVal
+				} else {
+					as.trackerBalances[tracker] *= (1.0 + mRate)
+				}
+				totalTrackersNew += as.trackerBalances[tracker]
+			}
+			if totalTrackersNew > 0 && as.currentBalance > 0 {
+				scale := as.currentBalance / totalTrackersNew
+				for tracker := range as.trackerBalances {
+					as.trackerBalances[tracker] *= scale
+				}
+			} else if as.currentBalance <= 0 {
+				for tracker := range as.trackerBalances {
+					as.trackerBalances[tracker] = 0
+				}
+			}
+
+			if len(as.subAssets) > 0 && netGrowth != 0 {
+				totalBal := 0.0
+				for _, sa := range as.subAssets {
+					if !sa.isClosed {
+						totalBal += sa.currentBalance
+					}
+				}
+				if totalBal > 0 {
+					remaining := netGrowth
+					for _, sa := range as.subAssets {
+						if sa.isClosed {
+							continue
+						}
+						share := sa.currentBalance / totalBal
+						toDep := netGrowth * share
+						sa.currentBalance += toDep
+						remaining -= toDep
+					}
+					if math.Abs(remaining) > 0.00001 && len(as.subAssets) > 0 {
+						as.subAssets[0].currentBalance += remaining
+					}
+				} else {
+					as.subAssets[0].currentBalance += netGrowth
+				}
+			}
+
+			if interestEarned != 0 || interestPenaltyPaid != 0 {
+				month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name, 0, interestEarned, interestPenaltyPaid))
+			}
+		}
+
 		// Finalize
 		month.Remainder = leftover
 		currentBalance += month.Remainder
@@ -2829,6 +2878,12 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		// Calculate Virtual Account planned monthly changes and ending balances
 		month.VirtualAccounts = make([]domain.VirtualAccountMonthBalance, 0)
 
+		// Reset running balances of virtual accounts to 0 at the start of each month
+		for _, va := range virtualAccounts {
+			vaRunningBalances[va.ID] = 0.0
+		}
+		unassignedRunningBalance = 0.0
+
 		// Map of active virtual accounts to easily check assignments
 		activeVAMap := make(map[string]bool)
 		for _, va := range virtualAccounts {
@@ -2881,7 +2936,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				AccountID:       va.ID,
 				Name:            va.Name,
 				Color:           va.ActiveVersion.Color,
-				StartingBalance: 0,
+				StartingBalance: vaRunningBalances[va.ID],
 			}
 
 			// Add incomes
@@ -2925,6 +2980,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// Calculate ending balance
 			vBal.Balance = vBal.StartingBalance + vBal.Inflow - vBal.Outflow
+			vaRunningBalances[va.ID] = vBal.Balance
 
 			// Compute asset worth for this account (split across assigned accounts)
 			for _, as := range assetStates {
@@ -2949,7 +3005,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				AccountID:       "unassigned",
 				Name:            "unassigned",
 				Color:           "#64748b", // elegant slate gray
-				StartingBalance: 0,
+				StartingBalance: unassignedRunningBalance,
 			}
 
 			// Add unassigned incomes
@@ -2993,6 +3049,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// Calculate ending balance for unassigned
 			unassignedBal.Balance = unassignedBal.StartingBalance + unassignedBal.Inflow - unassignedBal.Outflow
+			unassignedRunningBalance = unassignedBal.Balance
 
 			// Compute unassigned asset worth
 			for _, as := range assetStates {
@@ -3020,6 +3077,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	metrics.ProjectionDurationMS = time.Since(projectionStartTime).Milliseconds()
 	metrics.TotalDurationMS = time.Since(totalStartTime).Milliseconds()
 	result.Metrics = metrics
+	result.SimulatedYields = simulatedYields
 
 	result.TotalRemainder = currentBalance
 	return result, nil

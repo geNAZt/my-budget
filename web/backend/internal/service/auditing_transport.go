@@ -60,7 +60,15 @@ func getNextSeq(correlationID string) uint64 {
 }
 
 func getLogDir(correlationID string) string {
-	return filepath.Join("/app", "logs", "sync_runs", correlationID)
+	baseDir := "/app"
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		if _, err := os.Stat("web"); err == nil {
+			baseDir = "web"
+		} else {
+			baseDir = "."
+		}
+	}
+	return filepath.Join(baseDir, "logs", "sync_runs", correlationID)
 }
 
 func getProvider(req *http.Request) string {
@@ -71,6 +79,8 @@ func getProvider(req *http.Request) string {
 			provider = "gocardless"
 		} else if strings.Contains(host, "trading212") {
 			provider = "trading212"
+		} else if strings.Contains(host, "enablebanking") {
+			provider = "enablebanking"
 		}
 	}
 	return provider

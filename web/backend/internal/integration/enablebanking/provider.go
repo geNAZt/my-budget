@@ -143,15 +143,17 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			continue
 		}
 
-		log.Printf("[SYNC][%s] [ENABLEBANKING] Syncing account %s...", correlationID, accID)
+		metaJSON, _ := json.Marshal(meta)
+		log.Printf("[SYNC][%s] [ENABLEBANKING] Syncing account %s with metadata %s...", correlationID, accID, metaJSON)
 
 		handleRateLimit := func(err error) bool {
 			if err == nil {
 				return false
 			}
+
 			errStr := err.Error()
 			if strings.Contains(errStr, "Status 429") || strings.Contains(errStr, "RateLimitException") || strings.Contains(errStr, "ASPSP_RATE_LIMIT_EXCEEDED") {
-				backoff := now.Add(2 * time.Hour)
+				backoff := now.Add(8 * time.Hour)
 				if meta == nil {
 					meta = &domain.AccountMeta{Enabled: true, Alias: accID}
 					config.AccountsMetadata[accID] = meta
@@ -160,51 +162,62 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				log.Printf("[SYNC] [ENABLEBANKING] Rate limit exceeded for account %s. Backing off until %v", accID, backoff)
 				return true
 			}
+
 			return false
 		}
 
 		// Fetch Account Details (Metadata)
-		details, err := p.enableBanking.GetAccountDetails(ctx, token, accID)
-		if handleRateLimit(err) {
-			continue
-		}
+		if (!force && meta != nil && meta.MetadataCheckedAt != nil && now.Sub(*meta.MetadataCheckedAt) < 24*time.Hour) || (meta != nil && meta.IBAN != "") {
+			log.Printf("[SYNC][%s] [ENABLEBANKING] Skipping metadata check for account %s (checked %v ago)", correlationID, accID, now.Sub(*meta.MetadataCheckedAt))
+		} else {
+			details, err := p.enableBanking.GetAccountDetails(ctx, token, accID)
+			if handleRateLimit(err) {
+				continue
+			}
 
-		if err == nil && details != nil {
-			if meta == nil {
-				meta = &domain.AccountMeta{Enabled: true, Alias: accID}
-				config.AccountsMetadata[accID] = meta
-			}
-			if details.Iban != nil {
-				meta.IBAN = *details.Iban
-			}
-			if details.Name != nil && (meta.Alias == "" || meta.Alias == accID) {
-				meta.Alias = *details.Name
+			if err == nil && details != nil {
+				if meta == nil {
+					meta = &domain.AccountMeta{Enabled: true, Alias: accID}
+					config.AccountsMetadata[accID] = meta
+				}
+				if details.Iban != nil {
+					meta.IBAN = *details.Iban
+				}
+				if details.Name != nil && (meta.Alias == "" || meta.Alias == accID) {
+					meta.Alias = *details.Name
+				}
+				meta.MetadataCheckedAt = &now
 			}
 		}
 
 		// Fetch Balances
-		balances, err := p.enableBanking.GetBalances(ctx, token, accID)
-		if handleRateLimit(err) {
-			continue
-		}
+		if !force && meta != nil && meta.LastSyncedAt != nil && now.Sub(*meta.LastSyncedAt) < 6*time.Hour {
+			log.Printf("[SYNC][%s] [ENABLEBANKING] Skipping balance fetch for account %s (fetched %v ago)", correlationID, accID, now.Sub(*meta.LastSyncedAt))
+			totalBalance += meta.Balance
+		} else {
+			balances, err := p.enableBanking.GetBalances(ctx, token, accID)
+			if handleRateLimit(err) {
+				continue
+			}
 
-		if err == nil && len(balances) > 0 {
-			for _, b := range balances {
-				if b.BalanceAmount != nil && b.BalanceAmount.Amount != nil {
-					amt, _ := strconv.ParseFloat(*b.BalanceAmount.Amount, 64)
-					if meta == nil {
-						meta = &domain.AccountMeta{Enabled: true, Alias: accID}
-						config.AccountsMetadata[accID] = meta
+			if err == nil && len(balances) > 0 {
+				for _, b := range balances {
+					if b.BalanceAmount != nil && b.BalanceAmount.Amount != nil {
+						amt, _ := strconv.ParseFloat(*b.BalanceAmount.Amount, 64)
+						if meta == nil {
+							meta = &domain.AccountMeta{Enabled: true, Alias: accID}
+							config.AccountsMetadata[accID] = meta
+						}
+						meta.Balance = amt
+						totalBalance += amt
+						break
 					}
-					meta.Balance = amt
-					totalBalance += amt
-					break
 				}
 			}
 		}
 
 		// Fetch Transactions
-		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -7)
 		dateFrom := thirtyDaysAgo.Format("2006-01-02")
 		if !force && meta != nil && meta.LastSyncedAt != nil {
 			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -2)
@@ -314,19 +327,47 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 
 			receiver := ""
 			receiverIBAN := ""
-			if t.Creditor != nil {
-				if t.Creditor.Name != nil {
-					receiver = *t.Creditor.Name
+
+			// Pick peer based on direction:
+			// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
+			// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
+			if amt > 0 {
+				if t.Debtor != nil {
+					if t.Debtor.Name != nil {
+						receiver = *t.Debtor.Name
+					}
+					if t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
+						receiverIBAN = *t.Debtor.Account.Iban
+					}
 				}
-				if t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
-					receiverIBAN = *t.Creditor.Account.Iban
+
+				// Fallback to Creditor if Debtor is missing or has no name
+				if receiver == "" && t.Creditor != nil {
+					if t.Creditor.Name != nil {
+						receiver = *t.Creditor.Name
+					}
+					if t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
+						receiverIBAN = *t.Creditor.Account.Iban
+					}
 				}
-			} else if t.Debtor != nil {
-				if t.Debtor.Name != nil {
-					receiver = *t.Debtor.Name
+			} else {
+				if t.Creditor != nil {
+					if t.Creditor.Name != nil {
+						receiver = *t.Creditor.Name
+					}
+					if t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
+						receiverIBAN = *t.Creditor.Account.Iban
+					}
 				}
-				if t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
-					receiverIBAN = *t.Debtor.Account.Iban
+
+				// Fallback to Debtor if Creditor is missing or has no name
+				if receiver == "" && t.Debtor != nil {
+					if t.Debtor.Name != nil {
+						receiver = *t.Debtor.Name
+					}
+					if t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
+						receiverIBAN = *t.Debtor.Account.Iban
+					}
 				}
 			}
 
@@ -378,6 +419,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 
 		if meta != nil {
 			meta.LastSyncedAt = &now
+
+			// Proactive backoff after success to respect PSD2 "4 calls per day" unattended access limits
+			if !force {
+				backoff := now.Add(12 * time.Hour)
+				meta.BackoffUntil = &backoff
+				log.Printf("[SYNC] [ENABLEBANKING] Successful sync for account %s. Setting proactive backoff until %v", accID, backoff)
+			}
 		}
 	}
 
@@ -453,26 +501,6 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 		meta.CreatedAt = et.BookingDate.Time
 	}
 
-	if et.Creditor != nil {
-		if et.Creditor.Name != nil {
-			meta.Receiver = *et.Creditor.Name
-		}
-		if et.Creditor.Account != nil && et.Creditor.Account.Iban != nil {
-			meta.ReceiverIBAN = *et.Creditor.Account.Iban
-		}
-	} else if et.Debtor != nil {
-		if et.Debtor.Name != nil {
-			meta.Receiver = *et.Debtor.Name
-		}
-		if et.Debtor.Account != nil && et.Debtor.Account.Iban != nil {
-			meta.ReceiverIBAN = *et.Debtor.Account.Iban
-		}
-	}
-
-	if et.RemittanceInformation != nil && len(*et.RemittanceInformation) > 0 {
-		meta.Description = strings.Join(*et.RemittanceInformation, " ")
-	}
-
 	if et.TransactionAmount != nil && et.TransactionAmount.Amount != nil {
 		meta.Amount, _ = strconv.ParseFloat(*et.TransactionAmount.Amount, 64)
 	}
@@ -484,6 +512,53 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 		} else if *et.CreditDebitIndicator == "CRDT" {
 			meta.Amount = math.Abs(meta.Amount)
 		}
+	}
+
+	// Pick peer based on direction:
+	// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
+	// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
+	if meta.Amount > 0 {
+		if et.Debtor != nil {
+			if et.Debtor.Name != nil {
+				meta.Receiver = *et.Debtor.Name
+			}
+			if et.Debtor.Account != nil && et.Debtor.Account.Iban != nil {
+				meta.ReceiverIBAN = *et.Debtor.Account.Iban
+			}
+		}
+
+		// Fallback to Creditor if Debtor is missing or has no name
+		if meta.Receiver == "" && et.Creditor != nil {
+			if et.Creditor.Name != nil {
+				meta.Receiver = *et.Creditor.Name
+			}
+			if et.Creditor.Account != nil && et.Creditor.Account.Iban != nil {
+				meta.ReceiverIBAN = *et.Creditor.Account.Iban
+			}
+		}
+	} else {
+		if et.Creditor != nil {
+			if et.Creditor.Name != nil {
+				meta.Receiver = *et.Creditor.Name
+			}
+			if et.Creditor.Account != nil && et.Creditor.Account.Iban != nil {
+				meta.ReceiverIBAN = *et.Creditor.Account.Iban
+			}
+		}
+
+		// Fallback to Debtor if Creditor is missing or has no name
+		if meta.Receiver == "" && et.Debtor != nil {
+			if et.Debtor.Name != nil {
+				meta.Receiver = *et.Debtor.Name
+			}
+			if et.Debtor.Account != nil && et.Debtor.Account.Iban != nil {
+				meta.ReceiverIBAN = *et.Debtor.Account.Iban
+			}
+		}
+	}
+
+	if et.RemittanceInformation != nil && len(*et.RemittanceInformation) > 0 {
+		meta.Description = strings.Join(*et.RemittanceInformation, " ")
 	}
 
 	return meta, nil

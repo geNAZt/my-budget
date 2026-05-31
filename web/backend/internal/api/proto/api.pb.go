@@ -2410,25 +2410,25 @@ func (x *ETFScenarioParams) GetLookbackYears() int32 {
 }
 
 type Scenario struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserId                  string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Name                    string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description             string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	ProjectionMonths        int32                  `protobuf:"varint,5,opt,name=projection_months,json=projectionMonths,proto3" json:"projection_months,omitempty"`
-	RemainderOrder          []string               `protobuf:"bytes,6,rep,name=remainder_order,json=remainderOrder,proto3" json:"remainder_order,omitempty"`
-	IsActive                bool                   `protobuf:"varint,7,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
-	MonthStartDay           int32                  `protobuf:"varint,8,opt,name=month_start_day,json=monthStartDay,proto3" json:"month_start_day,omitempty"`
-	StartDate               string                 `protobuf:"bytes,9,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
-	CreatedAt               string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	Simulations             int32                  `protobuf:"varint,11,opt,name=simulations,proto3" json:"simulations,omitempty"`
-	SimYears                int32                  `protobuf:"varint,12,opt,name=sim_years,json=simYears,proto3" json:"sim_years,omitempty"`
-	SimPercent              float64                `protobuf:"fixed64,13,opt,name=sim_percent,json=simPercent,proto3" json:"sim_percent,omitempty"`
-	LookbackYears           int32                  `protobuf:"varint,14,opt,name=lookback_years,json=lookbackYears,proto3" json:"lookback_years,omitempty"`
-	McImplementation        string                 `protobuf:"bytes,15,opt,name=mc_implementation,json=mcImplementation,proto3" json:"mc_implementation,omitempty"`
-	PassiveIncomePercentage float64                `protobuf:"fixed64,16,opt,name=passive_income_percentage,json=passiveIncomePercentage,proto3" json:"passive_income_percentage,omitempty"`
-	Entities                []*ScenarioEntity      `protobuf:"bytes,17,rep,name=entities,proto3" json:"entities,omitempty"`
-	EtfParams               *ETFScenarioParams     `protobuf:"bytes,18,opt,name=etf_params,json=etfParams,proto3" json:"etf_params,omitempty"`
+	state                   protoimpl.MessageState        `protogen:"open.v1"`
+	Id                      string                        `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId                  string                        `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Name                    string                        `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description             string                        `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	ProjectionMonths        int32                         `protobuf:"varint,5,opt,name=projection_months,json=projectionMonths,proto3" json:"projection_months,omitempty"`
+	RemainderOrder          []string                      `protobuf:"bytes,6,rep,name=remainder_order,json=remainderOrder,proto3" json:"remainder_order,omitempty"`
+	IsActive                bool                          `protobuf:"varint,7,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	MonthStartDay           int32                         `protobuf:"varint,8,opt,name=month_start_day,json=monthStartDay,proto3" json:"month_start_day,omitempty"`
+	StartDate               string                        `protobuf:"bytes,9,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`
+	CreatedAt               string                        `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Simulations             int32                         `protobuf:"varint,11,opt,name=simulations,proto3" json:"simulations,omitempty"`
+	SimYears                int32                         `protobuf:"varint,12,opt,name=sim_years,json=simYears,proto3" json:"sim_years,omitempty"`
+	SimPercent              float64                       `protobuf:"fixed64,13,opt,name=sim_percent,json=simPercent,proto3" json:"sim_percent,omitempty"`
+	LookbackYears           int32                         `protobuf:"varint,14,opt,name=lookback_years,json=lookbackYears,proto3" json:"lookback_years,omitempty"`
+	McImplementation        string                        `protobuf:"bytes,15,opt,name=mc_implementation,json=mcImplementation,proto3" json:"mc_implementation,omitempty"`
+	PassiveIncomePercentage float64                       `protobuf:"fixed64,16,opt,name=passive_income_percentage,json=passiveIncomePercentage,proto3" json:"passive_income_percentage,omitempty"`
+	Entities                []*ScenarioEntity             `protobuf:"bytes,17,rep,name=entities,proto3" json:"entities,omitempty"`
+	EtfParams               map[string]*ETFScenarioParams `protobuf:"bytes,18,rep,name=etf_params,json=etfParams,proto3" json:"etf_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -2582,7 +2582,7 @@ func (x *Scenario) GetEntities() []*ScenarioEntity {
 	return nil
 }
 
-func (x *Scenario) GetEtfParams() *ETFScenarioParams {
+func (x *Scenario) GetEtfParams() map[string]*ETFScenarioParams {
 	if x != nil {
 		return x.EtfParams
 	}
@@ -6278,7 +6278,7 @@ const file_api_proto_rawDesc = "" +
 	"\tsim_years\x18\x02 \x01(\x05R\bsimYears\x12\x1f\n" +
 	"\vsim_percent\x18\x03 \x01(\x01R\n" +
 	"simPercent\x12%\n" +
-	"\x0elookback_years\x18\x04 \x01(\x05R\rlookbackYears\"\x9a\x05\n" +
+	"\x0elookback_years\x18\x04 \x01(\x05R\rlookbackYears\"\xf6\x05\n" +
 	"\bScenario\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -6300,9 +6300,12 @@ const file_api_proto_rawDesc = "" +
 	"\x0elookback_years\x18\x0e \x01(\x05R\rlookbackYears\x12+\n" +
 	"\x11mc_implementation\x18\x0f \x01(\tR\x10mcImplementation\x12:\n" +
 	"\x19passive_income_percentage\x18\x10 \x01(\x01R\x17passiveIncomePercentage\x12/\n" +
-	"\bentities\x18\x11 \x03(\v2\x13.api.ScenarioEntityR\bentities\x125\n" +
+	"\bentities\x18\x11 \x03(\v2\x13.api.ScenarioEntityR\bentities\x12;\n" +
 	"\n" +
-	"etf_params\x18\x12 \x01(\v2\x16.api.ETFScenarioParamsR\tetfParams\";\n" +
+	"etf_params\x18\x12 \x03(\v2\x1c.api.Scenario.EtfParamsEntryR\tetfParams\x1aT\n" +
+	"\x0eEtfParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.api.ETFScenarioParamsR\x05value:\x028\x01\";\n" +
 	"\fScenarioList\x12+\n" +
 	"\tscenarios\x18\x01 \x03(\v2\r.api.ScenarioR\tscenarios\"X\n" +
 	"\n" +
@@ -6639,7 +6642,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 86)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 87)
 var file_api_proto_goTypes = []any{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Error)(nil),                       // 1: api.Error
@@ -6727,6 +6730,7 @@ var file_api_proto_goTypes = []any{
 	nil,                                 // 83: api.EntryBreakdown.RealSplitEntry
 	nil,                                 // 84: api.EntryBreakdown.TrackerFlowsEntry
 	nil,                                 // 85: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 86: api.Scenario.EtfParamsEntry
 }
 var file_api_proto_depIdxs = []int32{
 	9,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -6747,7 +6751,7 @@ var file_api_proto_depIdxs = []int32{
 	26, // 15: api.ProjectionMonth.virtual_accounts:type_name -> api.VirtualAccountMonthBalance
 	28, // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	31, // 17: api.Scenario.entities:type_name -> api.ScenarioEntity
-	32, // 18: api.Scenario.etf_params:type_name -> api.ETFScenarioParams
+	86, // 18: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	33, // 19: api.ScenarioList.scenarios:type_name -> api.Scenario
 	35, // 20: api.AssetVersion.etf_config:type_name -> api.ETFTracker
 	36, // 21: api.AssetVersion.penalties:type_name -> api.AssetPenalty
@@ -6772,11 +6776,12 @@ var file_api_proto_depIdxs = []int32{
 	65, // 40: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
 	70, // 41: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
 	19, // 42: api.TransactionSaveBulkRequest.transactions:type_name -> api.Transaction
-	43, // [43:43] is the sub-list for method output_type
-	43, // [43:43] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	32, // 43: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -6790,7 +6795,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_rawDesc), len(file_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   86,
+			NumMessages:   87,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

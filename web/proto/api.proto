@@ -282,7 +282,7 @@ message Scenario {
   string mc_implementation = 15;
   double passive_income_percentage = 16;
   repeated ScenarioEntity entities = 17;
-  ETFScenarioParams etf_params = 18;
+  map<string, ETFScenarioParams> etf_params = 18;
 }
 
 message ScenarioList {

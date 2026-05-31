@@ -17,7 +17,7 @@ func NewBillRepository(db *sql.DB) *BillRepository {
 
 func (r *BillRepository) List(userID string) ([]domain.Bill, error) {
 	query := `
-		SELECT b.id, b.name, b.pool_id, b.created_at, v.id, v.amount, v.start_date, v.end_date, v.interval_months
+		SELECT b.id, b.name, b.pool_id, b.created_at, v.id, v.amount, v.start_date, v.end_date, v.interval_months, v.created_at
 		FROM bills b
 		INNER JOIN bill_versions v ON b.id = v.bill_id
 		WHERE b.user_id = ? AND b.is_deleted = FALSE
@@ -56,7 +56,7 @@ func (r *BillRepository) List(userID string) ([]domain.Bill, error) {
 		var endDate sql.NullTime
 		var poolID sql.NullString
 
-		err := rows.Scan(&b.ID, &b.Name, &poolID, &b.CreatedAt, &v.ID, &v.Amount, &v.StartDate, &endDate, &v.IntervalMonths)
+		err := rows.Scan(&b.ID, &b.Name, &poolID, &b.CreatedAt, &v.ID, &v.Amount, &v.StartDate, &endDate, &v.IntervalMonths, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

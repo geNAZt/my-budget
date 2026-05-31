@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"log"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/db"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
@@ -18,7 +19,7 @@ func NewAssetRepository(db *sql.DB) *AssetRepository {
 
 func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 	query := `
-		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.etf_config_json AS etf_config_msgpack, v.penalties_json AS penalties_msgpack, v.sub_assets_json AS sub_assets_msgpack
+		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.etf_config_json AS etf_config_msgpack, v.penalties_json AS penalties_msgpack, v.sub_assets_json AS sub_assets_msgpack, v.created_at
 		FROM assets a
 		INNER JOIN asset_versions v ON a.id = v.asset_id
 		WHERE a.user_id = ? AND a.is_deleted = FALSE
@@ -64,10 +65,12 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 		var withdrawalPenaltyDummy float64
 		var poolID sql.NullString
 
-		err := rows.Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &etfConfigMsgPack, &penaltiesMsgPack, &subAssetsMsgPack)
+		err := rows.Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &etfConfigMsgPack, &penaltiesMsgPack, &subAssetsMsgPack, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+
+		log.Printf("[ASSET_REPO] Scanned asset %s version %s. CreatedAt: %s, EndDate: %s, ETFConfig: %s, Penalties: %s, SubAssets: %s", a.ID, v.ID, v.CreatedAt, v.EndDate, etfConfigMsgPack.String, penaltiesMsgPack.String, subAssetsMsgPack.String)
 
 		if poolID.Valid {
 			a.PoolID = &poolID.String
@@ -118,7 +121,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 
 func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, error) {
 	query := `
-		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.etf_config_json AS etf_config_msgpack, v.penalties_json AS penalties_msgpack, v.sub_assets_json AS sub_assets_msgpack
+		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.etf_config_json AS etf_config_msgpack, v.penalties_json AS penalties_msgpack, v.sub_assets_json AS sub_assets_msgpack, v.created_at
 		FROM assets a
 		INNER JOIN asset_versions v ON a.id = v.asset_id
 		WHERE a.user_id = ? AND a.id = ? AND a.is_deleted = FALSE
@@ -138,7 +141,7 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 	var withdrawalPenaltyDummy float64
 	var poolID sql.NullString
 
-	err := r.db.QueryRow(query, userID, id).Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &etfConfigMsgPack, &penaltiesMsgPack, &subAssetsMsgPack)
+	err := r.db.QueryRow(query, userID, id).Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &etfConfigMsgPack, &penaltiesMsgPack, &subAssetsMsgPack, &v.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

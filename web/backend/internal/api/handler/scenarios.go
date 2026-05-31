@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -72,6 +73,18 @@ func (sc *Scenarios) Save(s *api.WebsocketSession, reqID string, reqObj *apiprot
 		PassiveIncomePercentage:  reqObj.PassiveIncomePercentage,
 	}
 
+	domainObj.ETFParams = make(map[string]domain.ETFScenarioParams)
+	for k, v := range reqObj.EtfParams {
+		if v != nil {
+			domainObj.ETFParams[k] = domain.ETFScenarioParams{
+				Simulations:   int(v.Simulations),
+				SimYears:      int(v.SimYears),
+				SimPercent:    v.SimPercent,
+				LookbackYears: int(v.LookbackYears),
+			}
+		}
+	}
+
 	if reqObj.StartDate != "" {
 		if t, err := time.Parse(time.RFC3339, reqObj.StartDate); err == nil {
 			domainObj.StartDate = &t
@@ -112,6 +125,57 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 
 	scenarioID := reqObj.Id
 	limit := int(reqObj.ProjectionMonths)
+
+	// Save scenario configuration before running simulation to ensure Monte Carlo takes current settings into account
+	if reqObj.Name != "" {
+		domainObj := domain.Scenario{
+			ID:                       reqObj.Id,
+			UserID:                   userID,
+			Name:                     reqObj.Name,
+			Description:              reqObj.Description,
+			ProjectionMonths:         int(reqObj.ProjectionMonths),
+			RemainderOrder:           reqObj.RemainderOrder,
+			IsActive:                 reqObj.IsActive,
+			MonthStartDay:            int(reqObj.MonthStartDay),
+			Simulations:              int(reqObj.Simulations),
+			SimYears:                 int(reqObj.SimYears),
+			SimPercent:               reqObj.SimPercent,
+			LookbackYears:            int(reqObj.LookbackYears),
+			MonteCarloImplementation: reqObj.McImplementation,
+			PassiveIncomePercentage:  reqObj.PassiveIncomePercentage,
+		}
+
+		domainObj.ETFParams = make(map[string]domain.ETFScenarioParams)
+		for k, v := range reqObj.EtfParams {
+			if v != nil {
+				domainObj.ETFParams[k] = domain.ETFScenarioParams{
+					Simulations:   int(v.Simulations),
+					SimYears:      int(v.SimYears),
+					SimPercent:    v.SimPercent,
+					LookbackYears: int(v.LookbackYears),
+				}
+			}
+		}
+
+		if reqObj.StartDate != "" {
+			if t, err := time.Parse(time.RFC3339, reqObj.StartDate); err == nil {
+				domainObj.StartDate = &t
+			}
+		}
+
+		for _, e := range reqObj.Entities {
+			domainObj.Entities = append(domainObj.Entities, domain.ScenarioEntity{
+				EntityID:   e.EntityId,
+				EntityType: e.EntityType,
+				VersionID:  e.VersionId,
+			})
+		}
+
+		if err := sc.scenarios.Save(userID, &domainObj); err != nil {
+			sc.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 
 	result, err := sc.handler.Projection.RunWithLimit(userID, scenarioID, limit, func(month domain.ProjectionMonth) {
 		wsMonth := &apiproto.ProjectionMonth{
@@ -244,8 +308,18 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 		return
 	}
 
+	yields := result.SimulatedYields
+	if yields == nil {
+		yields = make(map[string]float64)
+	}
+
+	log.Printf("[SCENARIOS] Projection finished. Simulated yields: %d entries", len(yields))
+	for k, v := range yields {
+		log.Printf("[SCENARIOS] Yield for %s: %.2f%%", k, v)
+	}
+
 	wsYields := &apiproto.YieldMap{
-		Yields: result.SimulatedYields,
+		Yields: yields,
 	}
 	sc.handler.SendResponse(s, reqID, wsYields, false)
 
@@ -282,6 +356,16 @@ func mapScenarioToProto(sc domain.Scenario) *apiproto.Scenario {
 	}
 	if sc.StartDate != nil {
 		psc.StartDate = sc.StartDate.Format(time.RFC3339)
+	}
+
+	psc.EtfParams = make(map[string]*apiproto.ETFScenarioParams)
+	for k, v := range sc.ETFParams {
+		psc.EtfParams[k] = &apiproto.ETFScenarioParams{
+			Simulations:   int32(v.Simulations),
+			SimYears:      int32(v.SimYears),
+			SimPercent:    v.SimPercent,
+			LookbackYears: int32(v.LookbackYears),
+		}
 	}
 
 	for _, e := range sc.Entities {

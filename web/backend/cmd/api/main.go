@@ -78,6 +78,9 @@ func main() {
 	}
 	defer database.Close()
 
+	// Backup database on startup
+	db.BackupDB(dbURL, dataDir)
+
 	userRepo := repository.NewSQLiteUserRepository(database)
 	sessionRepo := repository.NewSessionRepository(database)
 	incomeRepo := repository.NewIncomeRepository(database)
@@ -141,9 +144,7 @@ func main() {
 		}
 	}
 	syncService.EnsureRecoveryTokens()
-	syncService.RetroactivelyAssignAccounts()
 	syncService.MigrateTransactionsBetweenChains()
-	syncService.RetroactivelyFixEnableBankingSigns()
 
 	// Reset integration errors on boot to allow them to retry
 	if err := integrationRepo.ResetAllErrors(); err != nil {

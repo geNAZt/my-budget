@@ -176,7 +176,19 @@ func (s *ExecutionService) StartRunner() {
 		log.Printf("[ExecutionEngine] Spawning persistent Node.js sandbox runner daemon...")
 
 		cmd := exec.Command("node", "runner.js")
-		cmd.Dir = "/app/execution_engine"
+		dir := "/app/execution_engine"
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if _, err := os.Stat("execution_engine"); err == nil {
+				dir = "execution_engine"
+			} else if _, err := os.Stat("web/backend/execution_engine"); err == nil {
+				dir = "web/backend/execution_engine"
+			} else if _, err := os.Stat("./execution_engine"); err == nil {
+				dir = "./execution_engine"
+			} else if envDir := os.Getenv("EXECUTION_ENGINE_DIR"); envDir != "" {
+				dir = envDir
+			}
+		}
+		cmd.Dir = dir
 
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -257,6 +269,8 @@ func (s *ExecutionService) readLoop(readDone chan struct{}) {
 				return
 			}
 
+			log.Printf("[ExecutionEngine Debug] Received payload from stdout: %s", string(payload))
+
 			var resp StdioResponse
 			if err := json.Unmarshal(payload, &resp); err != nil {
 				log.Printf("[ExecutionEngine Error] Failed to unmarshal incoming JSON frame: %v", err)
@@ -287,6 +301,8 @@ func (s *ExecutionService) writeFrame(payload []byte) error {
 	if stdin == nil {
 		return fmt.Errorf("runner stdin is not active")
 	}
+
+	log.Printf("[ExecutionEngine Debug] Writing payload to stdin: %s", string(payload))
 
 	length := uint32(len(payload))
 	lengthBytes := make([]byte, 4)
@@ -345,6 +361,7 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 	}
 
 	logEntry := domain.ExecutionLog{
+		UserID:    userID,
 		PlanID:    planID,
 		StartedAt: time.Now(),
 		Status:    "PENDING",
@@ -385,23 +402,28 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 				}
 
 				var config struct {
-					AccountIDs       []string
+					AccountIDs       []string                       `json:"account_ids"`
+					LegacyAccountIDs []string                       `json:"accounts"`
 					AccountsMetadata map[string]struct {
-						Alias             string
-						Enabled           bool
-						IBAN              string
-						BIC               string
-						ReferenceCodes    string
-						Tags              string
-						BackoffUntil      *time.Time
-						LastSyncedAt      *time.Time
-						MetadataCheckedAt *time.Time
-						Balance           float64
-					}
+						Alias             string     `json:"alias"`
+						Enabled           bool       `json:"enabled"`
+						IBAN              string     `json:"iban"`
+						BIC               string     `json:"bic"`
+						ReferenceCodes    string     `json:"reference_codes"`
+						Tags              string     `json:"tags"`
+						BackoffUntil      *time.Time `json:"backoff_until"`
+						LastSyncedAt      *time.Time `json:"last_synced_at"`
+						MetadataCheckedAt *time.Time `json:"metadata_checked_at"`
+						Balance           float64    `json:"balance"`
+					} `json:"accounts_metadata"`
 				}
 
 				if err := json.Unmarshal(decrypted, &config); err == nil {
-					for _, accID := range config.AccountIDs {
+					accIDs := config.AccountIDs
+					if len(accIDs) == 0 {
+						accIDs = config.LegacyAccountIDs
+					}
+					for _, accID := range accIDs {
 						meta, ok := config.AccountsMetadata[accID]
 						if !ok {
 							continue

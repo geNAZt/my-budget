@@ -90,16 +90,12 @@ export function connect(): Promise<void> {
     ws.onmessage = (event) => {
       try {
         const rawData = new Uint8Array(event.data);
-        console.log(`[WS RX] <- Hex: ${toHexString(rawData)}`);
 
         // --- 1. TRY STREAM PACKET DETECTION ---
         const streamMsg = tryProtoParse(api.WSResponseSchema, rawData);
         if (streamMsg) {
           const req = requests.get(streamMsg.id);
           if (req) {
-            console.log(
-              `[WS] Incoming data for ${req.path} (${streamMsg.id}), len: ${streamMsg.data?.length}, done: ${streamMsg.done}`,
-            );
             if (streamMsg.data && streamMsg.data.length > 0) {
               let decodedPayload: any = null;
               let parseSuccessful = false;
@@ -109,9 +105,6 @@ export function connect(): Promise<void> {
                 for (const schema of req.responseSchemas) {
                   const parsed = tryProtoParse(schema, streamMsg.data);
                   if (parsed !== null) {
-                    console.log(
-                      `[WS] Successfully parsed chunk for ${req.path} as ${schema.typeName}`,
-                    );
                     decodedPayload = parsed;
                     parseSuccessful = true;
                     break; // Found the matching schema, exit the loop!
@@ -123,10 +116,6 @@ export function connect(): Promise<void> {
               if (!parseSuccessful) {
                 const parsed = tryProtoParse(api.ErrorSchema, streamMsg.data);
                 if (parsed !== null && parsed.message) {
-                  console.error(
-                    `[WS] Server returned error for ${req.path}:`,
-                    parsed.message,
-                  );
                   requests.delete(streamMsg.id);
                   req.onError(new Error(parsed.message));
                   return;
@@ -184,7 +173,6 @@ function sendRequest(req: QueuedRequest) {
   });
 
   const binary = toBinary(api.WSRequestSchema, requestObj);
-  console.log(`[WS TX] -> ${req.path} (${req.id}) Hex: ${toHexString(binary)}`);
   ws.send(binary);
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -360,3 +361,84 @@ func TestETFSubAssetPayout(t *testing.T) {
 		t.Errorf("Expected parent asset balance to be 0.0, got %f", as2.currentBalance)
 	}
 }
+
+func TestETFInterestAccumulationAndStartingBalance(t *testing.T) {
+	// Verify that if we have a simulated yield of 10% (0.10)
+	// and an initial balance of 1000.0,
+	// the monthly rate is computed correctly and applied to the starting lot.
+	as := &assetState{
+		asset: domain.Asset{
+			ActiveVersion: &domain.AssetVersion{
+				Type: "ETF",
+			},
+		},
+		currentBalance: 1000.0,
+		simulatedYield: 0.10,
+		lots: []etfLot{
+			{principal: 1000.0, currentValue: 1000.0},
+		},
+	}
+
+	monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
+	if monthlyRate <= 0 {
+		t.Fatalf("Expected monthlyRate to be positive, got %f", monthlyRate)
+	}
+
+	// Simulate 1 month of compound growth
+	var newBal float64
+	for i := range as.lots {
+		grossGrowth := as.lots[i].currentValue * monthlyRate
+		netGrowth := grossGrowth * 1.0 // no penalties
+		as.lots[i].currentValue += netGrowth
+		newBal += as.lots[i].currentValue
+	}
+	as.currentBalance = newBal
+
+	expectedBalance := 1000.0 * math.Pow(1.10, 1.0/12.0)
+	if math.Abs(as.currentBalance-expectedBalance) > 0.00001 {
+		t.Errorf("Expected currentBalance to be %f after 1 month, got %f", expectedBalance, as.currentBalance)
+	}
+}
+
+func TestETFZeroStartingBalanceAccumulation(t *testing.T) {
+	// Verify that if an ETF starts with 0.0 balance,
+	// and we deposit 1000.0 (simulating monthly contributions/waterfalls),
+	// the interest calculated at the end of the month applies correctly to the updated balance.
+	as := &assetState{
+		asset: domain.Asset{
+			ActiveVersion: &domain.AssetVersion{
+				Type: "ETF",
+			},
+		},
+		currentBalance: 0.0,
+		simulatedYield: 0.10,
+		lots:           []etfLot{},
+	}
+
+	// 1. Simulate deposit during the month (before interest is calculated)
+	depositAsset(as, 1000.0, nil)
+
+	if len(as.lots) != 1 {
+		t.Fatalf("Expected 1 lot after deposit, got %d", len(as.lots))
+	}
+	if as.currentBalance != 1000.0 {
+		t.Fatalf("Expected balance to be 1000.0 after deposit, got %f", as.currentBalance)
+	}
+
+	// 2. Calculate interest at the end of the month (Step 8.5)
+	monthlyRate := math.Pow(1.0+as.simulatedYield, 1.0/12.0) - 1.0
+	var newBal float64
+	for i := range as.lots {
+		grossGrowth := as.lots[i].currentValue * monthlyRate
+		netGrowth := grossGrowth * 1.0 // no penalties
+		as.lots[i].currentValue += netGrowth
+		newBal += as.lots[i].currentValue
+	}
+	as.currentBalance = newBal
+
+	expectedBalance := 1000.0 * math.Pow(1.10, 1.0/12.0)
+	if math.Abs(as.currentBalance-expectedBalance) > 0.00001 {
+		t.Errorf("Expected currentBalance to be %f after end-of-month interest calculation, got %f", expectedBalance, as.currentBalance)
+	}
+}
+

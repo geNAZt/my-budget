@@ -452,23 +452,13 @@
                             currentAsset.activeVersion.remainderStartDate || "",
                         startDate: currentAsset.activeVersion.startDate || "",
                         endDate: currentAsset.activeVersion.endDate || "",
-                        etfConfig: currentAsset.activeVersion.etfConfig
-                            ? {
-                                  tracker:
-                                      currentAsset.activeVersion.etfConfig
-                                          .tracker || "",
-                                  percentage:
-                                      parseFloat(
-                                          currentAsset.activeVersion.etfConfig
-                                              .percentage,
-                                      ) || 0,
-                                  ter:
-                                      parseFloat(
-                                          currentAsset.activeVersion.etfConfig
-                                              .ter,
-                                      ) || 0,
-                              }
-                            : undefined,
+                        etfConfig: (
+                            currentAsset.activeVersion.etfConfig || []
+                        ).map((t: any) => ({
+                            tracker: t.tracker || "",
+                            percentage: parseFloat(t.percentage) || 0,
+                            ter: parseFloat(t.ter) || 0,
+                        })),
                         penalties: (
                             currentAsset.activeVersion.penalties || []
                         ).map((p: any) => ({
@@ -563,23 +553,13 @@
                                       a.activeVersion.remainderStartDate || "",
                                   startDate: a.activeVersion.startDate || "",
                                   endDate: a.activeVersion.endDate || "",
-                                  etfConfig: a.activeVersion.etfConfig
-                                      ? {
-                                            tracker:
-                                                a.activeVersion.etfConfig
-                                                    .tracker || "",
-                                            percentage:
-                                                parseFloat(
-                                                    a.activeVersion.etfConfig
-                                                        .percentage,
-                                                ) || 0,
-                                            ter:
-                                                parseFloat(
-                                                    a.activeVersion.etfConfig
-                                                        .ter,
-                                                ) || 0,
-                                        }
-                                      : undefined,
+                                  etfConfig: (
+                                      a.activeVersion.etfConfig || []
+                                  ).map((t: any) => ({
+                                      tracker: t.tracker || "",
+                                      percentage: parseFloat(t.percentage) || 0,
+                                      ter: parseFloat(t.ter) || 0,
+                                  })),
                                   penalties: (
                                       a.activeVersion.penalties || []
                                   ).map((p: any) => ({

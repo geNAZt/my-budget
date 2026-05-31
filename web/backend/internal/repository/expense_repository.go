@@ -17,7 +17,7 @@ func NewExpenseRepository(db *sql.DB) *ExpenseRepository {
 
 func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 	query := `
-		SELECT e.id, e.name, e.pool_id, e.created_at, v.id, v.amount, v.due_date
+		SELECT e.id, e.name, e.pool_id, e.created_at, v.id, v.amount, v.due_date, v.created_at
 		FROM expenses e
 		INNER JOIN expense_versions v ON e.id = v.expense_id
 		WHERE e.user_id = ? AND e.is_deleted = FALSE
@@ -55,7 +55,7 @@ func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 		var v domain.ExpenseVersion
 		var poolID sql.NullString
 
-		err := rows.Scan(&e.ID, &e.Name, &poolID, &e.CreatedAt, &v.ID, &v.Amount, &v.DueDate)
+		err := rows.Scan(&e.ID, &e.Name, &poolID, &e.CreatedAt, &v.ID, &v.Amount, &v.DueDate, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

@@ -17,7 +17,7 @@ func NewLoanRepository(db *sql.DB) *LoanRepository {
 
 func (r *LoanRepository) List(userID string) ([]domain.Loan, error) {
 	query := `
-		SELECT l.id, l.name, l.pool_id, l.created_at, v.id, v.amount_lent, v.interest_rate, v.runtime_months, v.start_date, v.remainder_start_date, v.priority, v.next_loan_id, v.balloon_leftover, v.is_interest_only, v.early_payoff_penalty
+		SELECT l.id, l.name, l.pool_id, l.created_at, v.id, v.amount_lent, v.interest_rate, v.runtime_months, v.start_date, v.remainder_start_date, v.priority, v.next_loan_id, v.balloon_leftover, v.is_interest_only, v.early_payoff_penalty, v.created_at
 		FROM loans l
 		INNER JOIN loan_versions v ON l.id = v.loan_id
 		WHERE l.user_id = ? AND l.is_deleted = FALSE
@@ -57,7 +57,7 @@ func (r *LoanRepository) List(userID string) ([]domain.Loan, error) {
 		var poolID sql.NullString
 		var remainderStartDate sql.NullTime
 
-		err := rows.Scan(&l.ID, &l.Name, &poolID, &l.CreatedAt, &v.ID, &v.AmountLent, &v.InterestRate, &v.RuntimeMonths, &v.StartDate, &remainderStartDate, &v.Priority, &nextLoanID, &v.BalloonLeftover, &v.IsInterestOnly, &v.EarlyPayoffPenalty)
+		err := rows.Scan(&l.ID, &l.Name, &poolID, &l.CreatedAt, &v.ID, &v.AmountLent, &v.InterestRate, &v.RuntimeMonths, &v.StartDate, &remainderStartDate, &v.Priority, &nextLoanID, &v.BalloonLeftover, &v.IsInterestOnly, &v.EarlyPayoffPenalty, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -94,6 +95,8 @@ func (s *MarketDataService) tryLoadFromLocalIndex(ticker string) ([]float64, err
 }
 
 func (s *MarketDataService) GetHistoricalWeeklyReturns(ticker string) ([]float64, error) {
+	log.Printf("[MARKET_DATA] Fetching historical weekly returns for ticker %s", ticker)
+
 	// 1. Try Local Index
 	if returns, err := s.tryLoadFromLocalIndex(ticker); err == nil {
 		return returns, nil

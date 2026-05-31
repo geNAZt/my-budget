@@ -8,10 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +17,6 @@ import (
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/integration"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
-	"github.com/genazt/my-budget-script/web/backend/pkg/apis/enablebanking"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -39,6 +35,10 @@ type SyncService struct {
 	// Temporary cache for recovered master keys (Recovery flow)
 	recoveryCache map[string]map[string][]byte // userID -> integrationID -> MIK
 	cacheMu       sync.RWMutex
+}
+
+func (s *SyncService) RuleService() *RuleService {
+	return s.ruleService
 }
 
 func (s *SyncService) GetProvider(serviceType string) integration.Provider {
@@ -359,228 +359,6 @@ func (s *SyncService) RecoverMIKsToCache(userID string, phrase string) int {
 	}
 
 	return recoveredCount
-}
-
-func (s *SyncService) RetroactivelyFixEnableBankingSigns() {
-
-	log.Printf("[MIGRATION] Starting retroactive Enable Banking sign correction...")
-	integrations, err := s.integrationRepo.ListAll()
-	if err != nil {
-		log.Printf("[MIGRATION] Failed to list integrations: %v", err)
-		return
-	}
-
-	fixedCount := 0
-	for _, i := range integrations {
-		if i.ServiceType != "ENABLEBANKING" {
-			continue
-		}
-
-		masterKey, err := s.GetMasterKey(i.UserID, i.ID)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to get master key: %v", i.Name, err)
-			continue
-		}
-
-		// Read integration config to get account IBANs
-		decryptedConfig, err := s.DecryptIntegrationConfig(i.UserID, &i)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to decrypt integration config: %v", i.Name, err)
-			continue
-		}
-
-		var config struct {
-			AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
-		}
-		if err := json.Unmarshal(decryptedConfig, &config); err != nil {
-			log.Printf("[MIGRATION][%s] Failed to unmarshal integration config: %v", i.Name, err)
-			continue
-		}
-
-		txs, err := s.transactionRepo.ListByIntegration(i.UserID, i.ID)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to list transactions: %v", i.Name, err)
-			continue
-		}
-
-		for _, tx := range txs {
-			decrypted, err := s.DecryptTransaction(i.UserID, &tx, map[string][]byte{i.ID: masterKey}, nil)
-			if err != nil {
-				log.Printf("[MIGRATION][%s] Failed to decrypt tx %s", i.Name, tx.ID)
-				continue
-			}
-
-			var ebTx enablebanking.Transaction
-			if err := json.Unmarshal(decrypted, &ebTx); err != nil {
-				log.Printf("[MIGRATION][%s] Failed to unmarshal ebTx %s: %v", i.Name, tx.ID, err)
-				continue
-			}
-
-			if ebTx.TransactionAmount != nil && ebTx.TransactionAmount.Amount != nil {
-				amt, _ := strconv.ParseFloat(*ebTx.TransactionAmount.Amount, 64)
-				isDebit := false
-
-				// Normalize fields for frontend if missing in encrypted data
-				var txMap map[string]interface{}
-				json.Unmarshal(decrypted, &txMap)
-
-				// New Simple IBAN Logic:
-				myIBAN := ""
-				if config.AccountsMetadata != nil && config.AccountsMetadata[tx.AccountID] != nil {
-					myIBAN = strings.ReplaceAll(strings.ToUpper(config.AccountsMetadata[tx.AccountID].IBAN), " ", "")
-				}
-
-				isSet := false
-
-				// Check CreditDebitIndicator (Most reliable source)
-				indicator := ""
-				if ebTx.CreditDebitIndicator != nil {
-					indicator = *ebTx.CreditDebitIndicator
-				} else if val, ok := txMap["credit_debit_indicator"].(string); ok {
-					indicator = val
-				}
-
-				if strings.ToUpper(indicator) == "DBIT" {
-					isDebit = true
-					isSet = true
-				} else if strings.ToUpper(indicator) == "CRDT" {
-					isDebit = false
-					isSet = true
-				}
-
-				if !isSet && myIBAN != "" {
-					if ebTx.Debtor != nil && ebTx.Debtor.Account != nil && ebTx.Debtor.Account.Iban != nil {
-						debtorIBAN := strings.ReplaceAll(strings.ToUpper(*ebTx.Debtor.Account.Iban), " ", "")
-						if debtorIBAN == myIBAN {
-							isDebit = true
-							isSet = true
-						}
-					}
-
-					if !isSet && ebTx.Creditor != nil && ebTx.Creditor.Account != nil && ebTx.Creditor.Account.Iban != nil {
-						creditorIBAN := strings.ReplaceAll(strings.ToUpper(*ebTx.Creditor.Account.Iban), " ", "")
-						if creditorIBAN == myIBAN {
-							isDebit = false
-							isSet = true
-						}
-					}
-				}
-
-				if !isSet {
-					if ebTx.Creditor != nil && ebTx.Creditor.Name != nil {
-						// Fallback: If Creditor is present, it's likely an outgoing payment
-						isDebit = true
-						isSet = true
-					} else if ebTx.Debtor != nil && ebTx.Debtor.Account != nil {
-						// Fallback to Debtor presence
-						isDebit = true
-						isSet = true
-					}
-				}
-
-				needsUpdate := false
-
-				// Fix sign/account mapping if necessary
-				if isDebit && amt > 0 && tx.DestinationAccountID != "" {
-					tx.SourceAccountID = tx.AccountID
-					tx.DestinationAccountID = ""
-					needsUpdate = true
-					log.Printf("[MIGRATION][%s] Correcting sign for tx %s (Amt: %f, Indicator: %s, isDebit: %v)", i.Name, tx.ID, amt, indicator, isDebit)
-				}
-
-				receiver := ""
-				if ebTx.Creditor != nil && ebTx.Creditor.Name != nil {
-					receiver = *ebTx.Creditor.Name
-				} else if ebTx.Debtor != nil && ebTx.Debtor.Account != nil && ebTx.Debtor.Name != nil {
-					receiver = *ebTx.Debtor.Name
-				}
-
-				desc := ""
-				if ebTx.RemittanceInformation != nil && len(*ebTx.RemittanceInformation) > 0 {
-					desc = strings.Join(*ebTx.RemittanceInformation, " ")
-				}
-
-				hasDescription := txMap["description"] != nil && txMap["description"] != ""
-				hasCreditorName := txMap["creditor_name"] != nil && txMap["creditor_name"] != ""
-
-				if !hasDescription || !hasCreditorName || (isDebit && amt > 0) || txMap["amount"] == nil {
-					txMap["description"] = desc
-					txMap["creditor_name"] = receiver
-					txMap["amount"] = amt
-					if isDebit {
-						txMap["amount"] = -math.Abs(amt)
-						// Also update the nested amount string that the frontend often uses
-						if txMap["transaction_amount"] != nil {
-							if ta, ok := txMap["transaction_amount"].(map[string]interface{}); ok {
-								ta["amount"] = fmt.Sprintf("%.2f", -math.Abs(amt))
-							}
-						}
-					}
-
-					newJSON, _ := json.Marshal(txMap)
-					encrypted, _ := s.cryptoService.Encrypt(masterKey, newJSON)
-					tx.EncryptedData = base64.StdEncoding.EncodeToString(encrypted)
-					needsUpdate = true
-					log.Printf("[MIGRATION][%s] Injecting names/signs for tx %s (Desc: %s, Receiver: %s, Amt: %v, Indicator: %s, isDebit: %v)", i.Name, tx.ID, desc, receiver, txMap["amount"], indicator, isDebit)
-				}
-
-				if needsUpdate {
-					// Update the database record
-					err = s.transactionRepo.SaveBulk(tx.UserID, []domain.BankTransaction{tx})
-					if err == nil {
-						fixedCount++
-					} else {
-						log.Printf("[MIGRATION][%s] Failed to save fixed tx %s: %v", i.Name, tx.ID, err)
-					}
-				}
-			} else {
-				log.Printf("[MIGRATION][%s] Skipping tx %s: TransactionAmount is nil", i.Name, tx.ID)
-			}
-		}
-	}
-	log.Printf("[MIGRATION] Finished Enable Banking sign correction. Fixed %d transactions.", fixedCount)
-}
-
-func (s *SyncService) RetroactivelyAssignAccounts() {
-
-	log.Printf("[CRYPTO] Starting retroactive account assignment migration...")
-	integrations, err := s.integrationRepo.ListAll()
-	if err != nil {
-		log.Printf("[CRYPTO] Migration failed to list integrations: %v", err)
-		return
-	}
-
-	for _, i := range integrations {
-		if i.ServiceType == "TRADING212" {
-			s.transactionRepo.MigrateEmptyAccountIDs(i.ID, "T212_PORTFOLIO")
-			continue
-		}
-
-		if i.ServiceType == "GOCARDLESS" {
-			decrypted, err := s.DecryptIntegrationConfig(i.UserID, &i)
-			if err != nil {
-				continue
-			}
-
-			var config struct {
-				AccountIDs       []string `json:"account_ids"`
-				LegacyAccountIDs []string `json:"accounts"`
-			}
-			if err := json.Unmarshal(decrypted, &config); err != nil {
-				continue
-			}
-
-			ids := config.AccountIDs
-			if len(ids) == 0 {
-				ids = config.LegacyAccountIDs
-			}
-
-			// If only one account exists, we can safely assume legacy transactions belong to it
-			if len(ids) == 1 {
-				s.transactionRepo.MigrateEmptyAccountIDs(i.ID, ids[0])
-			}
-		}
-	}
 }
 
 func (s *SyncService) GetAccountActiveIntegrations(userID string, mikCache map[string][]byte, integrations []domain.Integration) (map[string]string, error) {
@@ -992,6 +770,148 @@ type TempLogger struct {
 func (t *TempLogger) Debug(v ...interface{}) {
 
 	log.Printf("[DEBUG] %v", v)
+}
+
+func (s *SyncService) RetroactivelyFixGoCardlessSigns() {
+	log.Printf("[MIGRATION] Starting retroactive GoCardless sign and peer correction...")
+	integrations, err := s.integrationRepo.ListAll()
+	if err != nil {
+		log.Printf("[MIGRATION] Failed to list integrations: %v", err)
+		return
+	}
+
+	fixedCount := 0
+	for _, i := range integrations {
+		if i.ServiceType != "GOCARDLESS" {
+			continue
+		}
+
+		masterKey, err := s.GetMasterKey(i.UserID, i.ID)
+		if err != nil {
+			log.Printf("[MIGRATION][%s] Failed to get master key: %v", i.Name, err)
+			continue
+		}
+
+		// Read integration config to get account tags
+		decryptedConfig, err := s.DecryptIntegrationConfig(i.UserID, &i)
+		if err != nil {
+			log.Printf("[MIGRATION][%s] Failed to decrypt integration config: %v", i.Name, err)
+			continue
+		}
+
+		var config struct {
+			AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+		}
+		if err := json.Unmarshal(decryptedConfig, &config); err != nil {
+			log.Printf("[MIGRATION][%s] Failed to unmarshal integration config: %v", i.Name, err)
+			continue
+		}
+
+		txs, err := s.transactionRepo.ListByIntegration(i.UserID, i.ID)
+		if err != nil {
+			log.Printf("[MIGRATION][%s] Failed to list transactions: %v", i.Name, err)
+			continue
+		}
+
+		mikCache := map[string][]byte{i.ID: masterKey}
+
+		for _, tx := range txs {
+			decrypted, err := s.DecryptTransaction(i.UserID, &tx, mikCache, nil)
+			if err != nil {
+				log.Printf("[MIGRATION][%s] Failed to decrypt tx %s", i.Name, tx.ID)
+				continue
+			}
+
+			// We need to know if it's already a GenericTransaction or raw GoCardless data
+			var txMap map[string]interface{}
+			json.Unmarshal(decrypted, &txMap)
+
+			var amt float64
+			var receiver string
+			var receiverIBAN string
+			var desc string
+			var externalID string
+			var createdAt time.Time
+
+			// Check if it's a GenericTransaction (has "Peer" or "Amount" as float)
+			isGeneric := false
+			if _, ok := txMap["Peer"]; ok {
+				isGeneric = true
+			} else if _, ok := txMap["peer"]; ok {
+				isGeneric = true
+			}
+
+			if isGeneric {
+				var gtx domain.GenericTransaction
+				json.Unmarshal(decrypted, &gtx)
+				amt = gtx.Amount
+				desc = gtx.Description
+				createdAt = gtx.CreatedAt
+				externalID = gtx.ExternalID
+				// We still need to re-calculate receiver to see if it was wrong
+				// But we need the RAW data for that.
+				// If it's already generic, the raw data is GONE unless we stored it inside?
+				// GC provider doesn't seem to store raw data inside GenericTransaction.
+				// So if it's already generic, we can't easily fix the peer if it was wrong.
+				// However, GC's old logic was "prefer Debtor", and for expenses the debtor is the USER.
+				// So if Peer == User's Name, it's probably wrong.
+
+				// For now, let's see if we can find raw data.
+				// If we can't, we skip peer fix but can still fix pools.
+				receiver = gtx.Peer
+				receiverIBAN = gtx.PeerIBAN
+			} else {
+				// Raw GoCardless data
+				// Use the provider's ParseTransaction logic (which we just fixed)
+				provider := s.integrationRegistry.Get("GOCARDLESS")
+				meta, err := provider.ParseTransaction(decrypted)
+				if err != nil {
+					continue
+				}
+				amt = meta.Amount
+				receiver = meta.Receiver
+				receiverIBAN = meta.ReceiverIBAN
+				desc = meta.Description
+				externalID = meta.ExternalID
+				createdAt = meta.CreatedAt
+			}
+
+			needsPoolFix := tx.PoolID == nil || *tx.PoolID == ""
+
+			// For GC, we especially want to fix cases where the receiver is the user themselves (old broken logic)
+			// But without the user's name at hand, it's hard.
+			// However, re-running ParseTransaction on RAW data WILL fix it because it's now direction-aware.
+
+			if !isGeneric || needsPoolFix {
+				accountTags := ""
+				if meta, ok := config.AccountsMetadata[tx.AccountID]; ok && meta != nil {
+					accountTags = meta.Tags
+				}
+
+				poolID, _ := s.ruleService.ProcessTransaction(tx.UserID, tx.IntegrationID, receiver, desc, "", accountTags, amt)
+				tx.PoolID = poolID
+
+				genericTx := domain.GenericTransaction{
+					Amount:      amt,
+					Description: desc,
+					Peer:        receiver,
+					PeerIBAN:    receiverIBAN,
+					CreatedAt:   createdAt,
+					ExternalID:  externalID,
+				}
+
+				newJSON, _ := json.Marshal(genericTx)
+				encrypted, _ := s.cryptoService.Encrypt(masterKey, newJSON)
+				tx.EncryptedData = base64.StdEncoding.EncodeToString(encrypted)
+
+				err = s.transactionRepo.SaveBulk(tx.UserID, []domain.BankTransaction{tx})
+				if err == nil {
+					fixedCount++
+				}
+			}
+		}
+	}
+	log.Printf("[MIGRATION] Finished GoCardless correction. Fixed %d transactions.", fixedCount)
 }
 
 func getMapKeys(m map[string]interface{}) []string {

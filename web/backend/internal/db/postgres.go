@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -136,6 +139,63 @@ func rebind(query string) string {
 		}
 	}
 	return sb.String()
+}
+
+func BackupDB(dsn string, dataDir string) {
+	log.Printf("[DB] Starting database backup...")
+
+	backupDir := filepath.Join(dataDir, "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		log.Printf("[DB] Failed to create backup directory: %v", err)
+		return
+	}
+
+	// pg_dump -d <dsn> -f <file>
+	timestamp := time.Now().Format("20060102-150405")
+	backupFile := filepath.Join(backupDir, fmt.Sprintf("backup-%s.sql", timestamp))
+
+	cmd := exec.Command("pg_dump", "-d", dsn, "-f", backupFile)
+	// pg_dump might need PGPASSWORD if it's not in the DSN, 
+	// but DATABASE_URL usually contains it.
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[DB] Backup failed: %v\nOutput: %s", err, string(output))
+		return
+	}
+
+	log.Printf("[DB] Backup successful: %s", backupFile)
+
+	// Clean up old backups (keep last 30)
+	files, err := os.ReadDir(backupDir)
+	if err != nil {
+		return
+	}
+
+	type fileInfo struct {
+		name string
+		time time.Time
+	}
+	var backups []fileInfo
+	for _, f := range files {
+		if !f.IsDir() && strings.HasPrefix(f.Name(), "backup-") && strings.HasSuffix(f.Name(), ".sql") {
+			info, err := f.Info()
+			if err == nil {
+				backups = append(backups, fileInfo{f.Name(), info.ModTime()})
+			}
+		}
+	}
+
+	if len(backups) > 30 {
+		sort.Slice(backups, func(i, j int) bool {
+			return backups[i].time.After(backups[j].time)
+		})
+
+		for i := 30; i < len(backups); i++ {
+			os.Remove(filepath.Join(backupDir, backups[i].name))
+			log.Printf("[DB] Removed old backup: %s", backups[i].name)
+		}
+	}
 }
 
 func InitDB(dsn string) (*sql.DB, error) {

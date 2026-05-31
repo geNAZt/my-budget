@@ -17,7 +17,7 @@ func NewIncomeRepository(db *sql.DB) *IncomeRepository {
 
 func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 	query := `
-		SELECT i.id, i.name, i.pool_id, i.created_at, v.id, v.amount, v.stop_modification_id, v.start_date, v.end_date, v.interval_months
+		SELECT i.id, i.name, i.pool_id, i.created_at, v.id, v.amount, v.stop_modification_id, v.start_date, v.end_date, v.interval_months, v.created_at
 		FROM incomes i
 		INNER JOIN income_versions v ON i.id = v.income_id
 		WHERE i.user_id = ? AND i.is_deleted = FALSE
@@ -57,7 +57,7 @@ func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 		var stopModID sql.NullString
 		var poolID sql.NullString
 
-		err := rows.Scan(&i.ID, &i.Name, &poolID, &i.CreatedAt, &v.ID, &v.Amount, &stopModID, &v.StartDate, &endDate, &v.IntervalMonths)
+		err := rows.Scan(&i.ID, &i.Name, &poolID, &i.CreatedAt, &v.ID, &v.Amount, &stopModID, &v.StartDate, &endDate, &v.IntervalMonths, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

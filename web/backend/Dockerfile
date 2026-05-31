@@ -41,8 +41,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Stage 2: Clean, minimal production runtime with Node.js sandbox support
 FROM alpine:latest AS runner
 
-# Install Node.js, npm, ca-certificates, and tzdata (required by ExecutionEngine gRPC sandbox)
-RUN apk add --no-cache nodejs npm ca-certificates tzdata
+# Install Node.js, npm, ca-certificates, tzdata, and postgresql-client (required for backups)
+RUN apk add --no-cache nodejs npm ca-certificates tzdata postgresql-client
 
 WORKDIR /app
 
@@ -50,6 +50,7 @@ WORKDIR /app
 COPY --from=builder /app/main .
 COPY --from=builder /app/data ./data
 COPY --from=builder /app/backend/execution_engine ./execution_engine
+COPY --from=builder /app/backend/index ./index
 
 # Install production-only npm dependencies for the isolated execution engine daemon
 RUN cd /app/execution_engine && npm ci --omit=dev

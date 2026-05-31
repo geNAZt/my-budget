@@ -17,7 +17,7 @@ func NewModificationRepository(db *sql.DB) *ModificationRepository {
 
 func (r *ModificationRepository) List(userID string) ([]domain.Modification, error) {
 	query := `
-		SELECT m.id, m.target_id, m.target_type, m.description, m.created_at, v.id, v.amount, v.withdrawal_percentage, v.start_date, v.end_date, v.interval_months
+		SELECT m.id, m.target_id, m.target_type, m.description, m.created_at, v.id, v.amount, v.withdrawal_percentage, v.start_date, v.end_date, v.interval_months, v.created_at
 		FROM modifications m
 		INNER JOIN modification_versions v ON m.id = v.modification_id
 		WHERE m.user_id = ? AND m.is_deleted = FALSE
@@ -39,7 +39,7 @@ func (r *ModificationRepository) List(userID string) ([]domain.Modification, err
 		var endDate sql.NullTime
 		var targetID sql.NullString
 
-		err := rows.Scan(&m.ID, &targetID, &m.TargetType, &m.Description, &m.CreatedAt, &v.ID, &v.Amount, &v.WithdrawalPercentage, &v.StartDate, &endDate, &v.IntervalMonths)
+		err := rows.Scan(&m.ID, &targetID, &m.TargetType, &m.Description, &m.CreatedAt, &v.ID, &v.Amount, &v.WithdrawalPercentage, &v.StartDate, &endDate, &v.IntervalMonths, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

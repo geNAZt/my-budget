@@ -51,6 +51,9 @@
         Waves,
         Upload,
         Euro,
+        User,
+        CreditCard,
+        Hash,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import BudgetSheet from "$lib/components/BudgetSheet.svelte";
@@ -136,6 +139,9 @@
     let transactionToEdit = $state<any>(null);
     let editTagsInput = $state("");
     let editAmountInput = $state<number>(0);
+    let editReceiverInput = $state("");
+    let editReceiverIbanInput = $state("");
+    let editDescriptionInput = $state("");
 
     // Chain Editor
     let showChainEditor = $state(false);
@@ -771,6 +777,9 @@
         transactionToEdit = decode(tx);
         editTagsInput = tx.tags || "";
         editAmountInput = getTxAmount(tx);
+        editReceiverInput = getTxPeer(tx);
+        editReceiverIbanInput = getTxPeerIban(tx);
+        editDescriptionInput = getTxDescription(tx);
         showTransactionEdit = true;
     }
 
@@ -783,9 +792,10 @@
                     id: transactionToEdit.id,
                     integrationId: transactionToEdit.integrationId || "",
                     accountId: transactionToEdit.accountId || "",
-                    amount: transactionToEdit.amount || 0,
-                    receiver: transactionToEdit.receiver || "",
-                    description: transactionToEdit.description || "",
+                    amount: editAmountInput,
+                    receiver: editReceiverInput,
+                    receiverIban: editReceiverIbanInput,
+                    description: editDescriptionInput,
                     createdAt: transactionToEdit.createdAt || "",
                     tags: editTagsInput || "",
                     sourceAccountId: transactionToEdit.sourceAccountId || "",
@@ -2259,6 +2269,68 @@
                         bind:value={transactionToEdit.destinationAccountId}
                         placeholder="Select destination..."
                     />
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-2">
+                        <label
+                            for="edit-receiver-input"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                            >Peer Name</label
+                        >
+                        <div
+                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                        >
+                            <User class="w-4 h-4 text-slate-400" />
+                            <input
+                                id="edit-receiver-input"
+                                type="text"
+                                bind:value={editReceiverInput}
+                                placeholder="External Peer"
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label
+                            for="edit-receiver-iban-input"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                            >Peer IBAN</label
+                        >
+                        <div
+                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                        >
+                            <CreditCard class="w-4 h-4 text-slate-400" />
+                            <input
+                                id="edit-receiver-iban-input"
+                                type="text"
+                                bind:value={editReceiverIbanInput}
+                                placeholder="DE00..."
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label
+                        for="edit-description-input"
+                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                        >Reference / Description</label
+                    >
+                    <div
+                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                    >
+                        <Hash class="w-4 h-4 text-slate-400" />
+                        <input
+                            id="edit-description-input"
+                            type="text"
+                            bind:value={editDescriptionInput}
+                            placeholder="..."
+                            class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                        />
+                    </div>
                 </div>
 
                 <div class="space-y-2">

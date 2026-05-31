@@ -1,12 +1,11 @@
 > [!CRITICAL]
 > **EXECUTIVE AGENTIC DIRECTIVES (ZERO-TOLERANCE COMPLIANCE):**
-> 1. **No Code Omissions:** NEVER use `...` or placeholders. Provide complete, syntactically correct files/blocks.
-> 2. **Zero-HTTP Application Logic:** All frontend-backend state must use **Protobuf over WebSockets**. No standard REST/Echo routes, no MsgPack, no JSON over WebSockets.
-> 3. **No Massive Refactors:** Do not rewrite existing logic/components. Layer new features cleanly alongside them.
-> 4. **No JSON-Bridging:** Convert models to Protobuf via direct field-by-field assignments. Do not convert through intermediate JSON strings.
-> 5. **Idempotent DB Migrations:** Schema changes must use `information_schema` checks. `TEXT` columns must always have `DEFAULT ''`.
-> 6. **No Absolute Paths:** Use relative or dynamically computed paths exclusively.
-
+> 1. **Zero-HTTP Application Logic:** All frontend-backend state must use **Protobuf over WebSockets**. No standard REST/Echo routes, no MsgPack, no JSON over WebSockets.
+> 2. **No Massive Refactors:** Do not rewrite existing logic/components. Layer new features cleanly alongside them.
+> 3. **No JSON-Bridging:** Convert models to Protobuf via direct field-by-field assignments. Do not convert through intermediate JSON strings.
+> 4. **Idempotent DB Migrations:** Schema changes must use `information_schema` checks. `TEXT` columns must always have `DEFAULT ''`.
+> 5. **No Absolute Paths:** Use relative or dynamically computed paths exclusively.
+> 6. **Code Integrity:** Adhere strictly to the *Code Integrity (Tool vs. Chat Separation)* standard detailed in Section 1. Never use `...` or omission placeholders when executing background tools to modify codebase files on disk.
 # Internal Wealth Engine: Agentic Workflow & Ruleset
 
 This document serves as the foundational mandate for all AI agents and developers working on the `web/` directory. Adherence to these rules is mandatory.
@@ -29,7 +28,12 @@ This document serves as the foundational mandate for all AI agents and developer
     *   When introducing new architectural concepts or breaking changes, an **automatic migration** (DB or Config) MUST be implemented to ensure existing user flows remain operational.
     *   If an automatic migration is technically impossible, a **guided user flow** MUST be generated to walk the user through the required manual migration steps. 
     *   **Zero-Downtime Assumption:** Never break a user's access or history during an update.
-
+* **Unified Diff Standard (Chat Only):** In the chat window response, the agent MUST ONLY display standard unified diff blocks (`+++` / `---`) for file modifications. Printing unchanged sections of code in the chat UI is strictly a code-review failure.
+* **Atomic Tool Operations:** The 'No Code Omissions' rule applies strictly to file edits written to disk via system tools. The agent must pass the fully constructed payload to the file-writing tool directly while keeping the text response in the chat bubble restricted to a tiny summary or diff.
+* **One-and-Done Verification:** Once a file has been successfully edited and verified via compilation scripts (`go test`, `npm run check`), the agent is forbidden from re-reading or displaying the newly saved file back into the chat window to confirm it worked. Trust the exit codes of the validation pipeline. 
+* **Code Integrity (Tool vs. Chat Separation):** * **File Modifications (Disk):** When executing file-writing or editing tools to modify the codebase, the agent MUST inject the complete, syntactically correct code blocks. Using `...` or omission placeholders inside live source code files is strictly prohibited and constitutes an automatic compilation failure.
+    * **Chat Responses (UI):** To maximize token efficiency, the agent MUST NOT print these complete files into the chat dialogue window. The chat interface is strictly reserved for standard unified diffs (`+++`/`---`) summarizing the changes made by the tools.
+    
 ## 2. Design Identity (Mandatory Visual Rules)
 Everything we design MUST be coherent with the already existing UI look and feel. Do not invent new UI patterns unless the existing ones are insufficient.
 
@@ -144,7 +148,6 @@ Every task iteration MUST cycle through these exact states in order:
 
 ### 8.1 Agentic Safeguards (Bug Prevention)
 *   **Database Evolution:** NEVER depend on the state of the database to verify schema changes. All database changes MUST be implemented as idempotent migrations in `web/backend/internal/db/postgres.go` using `information_schema` checks. The local database is not used on the server; code is the only source of truth for the schema.
-*   **Code Integrity:** NEVER use `...` (omission placeholders) when providing code blocks. Always provide the complete, syntactically correct code for the section being modified to ensure it can be applied directly without causing build failures.
 *   **External APIs:** All external API access must be made using OpenAPI-generated clients. Manual struct definitions and HTTP call logic for external providers are prohibited. Use the definitions in `web/backend/apis/` to generate clients.
 *   **Pathing Integrity:** NEVER use hardcoded absolute system paths (e.g. `/Users/fabian/...`) in source code or configurations. Always use relative paths (e.g. relative to the project root, app data directory, or working directory) or compute them dynamically at runtime (e.g., using `os.Executable`, `filepath.Dir`, or environment variables) to ensure portability across different host environments.
 *   **Integration Providers Decoupling (Strict Encapsulation):** All integration-specific logic, data parsing, ticker symbol mappings, pending/active order calculations, and arithmetic side-matching (e.g., BUY orders mapped to negative amounts) MUST be strictly encapsulated within their respective provider packages (e.g., `web/backend/internal/integration/trading212/`). The core integration engine, database syncing systems, and core API layers (e.g., `web/backend/internal/api/integration.go`) MUST be completely agnostic of provider-specific exception handling. Every provider MUST map both completed and pending/active transaction payloads to the unified `domain.GenericTransaction` structure before encrypting and persisting them in `bank_transactions.encrypted_data`.
@@ -165,6 +168,8 @@ To ensure maximum speed, lower latency, and highly efficient token consumption, 
 *   **Compact Artifact Retainment:** Keep active artifacts (`implementation_plan.md`, `task.md`, `walkthrough.md`) extremely focused. Once a sub-task or milestone is completed, condense its details into a brief summary paragraph rather than carrying over large historical diffs or extensive command logs.
 *   **Avoid Redundant Invocations:** Do not re-fetch file contents or run lookup searches for files or endpoints that have already been retrieved or explained in the current active session memory.
 *   **Encourage Compaction and Session Resets:** For extensive features or sequential debugging sessions, proactively suggest session summaries and resets to clear accumulated tool execution traces.
+*   **Strict Output Minimization:** The agent MUST bypass long conversational explanations or step-by-step summaries of what it plans to do. 
+*   **Diffs Only for Drafts:** When verifying a solution before writing it to disk, the agent should only output the modified lines or raw functions, never the surrounding untouched code blocks.
 
 ## 10. Production VM Access
 The real running instance (with the live database, Docker containers, and scenario logs) runs on a local VM accessible via SSH:

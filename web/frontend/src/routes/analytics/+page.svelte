@@ -166,8 +166,7 @@
                         if (message) {
                             const typeName = (message as any).$typeName;
                             if (typeName === "api.YieldMap") {
-                                projections[id].simulated_yields =
-                                    (message as any).yields || {};
+                                projections[id].simulated_yields = { ...((message as any).yields || {}) };
                             } else if (typeName === "api.ProjectionMonth") {
                                 projections[id].months = [
                                     ...projections[id].months,

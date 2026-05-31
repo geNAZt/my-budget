@@ -65,6 +65,11 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 		AmountPerMonth:   reqVersion.AmountPerMonth,
 	}
 
+	if av.Type == domain.AssetTypeETF {
+		av.InterestRate = 0
+		av.InterestInterval = "Yearly"
+	}
+
 	if reqVersion.DumpingLoanId != "" {
 		av.DumpingLoanID = &reqVersion.DumpingLoanId
 	}

@@ -431,10 +431,67 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 		return
 	}
 
+	// 1. Update core fields in DB (accounts, tags)
 	err = t.repo.Update(userID, req.Id, tx.AccountID, req.SourceAccountId, req.DestinationAccountId, req.Tags)
 	if err != nil {
 		t.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// 2. Update encrypted metadata (receiver, receiver_iban, description, amount)
+	integration, _ := t.integrationRepo.GetByID(userID, tx.IntegrationID)
+	if integration != nil {
+		masterKey, err := t.syncService.GetMasterKey(userID, tx.IntegrationID)
+		if err == nil {
+			mikCache := map[string][]byte{tx.IntegrationID: masterKey}
+			decrypted, err := t.syncService.DecryptTransaction(userID, tx, mikCache, nil)
+			if err == nil {
+				provider := t.syncService.GetProvider(integration.ServiceType)
+				if provider != nil {
+					meta, _ := provider.ParseTransaction(decrypted)
+
+					// Update metadata fields from request
+					meta.Amount = req.Amount
+					meta.Receiver = req.Receiver
+					meta.ReceiverIBAN = req.ReceiverIban
+					meta.Description = req.Description
+
+					genericTx := domain.GenericTransaction{
+						Amount:      meta.Amount,
+						Description: meta.Description,
+						Peer:        meta.Receiver,
+						PeerIBAN:    meta.ReceiverIBAN,
+						CreatedAt:   meta.CreatedAt,
+						ExternalID:  meta.ExternalID,
+					}
+
+					newJSON, _ := json.Marshal(genericTx)
+					encrypted, err := t.crypto.Encrypt(masterKey, newJSON)
+					if err == nil {
+						encryptedB64 := base64.StdEncoding.EncodeToString(encrypted)
+						t.repo.UpdateEncryptedData(userID, tx.ID, encryptedB64)
+
+						// 3. Trigger rule re-evaluation
+						accountTags := ""
+						decryptedConfig, err := t.syncService.DecryptIntegrationConfig(userID, integration)
+						if err == nil {
+							var config struct {
+								AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+							}
+							json.Unmarshal(decryptedConfig, &config)
+							if config.AccountsMetadata != nil && config.AccountsMetadata[tx.AccountID] != nil {
+								accountTags = config.AccountsMetadata[tx.AccountID].Tags
+							}
+						}
+
+						newPoolID, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, meta.Amount)
+						if newPoolID != nil {
+							t.repo.UpdatePool(userID, tx.ID, newPoolID)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	t.handler.SendResponse(s, reqID, &apiproto.GenericID{Id: req.Id}, true)
