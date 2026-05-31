@@ -983,11 +983,11 @@
     >
         <!-- Modal Container -->
         <div
-            class="bg-white rounded-[32px] shadow-2xl border border-slate-100 max-w-6xl w-full max-h-[90vh] flex flex-col relative overflow-hidden"
+            class="bg-white dark-budget-modal rounded-[32px] shadow-2xl border border-slate-100 max-w-6xl w-full max-h-[90vh] flex flex-col relative overflow-hidden"
             transition:slide={{ duration: 200 }}
         >
             <!-- Modal Header -->
-            <div class="px-8 py-5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <div class="px-8 py-5 bg-slate-50 dark-budget-modal-header border-b border-slate-100 flex items-center justify-between">
                 <div class="flex items-center gap-4">
                     <div class="p-2.5 bg-indigo-600/10 text-indigo-600 rounded-xl">
                         <Activity class="w-5 h-5" />
@@ -1042,7 +1042,7 @@
             </div>
 
             <!-- Scrollable Modal Content -->
-            <div class="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30">
+            <div class="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30 dark-budget-modal-content">
                 <BudgetSheet
                     date={month.date}
                     breakdown={month.breakdown}
@@ -1067,7 +1067,7 @@
     >
         <!-- Modal Container -->
         <div
-            class="bg-white rounded-[32px] shadow-2xl border border-slate-100 max-w-5xl w-full max-h-[85vh] p-10 relative overflow-hidden flex flex-col"
+            class="bg-white dark-budget-modal rounded-[32px] shadow-2xl border border-slate-100 max-w-5xl w-full max-h-[85vh] p-10 relative overflow-hidden flex flex-col"
             transition:slide={{ duration: 200 }}
         >
             <!-- Close Button -->
@@ -1329,5 +1329,19 @@
 
     .btn-primary {
         @apply px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 transition-all active:scale-95 disabled:opacity-50;
+    }
+
+    :global(.dark) .dark-budget-modal {
+        background-color: #090d16 !important;
+        border-color: rgba(51, 65, 85, 0.4) !important;
+    }
+
+    :global(.dark) .dark-budget-modal-header {
+        background-color: #0f172a !important;
+        border-color: rgba(51, 65, 85, 0.4) !important;
+    }
+
+    :global(.dark) .dark-budget-modal-content {
+        background-color: #090d16 !important;
     }
 </style>

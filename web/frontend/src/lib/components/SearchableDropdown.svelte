@@ -23,8 +23,8 @@
 
     let isOpen = $state(false);
     let searchQuery = $state("");
-    let dropdownElement: HTMLDivElement;
-    let searchInput: HTMLInputElement;
+    let dropdownElement = $state<HTMLDivElement>();
+    let searchInput = $state<HTMLInputElement>();
 
     $effect(() => {
         if (isOpen && searchInput) {

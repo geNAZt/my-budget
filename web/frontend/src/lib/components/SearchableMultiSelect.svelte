@@ -23,8 +23,8 @@
 
     let isOpen = $state(false);
     let searchQuery = $state("");
-    let dropdownElement: HTMLDivElement;
-    let searchInput: HTMLInputElement;
+    let dropdownElement = $state<HTMLDivElement>();
+    let searchInput = $state<HTMLInputElement>();
 
     $effect(() => {
         if (isOpen && searchInput) {
@@ -87,16 +87,18 @@
     {/if}
 
     <div class="relative">
-        <button
-            type="button"
+        <div
+            role="button"
+            tabindex="0"
             onclick={() => (isOpen = !isOpen)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { isOpen = !isOpen; e.preventDefault(); } }}
             class="w-full flex flex-wrap items-center gap-1.5 px-4 py-2.5 bg-white border {isOpen
                 ? 'border-indigo-500 ring-4 ring-indigo-500/10'
-                : 'border-slate-200'} rounded-xl transition-all text-left min-h-[46px]"
+                : 'border-slate-200'} rounded-xl transition-all text-left min-h-[46px] cursor-pointer"
         >
             {#if !values || values.length === 0}
                 <span class="text-xs font-black uppercase tracking-tight text-slate-400">
-                    {placeholder}
+                     {placeholder}
                 </span>
             {:else}
                 <div class="flex flex-wrap gap-1.5 w-[calc(100%-24px)]">
@@ -126,7 +128,7 @@
                         : ''}"
                 />
             </div>
-        </button>
+        </div>
 
         {#if isOpen}
             <div

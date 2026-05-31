@@ -7,6 +7,16 @@
         <title>BudgetScript — Premium Personal Finance &amp; Budget Planning</title>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <script>
+            // Inline dark mode initialization to prevent white flash
+            try {
+                if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            } catch (_) {}
+        </script>
+        <script>
             window.onerror = function (msg, url, line, col, error) {
                 console.log("ROOT ERROR:", msg, "at", url, ":", line, ":", col);
                 if (error) console.log("ERROR OBJ:", error);

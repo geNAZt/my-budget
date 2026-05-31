@@ -1069,7 +1069,4 @@ console.log("Current budget sheet loaded:", budget);
         @apply px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 hover:shadow-xl hover:shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 border border-slate-900;
     }
 
-    .btn-secondary {
-        @apply px-6 py-3 bg-slate-50 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-100 transition-all active:scale-95 border border-slate-100;
-    }
 </style>

@@ -15,6 +15,8 @@
         Fingerprint,
         ArrowRight,
         Cpu,
+        Sun,
+        Moon,
     } from "@lucide/svelte";
     import {
         Chart as ChartJS,
@@ -36,6 +38,7 @@
 
     // High-level lifecycle state
     let mounted = $state(false);
+    let isDark = $state(false);
 
     $effect(() => {
         if (mounted && !auth.isLoading) {
@@ -52,6 +55,17 @@
     onMount(() => {
         initWebSocketFetch();
         mounted = true;
+
+        // Initialize theme
+        const savedTheme = localStorage.getItem("theme");
+        if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            isDark = true;
+            document.documentElement.classList.add("dark");
+        } else {
+            isDark = false;
+            document.documentElement.classList.remove("dark");
+        }
+
         try {
             ChartJS.register(
                 Title,
@@ -68,6 +82,17 @@
             console.error("ChartJS registration failed:", e);
         }
     });
+
+    function toggleTheme() {
+        isDark = !isDark;
+        if (isDark) {
+            document.documentElement.classList.add("dark");
+            localStorage.setItem("theme", "dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+            localStorage.setItem("theme", "light");
+        }
+    }
 
     function handleLogout() {
         auth.logout();
@@ -142,6 +167,7 @@
                                 class="hidden sm:-my-px sm:ml-10 sm:flex sm:space-x-8"
                             >
                                 {#each navItems as item}
+                                    {@const Icon = item.icon}
                                     <a
                                         href={item.href}
                                         class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-black transition-all uppercase tracking-[0.2em] text-[11px]
@@ -151,8 +177,7 @@
                                             ? 'border-indigo-600 text-slate-900'
                                             : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'}"
                                     >
-                                        <svelte:component
-                                            this={item.icon}
+                                        <Icon
                                             class="h-4 w-4 mr-2"
                                         />
                                         {item.name}
@@ -161,6 +186,19 @@
                             </div>
                         </div>
                         <div class="flex items-center space-x-6">
+                            <!-- Theme Toggle Button -->
+                            <button
+                                onclick={toggleTheme}
+                                class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-indigo-100"
+                                title="Toggle Theme"
+                            >
+                                {#if isDark}
+                                    <Sun class="h-5 w-5 text-amber-500 animate-spin-slow" />
+                                {:else}
+                                    <Moon class="h-5 w-5 text-slate-400" />
+                                {/if}
+                            </button>
+
                             <div class="hidden md:flex flex-col items-end">
                                 <span
                                     class="text-xs font-black text-slate-900 tracking-tight"

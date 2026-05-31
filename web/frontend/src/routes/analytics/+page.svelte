@@ -644,6 +644,212 @@
         });
     });
 
+    function formatCurrency(val: number): string {
+        return val.toLocaleString("de-DE", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    function getScenarioEvents(projection: any, activeMetric: string) {
+        if (!projection || !projection.months || projection.months.length === 0) {
+            return { events: [], milestoneIndices: new Set<number>() };
+        }
+
+        const limitMonths = Math.min(
+            projection.months.length,
+            timeHorizonYears * 12,
+        );
+        const months = projection.months.slice(0, limitMonths);
+
+        const values = months.map((m: any) => {
+            if (activeMetric === "net_worth") {
+                return m.assetWorth + m.balance - m.loanDebt;
+            } else if (activeMetric === "assets") {
+                return m.assetWorth;
+            } else if (activeMetric === "cash") {
+                return m.balance;
+            } else if (activeMetric === "debt") {
+                return m.loanDebt;
+            }
+            return 0;
+        });
+
+        interface DeltaCandidate {
+            index: number;
+            delta: number;
+            absDelta: number;
+        }
+
+        const deltas: DeltaCandidate[] = [];
+        for (let i = 1; i < values.length; i++) {
+            deltas.push({
+                index: i,
+                delta: values[i] - values[i - 1],
+                absDelta: Math.abs(values[i] - values[i - 1]),
+            });
+        }
+
+        // We only consider changes that are substantial (at least €2000)
+        const significantChanges = deltas.filter((d) => d.absDelta >= 2000);
+        significantChanges.sort((a, b) => b.absDelta - a.absDelta);
+
+        // Limit to top 4 events per scenario to keep timeline neat
+        const topChanges = significantChanges.slice(0, 4);
+
+        interface EventInfo {
+            index: number;
+            dateLabel: string;
+            title: string;
+            description: string;
+            changeAmount: number;
+        }
+
+        const events: EventInfo[] = [];
+        const milestoneIndices = new Set<number>();
+
+        topChanges.forEach(({ index, delta }) => {
+            const currentMonth = months[index];
+            const prevMonth = months[index - 1];
+            const dateLabel = new Date(currentMonth.date).toLocaleDateString(
+                "de-DE",
+                {
+                    year: "2-digit",
+                    month: "2-digit",
+                },
+            );
+
+            let title = "";
+            let description = "";
+
+            if (activeMetric === "debt") {
+                const prevLoans: any[] = prevMonth.breakdown?.loans || [];
+                const currLoans: any[] = currentMonth.breakdown?.loans || [];
+
+                const paidOff = prevLoans.find((pl) => {
+                    const cl = currLoans.find(
+                        (c) => c.entityName === pl.entityName,
+                    );
+                    return pl.balance > 0 && (!cl || cl.balance <= 0);
+                });
+
+                if (paidOff) {
+                    title = "Loan Paid Off";
+                    description = `"${paidOff.entityName}" was fully paid off.`;
+                } else {
+                    const biggestDrop = currLoans.reduce(
+                        (biggest, cl) => {
+                            const pl = prevLoans.find(
+                                (p) => p.entityName === cl.entityName,
+                            );
+                            if (pl) {
+                                const drop = pl.balance - cl.balance;
+                                if (drop > biggest.drop) {
+                                    return { name: cl.entityName, drop };
+                                }
+                            }
+                            return biggest;
+                        },
+                        { name: "", drop: 0 },
+                    );
+
+                    if (biggestDrop.drop > 5000) {
+                        title = "Major Loan Paydown";
+                        description = `Paid off €${biggestDrop.drop.toLocaleString("de-DE", { maximumFractionDigits: 0 })} from "${biggestDrop.name}".`;
+                    } else {
+                        title = "Debt Reduction";
+                        description = `Debt decreased by €${Math.abs(delta).toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                    }
+                }
+            } else if (activeMetric === "assets") {
+                const prevAssets: any[] = prevMonth.breakdown?.assets || [];
+                const currAssets: any[] = currentMonth.breakdown?.assets || [];
+
+                const soldAsset = prevAssets.find((pa) => {
+                    const ca = currAssets.find(
+                        (c) => c.entityName === pa.entityName,
+                    );
+                    return pa.balance > 0 && (!ca || ca.balance <= 0);
+                });
+
+                if (soldAsset) {
+                    title = "Asset Liquidated";
+                    description = `"${soldAsset.entityName}" was fully liquidated or dumped.`;
+                } else {
+                    const biggestChange = currAssets.reduce(
+                        (biggest, ca) => {
+                            const pa = prevAssets.find(
+                                (p) => p.entityName === ca.entityName,
+                            );
+                            if (pa) {
+                                const change = ca.balance - pa.balance;
+                                if (
+                                    Math.abs(change) > Math.abs(biggest.change)
+                                ) {
+                                    return { name: ca.entityName, change };
+                                }
+                            }
+                            return biggest;
+                        },
+                        { name: "", change: 0 },
+                    );
+
+                    if (biggestChange.change > 5000) {
+                        title = "Asset Growth Surge";
+                        description = `"${biggestChange.name}" increased by €${biggestChange.change.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                    } else if (biggestChange.change < -5000) {
+                        title = "Asset Payout/Reduction";
+                        description = `"${biggestChange.name}" decreased by €${Math.abs(biggestChange.change).toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                    } else {
+                        title =
+                            delta > 0 ? "Asset Value Growth" : "Asset Value Drop";
+                        description = `Assets changed by €${delta.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                    }
+                }
+            } else if (activeMetric === "cash") {
+                const currBills: any[] = currentMonth.breakdown?.bills || [];
+                const currIncomes: any[] =
+                    currentMonth.breakdown?.incomes || [];
+
+                const biggestBill = currBills.reduce(
+                    (max, b) => (b.amount > max.amount ? b : max),
+                    { entityName: "", amount: 0 },
+                );
+                const biggestIncome = currIncomes.reduce(
+                    (max, i) => (i.amount > max.amount ? i : max),
+                    { entityName: "", amount: 0 },
+                );
+
+                if (delta < 0 && biggestBill.amount > 2000) {
+                    title = "Large Outflow";
+                    description = `"${biggestBill.entityName}" outflow of €${biggestBill.amount.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                } else if (delta > 0 && biggestIncome.amount > 2000) {
+                    title = "Large Inflow";
+                    description = `"${biggestIncome.entityName}" inflow of €${biggestIncome.amount.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                } else {
+                    title =
+                        delta > 0 ? "Cash Balance Surge" : "Cash Balance Drop";
+                    description = `Cash balance changed by €${delta.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+                }
+            } else {
+                title = delta > 0 ? "Net Worth Surge" : "Net Worth Decline";
+                description = `Net worth changed by €${delta.toLocaleString("de-DE", { maximumFractionDigits: 0 })}.`;
+            }
+
+            events.push({
+                index,
+                dateLabel,
+                title,
+                description,
+                changeAmount: delta,
+            });
+            milestoneIndices.add(index);
+        });
+
+        events.sort((a, b) => a.index - b.index);
+        return { events, milestoneIndices };
+    }
+
     let chartData = $derived.by(() => {
         const datasets = selectedScenarioIds.map((id, index) => {
             const scenario = scenarios.find((s) => s.id === id);
@@ -683,14 +889,30 @@
                     return 0;
                 });
 
+            const { milestoneIndices } = getScenarioEvents(
+                projection,
+                activeMetric,
+            );
+
             return {
                 label: scenario?.name || "Scenario",
                 data: dataPoints,
                 borderColor: color.border,
                 backgroundColor: color.fill,
                 borderWidth: 3,
-                pointRadius: 0,
-                pointHoverRadius: 6,
+                pointRadius: dataPoints.map((_, idx) =>
+                    milestoneIndices.has(idx) ? 7 : 0,
+                ),
+                pointHoverRadius: dataPoints.map((_, idx) =>
+                    milestoneIndices.has(idx) ? 9 : 6,
+                ),
+                pointBackgroundColor: dataPoints.map((_, idx) =>
+                    milestoneIndices.has(idx) ? "#ffffff" : color.border,
+                ),
+                pointBorderWidth: dataPoints.map((_, idx) =>
+                    milestoneIndices.has(idx) ? 3 : 0,
+                ),
+                pointBorderColor: color.border,
                 tension: 0.35,
                 fill: true,
             };
@@ -847,6 +1069,22 @@
                                 });
                         }
                         return label;
+                    },
+                    footer: function (tooltipItems: any) {
+                        const item = tooltipItems[0];
+                        const datasetIndex = item.datasetIndex;
+                        const dataIndex = item.dataIndex;
+                        const scenarioId = selectedScenarioIds[datasetIndex];
+                        const projection = projections[scenarioId];
+                        const { events } = getScenarioEvents(
+                            projection,
+                            activeMetric,
+                        );
+                        const ev = events.find((e) => e.index === dataIndex);
+                        if (ev) {
+                            return `\nMilestone: ${ev.title}\n${ev.description}`;
+                        }
+                        return "";
                     },
                 },
             },
@@ -1652,6 +1890,56 @@
                             </div>
                         {/if}
                     </div>
+
+                    <!-- Interactive Timeline Section -->
+                    {#if chartLabels.length > 0}
+                        {@const activeEvents = selectedScenarioIds.map((id, idx) => {
+                            const scenario = scenarios.find((s) => s.id === id);
+                            const proj = projections[id];
+                            const { events } = getScenarioEvents(proj, activeMetric);
+                            return {
+                                scenarioName: scenario?.name || "Scenario",
+                                color: PALETTE[idx % PALETTE.length],
+                                events
+                            };
+                        }).filter((x) => x.events.length > 0)}
+                        
+                        {#if activeEvents.length > 0}
+                            <div class="mt-8 border-t border-slate-100 dark:border-slate-800/40 pt-6 animate-fade-in">
+                                <h4 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-4 ml-1">
+                                    Significant Projection Milestones
+                                </h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {#each activeEvents as scEvents}
+                                        <div class="bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-800/40 rounded-3xl p-5 space-y-4">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-2.5 h-2.5 rounded-full" style="background-color: {scEvents.color.border}"></div>
+                                                <span class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">{scEvents.scenarioName}</span>
+                                            </div>
+                                            <div class="relative pl-4 border-l border-slate-200/60 dark:border-slate-800/40 space-y-5 ml-1">
+                                                {#each scEvents.events as ev}
+                                                    <div class="relative group">
+                                                        <!-- Timeline Dot -->
+                                                        <div class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border bg-white dark:bg-slate-950 transition-all group-hover:scale-125" style="border-color: {scEvents.color.border}; background-color: {scEvents.color.border}"></div>
+                                                        <div class="space-y-1">
+                                                            <div class="flex items-center justify-between">
+                                                                <span class="text-[10px] font-black text-slate-900 dark:text-slate-200 uppercase tracking-tight">{ev.title}</span>
+                                                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">{ev.dateLabel}</span>
+                                                            </div>
+                                                            <p class="text-[10px] text-slate-500 dark:text-slate-400 tracking-tight leading-relaxed">{ev.description}</p>
+                                                            <div class="text-[9px] font-black uppercase tracking-tight {ev.changeAmount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+                                                                {ev.changeAmount >= 0 ? '+' : ''}{formatCurrency(ev.changeAmount)} €
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+                    {/if}
                 {/if}
 
                 <!-- Tab 2: Real vs Planned -->
