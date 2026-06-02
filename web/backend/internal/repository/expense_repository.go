@@ -125,53 +125,6 @@ func (r *ExpenseRepository) Save(userID string, expense *domain.Expense) error {
 	return tx.Commit()
 }
 
-func (r *ExpenseRepository) SaveBulk(userID string, expenses []domain.Expense) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	for _, expense := range expenses {
-		if expense.ID == "" {
-			expense.ID = uuid.New().String()
-			_, err = tx.Exec("INSERT INTO expenses (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", expense.ID, userID, expense.Name, expense.PoolID)
-		} else {
-			_, err = tx.Exec("UPDATE expenses SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", expense.Name, expense.PoolID, expense.ID, userID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Save multiple virtual account linkages
-		_, err = tx.Exec("DELETE FROM entity_virtual_accounts WHERE entity_id = ? AND entity_type = 'EXPENSE'", expense.ID)
-		if err != nil {
-			return err
-		}
-		for _, vaID := range expense.AccountIDs {
-			if vaID != "" {
-				_, err = tx.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) VALUES (?, 'EXPENSE', ?)", expense.ID, vaID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		v := expense.ActiveVersion
-		v.ID = uuid.New().String()
-		v.ExpenseID = expense.ID
-		_, err = tx.Exec(`
-			INSERT INTO expense_versions (id, expense_id, amount, due_date)
-			VALUES (?, ?, ?, ?)`,
-			v.ID, v.ExpenseID, v.Amount, v.DueDate)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
-}
-
 func (r *ExpenseRepository) ArchiveFull(userID string, id string) error {
 	_, err := r.db.Exec("UPDATE expenses SET is_deleted = TRUE WHERE id = ? AND user_id = ?", id, userID)
 	return err

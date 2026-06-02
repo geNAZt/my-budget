@@ -1,4 +1,10 @@
 const fs = require("fs");
+const path = require("path");
+const protobuf = require("protobufjs");
+
+const executionEngineDir = __dirname;
+const root = protobuf.loadSync(path.join(executionEngineDir, "proto", "execution.proto"));
+const StdioFrame = root.lookupType("execution.StdioFrame");
 
 const pendingAsyncRequests = new Map(); // msg_id -> { resolve, reject }
 
@@ -8,14 +14,17 @@ function callRpcAsync(correlationId, method, params) {
       return reject(new Error("No active correlation ID for RPC execution context."));
     }
     const msg_id = Math.random().toString(36).substring(2);
-    const request = {
-      correlation_id: correlationId,
-      type: "RPC_REQUEST",
-      msg_id: msg_id,
-      method: method,
-      params: params
-    };
-    const requestBytes = Buffer.from(JSON.stringify(request), "utf8");
+    
+    const frame = StdioFrame.create({
+      rpc_request: {
+        correlation_id: correlationId,
+        msg_id: msg_id,
+        method: method,
+        params_json: Buffer.from(JSON.stringify(params), "utf8")
+      }
+    });
+    
+    const requestBytes = StdioFrame.encode(frame).finish();
     const lengthBytes = Buffer.alloc(4);
     lengthBytes.writeUInt32BE(requestBytes.length, 0);
     

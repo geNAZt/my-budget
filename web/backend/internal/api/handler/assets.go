@@ -189,46 +189,6 @@ func (a *Assets) Save(s *api.WebsocketSession, reqID string, reqAsset *apiproto.
 	a.handler.SendResponse(s, reqID, mapAssetToProto(domainAsset), true)
 }
 
-// SaveBulk maps to route "assets::save_bulk"
-func (a *Assets) SaveBulk(s *api.WebsocketSession, reqID string, reqList *apiproto.AssetList) {
-	userID, _ := s.GetAuth()
-	if userID == "" {
-		a.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var domainAssets []domain.Asset
-
-	for _, reqAsset := range reqList.Assets {
-		domainAsset := domain.Asset{
-			ID:              reqAsset.Id,
-			UserID:          userID,
-			Name:            reqAsset.Name,
-			AccountIDs:      reqAsset.AccountIds,
-			LinkToScenarios: reqAsset.LinkToScenarios,
-			ActiveVersion:   mapProtoToAssetVersion(reqAsset.ActiveVersion),
-		}
-		if reqAsset.PoolId != "" {
-			domainAsset.PoolID = &reqAsset.PoolId
-		}
-		domainAssets = append(domainAssets, domainAsset)
-	}
-
-	if err := a.repo.SaveBulk(userID, domainAssets); err != nil {
-		a.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp := &apiproto.AssetList{}
-	for _, asset := range domainAssets {
-		if len(asset.LinkToScenarios) > 0 {
-			a.scenarioRepo.LinkEntityToScenarios(userID, asset.ID, "ASSET", asset.LinkToScenarios)
-		}
-		resp.Assets = append(resp.Assets, mapAssetToProto(asset))
-	}
-	a.handler.SendResponse(s, reqID, resp, true)
-}
-
 // Delete maps to route "assets::delete"
 func (a *Assets) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

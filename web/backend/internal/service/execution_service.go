@@ -22,22 +22,10 @@ import (
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
+	executionpb "github.com/genazt/my-budget-script/web/backend/internal/service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
-
-type StdioResponse struct {
-	CorrelationID string          `json:"correlation_id"`
-	Type          string          `json:"type,omitempty"`
-	MsgID         string          `json:"msg_id,omitempty"`
-	Method        string          `json:"method,omitempty"`
-	Params        json.RawMessage `json:"params,omitempty"`
-	Success       bool            `json:"success"`
-	Stdout        string          `json:"stdout"`
-	Stderr        string          `json:"stderr"`
-	ExitCode      int             `json:"exit_code"`
-	Result        interface{}     `json:"result,omitempty"`
-	Error         string          `json:"error,omitempty"`
-}
 
 type ActiveExecutionContext struct {
 	UserID   string
@@ -69,7 +57,7 @@ type ExecutionService struct {
 
 	// Pending Request Multiplexer Registry
 	pendingMu       sync.Mutex
-	pendingRequests map[string]chan *StdioResponse
+	pendingRequests map[string]chan *executionpb.StdioFrame
 
 	syncService  *SyncService
 	activeRuns   map[string]string // maps execution token -> userID
@@ -100,8 +88,8 @@ func NewExecutionService(
 		eventBus:        eventBus,
 		compiledPlans:   make(map[string]string),
 		activeRuns:      make(map[string]string),
-		pendingRequests: make(map[string]chan *StdioResponse),
-		activeContexts:   make(map[string]*ActiveExecutionContext),
+		pendingRequests: make(map[string]chan *executionpb.StdioFrame),
+		activeContexts:  make(map[string]*ActiveExecutionContext),
 	}
 
 	// Proactively fire the persistent subprocess and setup streams
@@ -261,11 +249,15 @@ func (s *ExecutionService) StartRunner() {
 		// Clean up and notify all pending requests that the runner daemon exited
 		s.pendingMu.Lock()
 		for cid, ch := range s.pendingRequests {
-			ch <- &StdioResponse{
-				CorrelationID: cid,
-				Success:       false,
-				Stderr:        "[ExecutionEngine Error] Sandbox runner daemon exited unexpectedly during run.",
-				ExitCode:      1,
+			ch <- &executionpb.StdioFrame{
+				Message: &executionpb.StdioFrame_ExecuteResponse{
+					ExecuteResponse: &executionpb.ExecuteResponse{
+						CorrelationId: cid,
+						Success:       false,
+						Stderr:        "[ExecutionEngine Error] Sandbox runner daemon exited unexpectedly during run.",
+						ExitCode:      1,
+					},
+				},
 			}
 			delete(s.pendingRequests, cid)
 		}
@@ -286,28 +278,29 @@ func (s *ExecutionService) readLoop(readDone chan struct{}) {
 				return
 			}
 
-			log.Printf("[ExecutionEngine Debug] Received payload from stdout: %s", string(payload))
-
-			var resp StdioResponse
-			if err := json.Unmarshal(payload, &resp); err != nil {
-				log.Printf("[ExecutionEngine Error] Failed to unmarshal incoming JSON frame: %v", err)
+			frame := &executionpb.StdioFrame{}
+			if err := proto.Unmarshal(payload, frame); err != nil {
+				log.Printf("[ExecutionEngine Error] Failed to unmarshal incoming Protobuf frame: %v", err)
 				continue
 			}
 
-			if resp.Type == "RPC_REQUEST" {
-				go s.handleRpcRequest(&resp)
+			if frame.GetRpcRequest() != nil {
+				go s.handleRpcRequest(frame.GetRpcRequest())
 				continue
 			}
 
 			// Route response back to the blocked request thread matching correlationID or msg_id
 			s.pendingMu.Lock()
-			targetID := resp.MsgID
-			if targetID == "" {
-				targetID = resp.CorrelationID
+			var targetID string
+			if resp := frame.GetRpcResponse(); resp != nil {
+				targetID = resp.MsgId
+			} else if resp := frame.GetExecuteResponse(); resp != nil {
+				targetID = resp.CorrelationId
 			}
+
 			ch, exists := s.pendingRequests[targetID]
 			if exists {
-				ch <- &resp
+				ch <- frame
 				delete(s.pendingRequests, targetID)
 			}
 			s.pendingMu.Unlock()
@@ -315,9 +308,9 @@ func (s *ExecutionService) readLoop(readDone chan struct{}) {
 	}
 }
 
-func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
+func (s *ExecutionService) handleRpcRequest(req *executionpb.RpcRequest) {
 	s.activeContextsMu.RLock()
-	ctx, exists := s.activeContexts[req.CorrelationID]
+	ctx, exists := s.activeContexts[req.CorrelationId]
 	s.activeContextsMu.RUnlock()
 
 	var result interface{}
@@ -331,7 +324,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				IntegrationID string `json:"integration_id"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				if s.syncService != nil {
 					errSync := s.syncService.SyncIntegration(ctx.UserID, params.IntegrationID, true)
 					if errSync != nil {
@@ -413,7 +406,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				Key string `json:"key"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				if val, ok := ctx.Secrets[params.Key]; ok {
 					result = map[string]string{"value": val}
 				} else {
@@ -427,7 +420,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				Key string `json:"key"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				if realtimeAccounts, ok := ctx.StateMap["realtime_accounts"].(map[string]interface{}); ok {
 					if acc, ok := realtimeAccounts[params.Key]; ok {
 						result = acc
@@ -445,7 +438,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				Name string `json:"name"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				var found interface{}
 				if incomes, ok := ctx.StateMap["incomes"].([]domain.Income); ok {
 					for _, inc := range incomes {
@@ -475,7 +468,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				Name string `json:"name"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				var found interface{}
 				if assets, ok := ctx.StateMap["assets"].([]domain.Asset); ok {
 					for _, asset := range assets {
@@ -505,7 +498,7 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 			var params struct {
 				Name string `json:"name"`
 			}
-			if err := json.Unmarshal(req.Params, &params); err == nil {
+			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				var found interface{}
 				if loans, ok := ctx.StateMap["loans"].([]domain.Loan); ok {
 					for _, loan := range loans {
@@ -536,15 +529,23 @@ func (s *ExecutionService) handleRpcRequest(req *StdioResponse) {
 		}
 	}
 
-	resp := StdioResponse{
-		CorrelationID: req.CorrelationID,
-		Type:          "RPC_RESPONSE",
-		MsgID:         req.MsgID,
-		Success:       errStr == "",
-		Result:        result,
-		Error:         errStr,
+	var resultBytes []byte
+	if result != nil {
+		resultBytes, _ = json.Marshal(result)
 	}
-	respBytes, _ := json.Marshal(resp)
+
+	frame := &executionpb.StdioFrame{
+		Message: &executionpb.StdioFrame_RpcResponse{
+			RpcResponse: &executionpb.RpcResponse{
+				CorrelationId: req.CorrelationId,
+				MsgId:         req.MsgId,
+				Success:       errStr == "",
+				ResultJson:    resultBytes,
+				Error:         errStr,
+			},
+		},
+	}
+	respBytes, _ := proto.Marshal(frame)
 	_ = s.writeFrame(respBytes)
 }
 
@@ -560,8 +561,6 @@ func (s *ExecutionService) writeFrame(payload []byte) error {
 	if stdin == nil {
 		return fmt.Errorf("runner stdin is not active")
 	}
-
-	log.Printf("[ExecutionEngine Debug] Writing payload to stdin: %s", string(payload))
 
 	length := uint32(len(payload))
 	lengthBytes := make([]byte, 4)
@@ -758,16 +757,24 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 	// 3. Bidirectional RPC checking: Ask daemon if it already has this code compiled
 	isCompiled := false
 	checkMsgID := uuid.New().String()
-	checkReq := StdioResponse{
-		CorrelationID: correlationID,
-		Type:          "RPC_REQUEST",
-		MsgID:         checkMsgID,
-		Method:        "check_compiled",
-		Params:        json.RawMessage([]byte(fmt.Sprintf(`{"plan_id":"%s","code_hash":"%s"}`, plan.ID, codeHash))),
-	}
-	checkBytes, _ := json.Marshal(checkReq)
+	checkParams, _ := json.Marshal(map[string]interface{}{
+		"plan_id":   plan.ID,
+		"code_hash": codeHash,
+	})
 
-	checkCh := make(chan *StdioResponse, 1)
+	checkFrameReq := &executionpb.StdioFrame{
+		Message: &executionpb.StdioFrame_RpcRequest{
+			RpcRequest: &executionpb.RpcRequest{
+				CorrelationId: correlationID,
+				MsgId:         checkMsgID,
+				Method:        "check_compiled",
+				ParamsJson:    checkParams,
+			},
+		},
+	}
+	checkBytes, _ := proto.Marshal(checkFrameReq)
+
+	checkCh := make(chan *executionpb.StdioFrame, 1)
 	s.pendingMu.Lock()
 	s.pendingRequests[checkMsgID] = checkCh
 	s.pendingMu.Unlock()
@@ -780,11 +787,14 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 
 	if err := s.writeFrame(checkBytes); err == nil {
 		select {
-		case checkResp := <-checkCh:
-			if checkResp.Success && checkResp.Result != nil {
-				if resMap, ok := checkResp.Result.(map[string]interface{}); ok {
-					if cmpVal, exists := resMap["compiled"].(bool); exists {
-						isCompiled = cmpVal
+		case checkFrameResp := <-checkCh:
+			if resp := checkFrameResp.GetRpcResponse(); resp != nil {
+				if resp.Success && resp.ResultJson != nil {
+					var resMap map[string]interface{}
+					if err := json.Unmarshal(resp.ResultJson, &resMap); err == nil {
+						if cmpVal, exists := resMap["compiled"].(bool); exists {
+							isCompiled = cmpVal
+						}
 					}
 				}
 			}
@@ -850,18 +860,7 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 	}
 
 	// 4. Construct multiplexed StdioRequest for execution
-	type StdioRequest struct {
-		CorrelationID string            `json:"correlation_id"`
-		Type          string            `json:"type"`
-		PlanID        string            `json:"plan_id"`
-		Code          string            `json:"code,omitempty"`
-		CodeHash      string            `json:"code_hash"`
-		State         interface{}       `json:"state"`
-		Secrets       map[string]string `json:"secrets"`
-		Trigger       interface{}       `json:"trigger"`
-	}
-
-	ch := make(chan *StdioResponse, 1)
+	ch := make(chan *executionpb.StdioFrame, 1)
 	s.pendingMu.Lock()
 	s.pendingRequests[correlationID] = ch
 	s.pendingMu.Unlock()
@@ -888,22 +887,31 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 		"realtime_accounts": referencedRealtimeAccounts,
 	}
 
-	req := StdioRequest{
-		CorrelationID: correlationID,
-		Type:          "EXECUTE",
-		PlanID:        plan.ID,
-		Code:          codeToSend,
-		CodeHash:      codeHash,
-		State:         minimalStateMap,
-		Secrets:       referencedSecrets,
-		Trigger:       triggerPayload,
+	stateJSON, _ := json.Marshal(minimalStateMap)
+	triggerJSON, _ := json.Marshal(triggerPayload)
+
+	reqFrame := &executionpb.StdioFrame{
+		Message: &executionpb.StdioFrame_ExecuteRequest{
+			ExecuteRequest: &executionpb.ExecuteRequest{
+				CorrelationId: correlationID,
+				PlanId:        plan.ID,
+				Code:          codeToSend,
+				CodeHash:      codeHash,
+				StateJson:     stateJSON,
+				Secrets:       referencedSecrets,
+				Trigger: &executionpb.ExecuteRequest_Trigger{
+					Type:     triggerPayload["type"].(string),
+					DataJson: triggerJSON,
+				},
+			},
+		},
 	}
 
-	reqBytes, err := json.Marshal(req)
+	reqBytes, err := proto.Marshal(reqFrame)
 	if err != nil {
 		logEntry.Status = "FAILED"
 		logEntry.ExitCode = 1
-		logEntry.Stderr = fmt.Sprintf("[ExecutionEngine] Failed to marshal JSON request: %v", err)
+		logEntry.Stderr = fmt.Sprintf("[ExecutionEngine] Failed to marshal Protobuf request: %v", err)
 		_ = s.planRepo.LogExecution(&logEntry)
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -918,10 +926,17 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 	}
 
 	// Block until response arrives or timeout (15 seconds)
-	var resp *StdioResponse
+	var resp *executionpb.ExecuteResponse
 	select {
-	case resp = <-ch:
-		// Response received successfully!
+	case frame := <-ch:
+		resp = frame.GetExecuteResponse()
+		if resp == nil {
+			logEntry.Status = "FAILED"
+			logEntry.ExitCode = 1
+			logEntry.Stderr = "[ExecutionEngine Error] Received invalid frame type for EXECUTE response."
+			_ = s.planRepo.LogExecution(&logEntry)
+			return fmt.Errorf("invalid response frame")
+		}
 	case <-time.After(15 * time.Second):
 		logEntry.Status = "FAILED"
 		logEntry.ExitCode = 1
@@ -936,7 +951,7 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 	// Write execution log entries
 	logEntry.Stdout = resp.Stdout
 	logEntry.Stderr = resp.Stderr
-	logEntry.ExitCode = resp.ExitCode
+	logEntry.ExitCode = int(resp.ExitCode)
 	if resp.Success {
 		logEntry.Status = "SUCCESS"
 		s.compiledMu.Lock()

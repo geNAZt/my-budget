@@ -135,54 +135,6 @@ func (r *LoanRepository) Save(userID string, loan *domain.Loan) error {
 	return tx.Commit()
 }
 
-func (r *LoanRepository) SaveBulk(userID string, loans []domain.Loan) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	for _, loan := range loans {
-		if loan.ID == "" {
-			loan.ID = uuid.New().String()
-			_, err = tx.Exec("INSERT INTO loans (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", loan.ID, userID, loan.Name, loan.PoolID)
-		} else {
-			_, err = tx.Exec("UPDATE loans SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", loan.Name, loan.PoolID, loan.ID, userID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Save multiple virtual account linkages
-		_, err = tx.Exec("DELETE FROM entity_virtual_accounts WHERE entity_id = ? AND entity_type = 'LOAN'", loan.ID)
-		if err != nil {
-			return err
-		}
-		for _, vaID := range loan.AccountIDs {
-			if vaID != "" {
-				_, err = tx.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) VALUES (?, 'LOAN', ?)", loan.ID, vaID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		v := loan.ActiveVersion
-		v.ID = uuid.New().String()
-		v.LoanID = loan.ID
-
-		_, err = tx.Exec(`
-			INSERT INTO loan_versions (id, loan_id, amount_lent, interest_rate, runtime_months, start_date, remainder_start_date, priority, next_loan_id, balloon_leftover, is_interest_only, early_payoff_penalty)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			v.ID, v.LoanID, v.AmountLent, v.InterestRate, v.RuntimeMonths, v.StartDate, v.RemainderStartDate, v.Priority, v.NextLoanID, v.BalloonLeftover, v.IsInterestOnly, v.EarlyPayoffPenalty)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
-}
-
 func (r *LoanRepository) ArchiveFull(userID string, id string) error {
 	_, err := r.db.Exec("UPDATE loans SET is_deleted = TRUE WHERE id = ? AND user_id = ?", id, userID)
 	return err

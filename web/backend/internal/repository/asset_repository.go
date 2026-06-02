@@ -244,57 +244,6 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 	return tx.Commit()
 }
 
-func (r *AssetRepository) SaveBulk(userID string, assets []domain.Asset) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	for _, asset := range assets {
-		if asset.ID == "" {
-			asset.ID = uuid.New().String()
-			_, err = tx.Exec("INSERT INTO assets (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", asset.ID, userID, asset.Name, asset.PoolID)
-		} else {
-			_, err = tx.Exec("UPDATE assets SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", asset.Name, asset.PoolID, asset.ID, userID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Save multiple virtual account linkages
-		_, err = tx.Exec("DELETE FROM entity_virtual_accounts WHERE entity_id = ? AND entity_type = 'ASSET'", asset.ID)
-		if err != nil {
-			return err
-		}
-		for _, vaID := range asset.AccountIDs {
-			if vaID != "" {
-				_, err = tx.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) VALUES (?, 'ASSET', ?)", asset.ID, vaID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		v := asset.ActiveVersion
-		v.ID = uuid.New().String()
-		v.AssetID = asset.ID
-		etfBytes, _ := db.Marshal(v.ETFConfig)
-		penaltiesBytes, _ := db.Marshal(v.Penalties)
-		subAssetsBytes, _ := db.Marshal(v.SubAssets)
-
-		_, err = tx.Exec(`
-			INSERT INTO asset_versions (id, asset_id, type, target_value, dumping_loan_id, stop_modification_id, interest_rate, interest_interval, amount_per_month, remainder_start_date, start_date, end_date, withdrawal_penalty, etf_config_json, penalties_json, sub_assets_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?)`,
-			v.ID, v.AssetID, v.Type, v.TargetValue, v.DumpingLoanID, v.StopModificationID, v.InterestRate, v.InterestInterval, v.AmountPerMonth, v.RemainderStartDate, v.StartDate, v.EndDate, etfBytes, penaltiesBytes, subAssetsBytes)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
-}
-
 func (r *AssetRepository) ArchiveFull(userID string, id string) error {
 	_, err := r.db.Exec("UPDATE assets SET is_deleted = TRUE WHERE id = ? AND user_id = ?", id, userID)
 	return err

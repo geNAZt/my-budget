@@ -28,7 +28,6 @@ services:
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://budget:budgetpass@db:5432/budget?sslmode=disable
-      - SQLITE_DB_PATH=/app/data/budget.db
       - RP_ID=${DOMAIN:-localhost}
       - RP_ORIGINS=https://${DOMAIN:-localhost},http://localhost:3000,http://${DOMAIN:-localhost}:3000
       - RESET_RECOVERY=${RESET_RECOVERY:-false}

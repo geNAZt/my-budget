@@ -81,47 +81,6 @@ func (b *Bills) Save(s *api.WebsocketSession, reqID string, reqObj *apiproto.Bil
 	b.handler.SendResponse(s, reqID, mapBillToProto(domainObj), true)
 }
 
-// SaveBulk automatically registers as "bills::save_bulk"
-func (b *Bills) SaveBulk(s *api.WebsocketSession, reqID string, reqList *apiproto.BillList) {
-	userID, _ := s.GetAuth()
-	if userID == "" {
-		b.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var domainObjs []domain.Bill
-
-	for _, reqObj := range reqList.Bills {
-		domainObj := domain.Bill{
-			ID:              reqObj.Id,
-			UserID:          userID,
-			Name:            reqObj.Name,
-			AccountIDs:      reqObj.AccountIds,
-			LinkToScenarios: reqObj.LinkToScenarios,
-			ActiveVersion:   mapProtoToBillVersion(reqObj.ActiveVersion),
-		}
-		if reqObj.PoolId != "" {
-			domainObj.PoolID = &reqObj.PoolId
-		}
-		domainObjs = append(domainObjs, domainObj)
-	}
-
-	if err := b.bills.SaveBulk(userID, domainObjs); err != nil {
-		b.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp := &apiproto.BillList{}
-	for _, d := range domainObjs {
-		if len(d.LinkToScenarios) > 0 {
-			b.scenarios.LinkEntityToScenarios(userID, d.ID, "BILL", d.LinkToScenarios)
-		}
-		resp.Bills = append(resp.Bills, mapBillToProto(d))
-	}
-
-	b.handler.SendResponse(s, reqID, resp, true)
-}
-
 // Delete automatically registers as "bills::delete"
 func (b *Bills) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

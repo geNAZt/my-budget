@@ -4,8 +4,13 @@ const { exec } = require("child_process");
 const util = require("util");
 const execAsync = util.promisify(exec);
 const vm = require("vm");
+const protobuf = require("protobufjs");
 
 const executionEngineDir = __dirname;
+
+// Load Protobuf definitions
+const root = protobuf.loadSync(path.join(executionEngineDir, "proto", "execution.proto"));
+const StdioFrame = root.lookupType("execution.StdioFrame");
 
 // In-memory persistent cache for compiled VM scripts
 const compiledPlans = new Map(); // maps plan_id -> { script, code_hash }
@@ -50,44 +55,53 @@ async function processBuffer() {
 async function handleFrame(frameBytes) {
   let correlation_id = null;
   try {
-    const request = JSON.parse(frameBytes.toString("utf8"));
-    correlation_id = request.correlation_id;
-
+    const frame = StdioFrame.decode(frameBytes);
+    
     // Handle RPC response from Go backend for asynchronous calls
-    if (request.type === "RPC_RESPONSE" && request.msg_id) {
+    if (frame.rpc_response) {
+      const resp = frame.rpc_response;
       const { resolveAsyncRpc } = require("./wealthengine_sandbox");
-      resolveAsyncRpc(request.msg_id, request.success, request.result, request.error);
+      const result = resp.result_json ? JSON.parse(Buffer.from(resp.result_json).toString("utf8")) : null;
+      resolveAsyncRpc(resp.msg_id, resp.success, result, resp.error);
       return;
     }
 
     // Handle check_compiled RPC request from Go backend
-    if (request.type === "RPC_REQUEST" && request.method === "check_compiled") {
-      const { plan_id, code_hash } = request.params || {};
+    if (frame.rpc_request && frame.rpc_request.method === "check_compiled") {
+      const req = frame.rpc_request;
+      const params = req.params_json ? JSON.parse(Buffer.from(req.params_json).toString("utf8")) : {};
+      const { plan_id, code_hash } = params;
       const cached = plan_id ? compiledPlans.get(plan_id) : null;
       const compiled = !!(cached && cached.code_hash === code_hash);
       
-      const responseBytes = Buffer.from(JSON.stringify({
-        correlation_id: request.correlation_id,
-        type: "RPC_RESPONSE",
-        msg_id: request.msg_id,
-        success: true,
-        result: { compiled }
-      }), "utf8");
-      writeFrame(responseBytes);
+      const responseFrame = StdioFrame.create({
+        rpc_response: {
+          correlation_id: req.correlation_id,
+          msg_id: req.msg_id,
+          success: true,
+          result_json: Buffer.from(JSON.stringify({ compiled }), "utf8")
+        }
+      });
+      writeFrame(StdioFrame.encode(responseFrame).finish());
       return;
     }
 
-    if (request.type !== "EXECUTE" && request.type !== undefined) {
+    if (!frame.execute_request) {
       // Ignore other frames or unknown messages
       return;
     }
 
+    const request = frame.execute_request;
+    correlation_id = request.correlation_id;
     const plan_id = request.plan_id;
     const code = request.code;
     const code_hash = request.code_hash;
-    const state = request.state || {};
+    const state = request.state_json ? JSON.parse(Buffer.from(request.state_json).toString("utf8")) : {};
     const secrets = request.secrets || {};
-    const trigger = request.trigger || { type: "CRON", data: {} };
+    const trigger = request.trigger ? {
+      type: request.trigger.type,
+      data: request.trigger.data_json ? JSON.parse(Buffer.from(request.trigger.data_json).toString("utf8")) : {}
+    } : { type: "CRON", data: {} };
 
     // Check persistent in-memory compilation cache
     let cached = plan_id ? compiledPlans.get(plan_id) : null;
@@ -110,7 +124,7 @@ async function handleFrame(frameBytes) {
 
       // A. Dynamically install missing packages inside execution_engine directory
       const depRegex =
-        /\/\*\*\s*depend\s+on\s+([a-zA-Z0-9_\-]+):([0-9\.]+)\s*\*\*\//g;
+        /\/\*\*\s*depend\s+ on\s+([a-zA-Z0-9_\-]+):([0-9\.]+)\s*\*\*\//g;
       let match;
       const deps = [];
       while ((match = depRegex.exec(code)) !== null) {
@@ -302,19 +316,23 @@ async function handleFrame(frameBytes) {
       // Forcefully clear any remaining active timers to prevent dangling events
       for (const id of activeTimeouts) clearTimeout(id);
       for (const id of activeIntervals) clearInterval(id);
+      activeTimeouts.add = () => {}; // Prevent new timers during cleanup
+      activeIntervals.add = () => {};
       activeTimeouts.clear();
       activeIntervals.clear();
     }
 
     // Return multiplexed response frame
-    const responseBytes = Buffer.from(JSON.stringify({
-      correlation_id,
-      success,
-      stdout: stdoutLogs.join("\n"),
-      stderr: stderrLogs.join("\n"),
-      exit_code: exitCode
-    }), "utf8");
-    writeFrame(responseBytes);
+    const responseFrame = StdioFrame.create({
+      execute_response: {
+        correlation_id,
+        success,
+        stdout: stdoutLogs.join("\n"),
+        stderr: stderrLogs.join("\n"),
+        exit_code: exitCode
+      }
+    });
+    writeFrame(StdioFrame.encode(responseFrame).finish());
   } catch (err) {
     sendErrorResponse(
       correlation_id,
@@ -325,14 +343,16 @@ async function handleFrame(frameBytes) {
 
 function sendErrorResponse(correlation_id, stderrMsg) {
   try {
-    const responseBytes = Buffer.from(JSON.stringify({
-      correlation_id,
-      success: false,
-      stdout: "",
-      stderr: stderrMsg,
-      exit_code: 1
-    }), "utf8");
-    writeFrame(responseBytes);
+    const responseFrame = StdioFrame.create({
+      execute_response: {
+        correlation_id,
+        success: false,
+        stdout: "",
+        stderr: stderrMsg,
+        exit_code: 1
+      }
+    });
+    writeFrame(StdioFrame.encode(responseFrame).finish());
   } catch (err) {
     // Fallback safety
   }
@@ -351,6 +371,7 @@ async function ensureDependenciesInstalled() {
     "tsx",
     "typescript",
     "@types/node",
+    "protobufjs"
   ];
   let needsInstall = false;
   for (const dep of requiredDeps) {
@@ -362,7 +383,7 @@ async function ensureDependenciesInstalled() {
   if (needsInstall) {
     try {
       await execAsync(
-        "npm install --no-audit --no-fund --silent esbuild tsx typescript @types/node",
+        "npm install --no-audit --no-fund --silent esbuild tsx typescript @types/node protobufjs",
         { cwd: executionEngineDir },
       );
     } catch (err) {

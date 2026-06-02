@@ -13,7 +13,6 @@
         TransactionLinkRequestSchema,
         TransactionDuplicateRequestSchema,
         TransactionSchema,
-        TransactionSaveBulkRequestSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
     const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
@@ -126,13 +125,6 @@
     let showPoolsPopover = $state(false);
     let showChainsPopover = $state(false);
     let showAmountPopover = $state(false);
-
-    let showImportModal = $state(false);
-    let importProcessing = $state(false);
-    let importTargetAccountID = $state("");
-    let importDiffs = $state<any[]>([]);
-    let importCsvRows = $state<any[]>([]);
-    let importFile: File | null = $state(null);
 
     // Edit Transaction Modal
     let showTransactionEdit = $state(false);
@@ -269,7 +261,7 @@
             { name: string; color: string; total: number; count: number }
         > = {};
 
-        transactions.forEach((t) => {
+        filteredTransactions.forEach((t) => {
             const pool = pools.find((p) => p.id === t.poolId);
             const name = pool?.name || "Uncategorized";
             const color = pool?.color || "#cbd5e1";
@@ -369,12 +361,6 @@
     );
 
     // Effects
-    $effect(() => {
-        if (showImportModal && importCsvRows.length > 0) {
-            importDiffs = computeImportDiff(importCsvRows);
-        }
-    });
-
     $effect(() => {
         if (typeof localStorage !== "undefined") {
             localStorage.setItem("realtime_viewMode", viewMode);
@@ -534,173 +520,6 @@
             );
         } finally {
             syncingMap[id] = false;
-        }
-    }
-
-    async function acceptDeletion(diff: any) {
-        importProcessing = true;
-        try {
-            const [, err] = await wsCall(
-                "integrations::transactions::delete",
-                TransactionDeleteRequestSchema,
-                {
-                    id: diff.db.id,
-                },
-                [ErrorSchema],
-            ).one();
-            if (err) throw err;
-            await fetchData(true);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            importProcessing = false;
-        }
-    }
-
-    function parseCSV(content: string) {
-        const lines = content.split("\n");
-        const rows = [];
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const parts =
-                line.match(/(?:^|,)(?:"([^"]*)"|([^,]*))/g)?.map((p) => {
-                    let s = p.startsWith(",") ? p.substring(1) : p;
-                    if (s.startsWith('"') && s.endsWith('"'))
-                        return s.substring(1, s.length - 1);
-                    return s;
-                }) || [];
-
-            if (parts.length < 8) continue;
-
-            rows.push({
-                booking_date: parts[0],
-                value_date: parts[1],
-                partner_name: parts[2],
-                partner_iban: parts[3],
-                type: parts[4],
-                payment_reference: parts[5],
-                account_name: parts[6],
-                amount: parseFloat(parts[7].replace(",", ".")),
-                original_amount: parts[8],
-                original_currency: parts[9],
-                exchange_rate: parts[10],
-            });
-        }
-        return rows;
-    }
-
-    function computeImportDiff(csvRows: any[]) {
-        const csvGroups: Record<string, any[]> = {};
-        csvRows.forEach((row) => {
-            const key = `${row.booking_date}|${row.amount.toFixed(2)}|${row.partner_name}`;
-            if (!csvGroups[key]) csvGroups[key] = [];
-            csvGroups[key].push(row);
-        });
-
-        const relevantTxs = transactions.filter(
-            (t) => t.accountId === importTargetAccountID,
-        );
-        const dbGroups: Record<string, any[]> = {};
-        relevantTxs.forEach((tx) => {
-            const date = new Date(tx.createdAt).toISOString().split("T")[0];
-            const amount = getTxAmount(tx);
-            const peer = getTxPeer(tx);
-            const key = `${date}|${amount.toFixed(2)}|${peer}`;
-            if (!dbGroups[key]) dbGroups[key] = [];
-            dbGroups[key].push(tx);
-        });
-
-        const diffs: any[] = [];
-        const allKeys = new Set([
-            ...Object.keys(csvGroups),
-            ...Object.keys(dbGroups),
-        ]);
-
-        allKeys.forEach((key) => {
-            const csvItems = csvGroups[key] || [];
-            const dbItems = dbGroups[key] || [];
-            const matchedCount = Math.min(csvItems.length, dbItems.length);
-
-            for (let i = 0; i < matchedCount; i++) {
-                diffs.push({
-                    type: "MATCHED",
-                    csv: csvItems[i],
-                    db: dbItems[i],
-                    key,
-                });
-            }
-            for (let i = matchedCount; i < csvItems.length; i++) {
-                diffs.push({ type: "MISSING_IN_DB", csv: csvItems[i], key });
-            }
-            for (let i = matchedCount; i < dbItems.length; i++) {
-                diffs.push({ type: "EXTRA_IN_DB", db: dbItems[i], key });
-            }
-        });
-
-        return diffs.sort((a, b) => {
-            const dateA =
-                a.csv?.booking_date ||
-                new Date(a.db?.createdAt).toISOString().split("T")[0];
-            const dateB =
-                b.csv?.booking_date ||
-                new Date(b.db?.createdAt).toISOString().split("T")[0];
-            return dateB.localeCompare(dateA);
-        });
-    }
-
-    async function handleImportFileChange(e: any) {
-        const file = e.target.files[0];
-        if (!file) return;
-        importFile = file;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const content = event.target?.result as string;
-            importCsvRows = parseCSV(content);
-        };
-        reader.readAsText(file);
-    }
-
-    async function acceptMissingTransaction(diff: any) {
-        const targetAccount = allAccounts.find(
-            (a) => a.id === importTargetAccountID,
-        );
-        if (!targetAccount) return;
-
-        importProcessing = true;
-        try {
-            const [, err] = await wsCall(
-                "integrations::transactions::save_bulk",
-                TransactionSaveBulkRequestSchema,
-                {
-                    integrationId: targetAccount.integrationId,
-                    accountId: importTargetAccountID,
-                    transactions: [
-                        {
-                            id: "",
-                            integrationId: targetAccount.integrationId,
-                            accountId: importTargetAccountID,
-                            amount: parseFloat(diff.csv.amount) || 0,
-                            receiver: diff.csv.partner_name || "",
-                            description:
-                                diff.csv.payment_reference ||
-                                "Imported transaction",
-                            createdAt: `${diff.csv.booking_date}T12:00:00Z`,
-                            tags: "",
-                            sourceAccountId: "",
-                            destinationAccountId: "",
-                        },
-                    ],
-                },
-                [ErrorSchema],
-            ).one();
-            if (err) throw err;
-            await fetchData(true);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            importProcessing = false;
         }
     }
 
@@ -1664,21 +1483,10 @@
                             >
                                 <Activity class="w-3.5 h-3.5" />
                                 <span>Linked</span>
-                            </button>
-                        {/if}
+                                </button>
+                                {/if}
 
-                        <button
-                            onclick={() => {
-                                importTargetAccountID = selectedAccountID;
-                                showImportModal = true;
-                            }}
-                            class="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-500 hover:border-indigo-600 hover:text-indigo-600 transition-all rounded-xl text-[9px] font-black uppercase tracking-wider shadow-sm"
-                        >
-                            <Upload class="w-3.5 h-3.5" />
-                            <span>Bulk Import</span>
-                        </button>
-
-                        {#if filterStartDate || filterEndDate || activeIntegrationIDs.length > 0 || selectedPoolIDs.length > 0 || selectedAccountID || txSearchQuery || showUnmatchedOnly || showDuplicatesOnly || showLinkedTransactions || filterAmountValue !== null}
+                                {#if filterStartDate || filterEndDate || activeIntegrationIDs.length > 0 || selectedPoolIDs.length > 0 || selectedAccountID || txSearchQuery || showUnmatchedOnly || showDuplicatesOnly || showLinkedTransactions || filterAmountValue !== null}
                             <button
                                 onclick={() => {
                                     filterStartDate = "";
@@ -2553,223 +2361,6 @@
         }}
         onCancel={() => (showIntegrationWizard = false)}
     />
-{/if}
-
-{#if showImportModal}
-    <div
-        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
-        transition:fade
-    >
-        <div
-            class="bg-white w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl rounded-[30px] relative overflow-hidden"
-            transition:slide
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-indigo-500"
-            ></div>
-
-            <div
-                class="p-8 border-b border-slate-100 flex items-center justify-between shrink-0"
-            >
-                <div class="space-y-1">
-                    <h2
-                        class="text-2xl font-black text-slate-900 tracking-tight"
-                    >
-                        Bulk CSV Reconciler
-                    </h2>
-                    <p class="text-slate-500 font-medium text-sm">
-                        Compare external records with your local ledger.
-                    </p>
-                </div>
-                <button
-                    onclick={() => (showImportModal = false)}
-                    class="p-3 hover:bg-slate-100 rounded-2xl transition-all"
-                >
-                    <X class="w-6 h-6 text-slate-400" />
-                </button>
-            </div>
-
-            <div class="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="space-y-2">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >Target Account</label
-                        >
-                        <SearchableDropdown
-                            options={accountFilterOptions}
-                            bind:value={importTargetAccountID}
-                            placeholder="Select target account..."
-                        />
-                    </div>
-                    <div class="space-y-2">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >Source CSV File</label
-                        >
-                        <input
-                            type="file"
-                            accept=".csv"
-                            onchange={handleImportFileChange}
-                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 file:hidden cursor-pointer hover:bg-slate-100 transition-colors"
-                        />
-                    </div>
-                </div>
-
-                {#if importDiffs.length > 0}
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between">
-                            <h3
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >
-                                Comparison Results
-                            </h3>
-                            <div
-                                class="flex gap-4 text-[9px] font-black uppercase"
-                            >
-                                <span class="text-emerald-600"
-                                    >Missing: {importDiffs.filter(
-                                        (d) => d.type === "MISSING_IN_DB",
-                                    ).length}</span
-                                >
-                                <span class="text-rose-600"
-                                    >Extra: {importDiffs.filter(
-                                        (d) => d.type === "EXTRA_IN_DB",
-                                    ).length}</span
-                                >
-                                <span class="text-slate-400"
-                                    >Matched: {importDiffs.filter(
-                                        (d) => d.type === "MATCHED",
-                                    ).length}</span
-                                >
-                            </div>
-                        </div>
-
-                        <div class="space-y-2">
-                            {#each importDiffs as diff}
-                                <div
-                                    class="p-4 rounded-2xl border transition-all flex items-center justify-between gap-4
-                                    {diff.type === 'MATCHED'
-                                        ? 'bg-slate-50 border-slate-100 opacity-60'
-                                        : diff.type === 'MISSING_IN_DB'
-                                          ? 'bg-emerald-50/30 border-emerald-100 hover:border-emerald-200'
-                                          : 'bg-rose-50/30 border-rose-100 hover:border-rose-200'}"
-                                >
-                                    <div class="flex-1 min-w-0">
-                                        <div
-                                            class="flex items-center gap-2 mb-1"
-                                        >
-                                            <span
-                                                class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded
-                                                {diff.type === 'MATCHED'
-                                                    ? 'bg-slate-200 text-slate-500'
-                                                    : diff.type ===
-                                                        'MISSING_IN_DB'
-                                                      ? 'bg-emerald-100 text-emerald-700'
-                                                      : 'bg-rose-100 text-rose-700'}"
-                                            >
-                                                {diff.type.replace(/_/g, " ")}
-                                            </span>
-                                            <span
-                                                class="text-[10px] font-mono text-slate-400"
-                                            >
-                                                {diff.csv?.booking_date ||
-                                                    new Date(diff.db.createdAt)
-                                                        .toISOString()
-                                                        .split("T")[0]}
-                                            </span>
-                                        </div>
-
-                                        <div
-                                            class="flex items-center justify-between"
-                                        >
-                                            <p
-                                                class="text-xs font-black text-slate-800 truncate"
-                                            >
-                                                {diff.csv?.partner_name ||
-                                                    getTxPeer(diff.db)}
-                                            </p>
-                                            <p
-                                                class="text-sm font-black {(diff
-                                                    .csv?.amount ||
-                                                    getTxAmount(diff.db)) < 0
-                                                    ? 'text-rose-600'
-                                                    : 'text-emerald-600'}"
-                                            >
-                                                €{(
-                                                    diff.csv?.amount ||
-                                                    getTxAmount(diff.db)
-                                                ).toLocaleString("de-DE", {
-                                                    minimumFractionDigits: 2,
-                                                })}
-                                            </p>
-                                        </div>
-                                        {#if diff.csv?.payment_reference || getTxDescription(diff.db)}
-                                            <p
-                                                class="text-[10px] text-slate-500 mt-1 truncate"
-                                            >
-                                                {diff.csv?.payment_reference ||
-                                                    getTxDescription(diff.db)}
-                                            </p>
-                                        {/if}
-                                    </div>
-
-                                    <div class="shrink-0">
-                                        {#if diff.type === "MISSING_IN_DB"}
-                                            <button
-                                                onclick={() =>
-                                                    acceptMissingTransaction(
-                                                        diff,
-                                                    )}
-                                                disabled={importProcessing}
-                                                class="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-lg shadow-emerald-200 transition-all disabled:opacity-50"
-                                                title="Import to Ledger"
-                                            >
-                                                {#if importProcessing}<Loader2
-                                                        class="w-4 h-4 animate-spin"
-                                                    />{:else}<Plus
-                                                        class="w-4 h-4"
-                                                    />{/if}
-                                            </button>
-                                        {:else if diff.type === "EXTRA_IN_DB"}
-                                            <button
-                                                onclick={() =>
-                                                    acceptDeletion(diff)}
-                                                disabled={importProcessing}
-                                                class="p-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-lg shadow-rose-200 transition-all disabled:opacity-50"
-                                                title="Delete from Ledger"
-                                            >
-                                                {#if importProcessing}<Loader2
-                                                        class="w-4 h-4 animate-spin"
-                                                    />{:else}<Trash2
-                                                        class="w-4 h-4"
-                                                    />{/if}
-                                            </button>
-                                        {:else}
-                                            <div class="p-2.5 text-emerald-500">
-                                                <CheckCircle2 class="w-5 h-5" />
-                                            </div>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    </div>
-                {/if}
-            </div>
-
-            <div
-                class="p-8 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0"
-            >
-                <button
-                    onclick={() => (showImportModal = false)}
-                    class="px-6 py-3 font-black text-[10px] uppercase tracking-widest text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                    Close Reconciler
-                </button>
-            </div>
-        </div>
-    </div>
 {/if}
 
 <style>

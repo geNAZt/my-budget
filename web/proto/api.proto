@@ -684,12 +684,6 @@ message TransactionDuplicateRequest {
   string denied_id = 2;
 }
 
-message TransactionSaveBulkRequest {
-  string integration_id = 1;
-  string account_id = 2;
-  repeated Transaction transactions = 3;
-}
-
 message UserAuthenticator {
   string id = 1;
   string name = 2;

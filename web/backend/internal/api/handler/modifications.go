@@ -72,41 +72,6 @@ func (m *Modifications) Save(s *api.WebsocketSession, reqID string, reqObj *apip
 	m.handler.SendResponse(s, reqID, mapModificationToProto(domainObj), true)
 }
 
-// SaveBulk automatically registers as "modifications::save_bulk"
-func (m *Modifications) SaveBulk(s *api.WebsocketSession, reqID string, reqList *apiproto.ModificationList) {
-	userID, _ := s.GetAuth()
-	if userID == "" {
-		m.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var domainObjs []domain.Modification
-
-	for _, reqObj := range reqList.Modifications {
-		domainObj := domain.Modification{
-			ID:          reqObj.Id,
-			UserID:      userID,
-			TargetID:    reqObj.TargetId,
-			TargetIDs:   reqObj.TargetIds,
-			TargetType:  reqObj.TargetType,
-			Description: reqObj.Description,
-		}
-		domainObjs = append(domainObjs, domainObj)
-	}
-
-	if err := m.modifications.SaveBulk(userID, domainObjs); err != nil {
-		m.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp := &apiproto.ModificationList{}
-	for _, d := range domainObjs {
-		resp.Modifications = append(resp.Modifications, mapModificationToProto(d))
-	}
-
-	m.handler.SendResponse(s, reqID, resp, true)
-}
-
 // Delete automatically registers as "modifications::delete"
 func (m *Modifications) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

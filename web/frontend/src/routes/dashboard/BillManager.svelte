@@ -35,14 +35,12 @@
         Undo2,
         Pencil,
         Receipt,
-        ClipboardPaste,
         CheckCircle2,
         AlertCircle,
         Check,
         X,
-        Globe,
-        Languages,
     } from "@lucide/svelte";
+
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
@@ -60,7 +58,6 @@
         poolId?: string | null;
         accountIds?: string[];
         activeVersion?: BillVersion;
-        import_selected?: boolean; // UI only
     }
 
     let bills = $state<Bill[]>([]);
@@ -96,15 +93,9 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let showImportModal = $state(false);
     let currentBill = $state<Bill>(createNewBill());
     let amountInput = $state("");
     let billToDelete = $state<string | null>(null);
-
-    // Import State
-    let rawImportData = $state("");
-    let previewBills = $state<Bill[]>([]);
-    let importLocale = $state<"DE" | "US">("US"); // Default to US as per user request for legacy data
 
     function createNewBill(): Bill {
         const now = new Date();
@@ -149,30 +140,6 @@
         } finally {
             isLoading = false;
         }
-    }
-
-    function parseNumericAmount(val: string | number, locale: "DE" | "US"): number {
-        if (typeof val === "number") return val; if (!val) return 0;
-        if (locale === "DE") return parseGermanAmount(val);
-        let clean = val.toString().trim().replace(/,/g, "");
-        return parseFloat(clean) || 0;
-    }
-
-    function parseDateString(val: string): string {
-        if (!val || val.trim() === "") {
-            const now = new Date();
-            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
-        }
-
-        // Format: MM/YYYY or M/YYYY
-        const parts = val.split("/");
-        if (parts.length === 2) {
-            const month = parts[0].padStart(2, "0");
-            const year = parts[1];
-            return `${year}-${month}-01T00:00:00Z`;
-        }
-
-        return new Date().toISOString();
     }
 
     async function saveBill() {
@@ -250,86 +217,6 @@
         }
     }
 
-    async function executeImport() {
-        const toImport = previewBills.filter((b) => b.import_selected);
-        if (toImport.length === 0) return;
-
-        try {
-            isSaving = true;
-            const [, err] = await wsCall(
-                "bills::save_bulk",
-                BillListSchema,
-                {
-                    bills: toImport.map((b) => ({
-                        id: b.id || "",
-                        name: b.name,
-                        poolId: b.poolId || "",
-                        accountIds: b.accountIds || [],
-                        activeVersion: b.activeVersion
-                            ? {
-                                  id: b.activeVersion?.id || "",
-                                  billId: b.activeVersion?.billId || "",
-                                  amount: b.activeVersion?.amount || 0,
-                                  startDate: b.activeVersion?.startDate || "",
-                                  endDate: b.activeVersion?.endDate || "",
-                                  intervalMonths:
-                                      b.activeVersion?.intervalMonths || 1,
-                                  createdAt: b.activeVersion?.createdAt || "",
-                              }
-                            : undefined,
-                        linkToScenarios: b.linkToScenarios || [],
-                    })),
-                },
-                [BillListSchema],
-            ).one();
-            if (err) throw err;
-            showImportModal = false;
-            rawImportData = "";
-            previewBills = [];
-            await fetchData();
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            isSaving = false;
-        }
-    }
-
-    $effect(() => {
-        if (!rawImportData) {
-            previewBills = [];
-            return;
-        }
-
-        const lines = rawImportData.trim().split("\n");
-        const detected: Bill[] = [];
-
-        lines.forEach((line) => {
-            const parts = line.split("\t");
-            if (parts.length < 2) return;
-
-            const name = parts[0].trim();
-            const amount = parseNumericAmount(parts[1], importLocale);
-            const interval = parseInt(parts[2]) || 1;
-            const startDate = parseDateString(parts[3]);
-            const endDate = parts[4] ? parseDateString(parts[4]) : null;
-
-            detected.push({
-                name,
-                poolId: null,
-                accountIds: [],
-                import_selected: true,
-                activeVersion: {
-                    amount,
-                    intervalMonths: interval,
-                    startDate: startDate,
-                    endDate: endDate,
-                },
-            });
-        });
-
-        previewBills = detected;
-    });
-
     function toInputMonth(isoStr: string | null): string {
         if (!isoStr) return "";
         return isoStr.substring(0, 7); // "YYYY-MM"
@@ -370,13 +257,6 @@
             </p>
         </div>
         <div class="flex gap-4">
-            <button
-                onclick={() => (showImportModal = true)}
-                class="btn-secondary"
-            >
-                <ClipboardPaste class="w-4 h-4" />
-                Bulk Import
-            </button>
             <button
                 onclick={() => {
                     currentBill = createNewBill();
@@ -708,280 +588,6 @@
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-{/if}
-
-<!-- Bulk Import Modal with Verification -->
-{#if showImportModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-5xl bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] flex flex-col overflow-hidden"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <button
-                onclick={() => (showImportModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-            >
-                <Plus class="w-6 h-6 rotate-45" />
-            </button>
-
-            <div class="p-10 pb-0">
-                <div class="mb-8">
-                    <h3
-                        class="text-3xl font-black text-slate-900 tracking-tight"
-                    >
-                        Bulk Verification Engine
-                    </h3>
-                    <p class="text-slate-500 font-medium">
-                        Deterministic review of external spreadsheet data.
-                    </p>
-                </div>
-            </div>
-
-            <div
-                class="grid grid-cols-1 lg:grid-cols-12 gap-10 flex-1 overflow-hidden px-10"
-            >
-                <!-- Left: Paste Area -->
-                <div
-                    class="lg:col-span-4 flex flex-col space-y-6 overflow-hidden"
-                >
-                    <div class="flex-1 flex flex-col space-y-2">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >TSV Source Data</label
-                        >
-                        <textarea
-                            bind:value={rawImportData}
-                            placeholder="Paste columns from Sheets..."
-                            class="flex-1 w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-mono text-[10px] leading-relaxed resize-none"
-                        ></textarea>
-                    </div>
-
-                    <!-- Numeric Toggle -->
-                    <div
-                        class="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4"
-                    >
-                        <p
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"
-                        >
-                            Numeric Parsing Strategy
-                        </p>
-                        <div
-                            class="flex p-1 bg-white border border-slate-200 rounded-xl"
-                        >
-                            <button
-                                onclick={() => (importLocale = "US")}
-                                class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-2 transition-all
-                                       {importLocale === 'US'
-                                    ? 'bg-indigo-600 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-slate-600'}"
-                            >
-                                <Globe class="w-3.5 h-3.5" /> International (.)
-                            </button>
-                            <button
-                                onclick={() => (importLocale = "DE")}
-                                class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-2 transition-all
-                                       {importLocale === 'DE'
-                                    ? 'bg-indigo-600 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-slate-600'}"
-                            >
-                                <Languages class="w-3.5 h-3.5" /> German (,)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right: Verification Table -->
-                <div class="lg:col-span-8 flex flex-col overflow-hidden">
-                    <div class="flex items-center justify-between mb-4">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >Verification List ({previewBills.length} detected)</label
-                        >
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() =>
-                                    previewBills.forEach(
-                                        (b) => (b.import_selected = true),
-                                    )}
-                                class="text-[9px] font-black text-indigo-600 hover:underline uppercase"
-                                >Select All</button
-                            >
-                            <span class="text-slate-200">|</span>
-                            <button
-                                onclick={() =>
-                                    previewBills.forEach(
-                                        (b) => (b.import_selected = false),
-                                    )}
-                                class="text-[9px] font-black text-slate-400 hover:underline uppercase"
-                                >Clear All</button
-                            >
-                        </div>
-                    </div>
-
-                    <div
-                        class="flex-1 overflow-y-auto border border-slate-100 rounded-2xl bg-slate-50/30"
-                    >
-                        <table class="w-full text-left border-collapse">
-                            <thead class="sticky top-0 bg-white shadow-sm">
-                                <tr>
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400 w-12"
-                                    ></th>
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Identity</th
-                                    >
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Deterministic Value</th
-                                    >
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Timeline</th
-                                    >
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each previewBills as b, i}
-                                    <tr
-                                        class="group hover:bg-white transition-colors border-b border-slate-50 last:border-0"
-                                    >
-                                        <td class="p-4 text-center">
-                                            <button
-                                                onclick={() =>
-                                                    (b.import_selected =
-                                                        !b.import_selected)}
-                                                class="w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center
-                                                       {b.import_selected
-                                                    ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                    : 'border-slate-200 bg-white text-transparent'}"
-                                            >
-                                                <Check class="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                        <td class="p-4">
-                                            <p
-                                                class="font-black text-slate-900 text-sm truncate max-w-[150px]"
-                                            >
-                                                {b.name}
-                                            </p>
-                                        </td>
-                                        <td class="p-4">
-                                            <p
-                                                class="font-black text-slate-900 text-sm {b
-                                                    .activeVersion.amount === 0
-                                                    ? 'text-rose-500'
-                                                    : ''}"
-                                            >
-                                                {formatGermanAmount(
-                                                    b.activeVersion?.amount,
-                                                )} €
-                                            </p>
-                                            <p
-                                                class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter"
-                                            >
-                                                Interval: {b.activeVersion
-                                                    .intervalMonths}m
-                                            </p>
-                                        </td>
-                                        <td class="p-4">
-                                            <div
-                                                class="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase"
-                                            >
-                                                <span
-                                                    >{formatDate(
-                                                        b.activeVersion
-                                                            .startDate,
-                                                    )}</span
-                                                >
-                                                <ArrowRight
-                                                    class="w-3 h-3 text-slate-300"
-                                                />
-                                                <span
-                                                    >{formatDate(
-                                                        b.activeVersion
-                                                            ?.endDate,
-                                                    )}</span
-                                                >
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {/each}
-                                {#if previewBills.length === 0}
-                                    <tr>
-                                        <td
-                                            colspan="4"
-                                            class="p-12 text-center"
-                                        >
-                                            <div
-                                                class="flex flex-col items-center gap-2 opacity-30"
-                                            >
-                                                <Receipt class="w-10 h-10" />
-                                                <p
-                                                    class="text-xs font-black uppercase tracking-[0.2em]"
-                                                >
-                                                    Awaiting Data Node...
-                                                </p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {/if}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                class="mt-10 pt-8 border-t border-slate-100 flex items-center justify-between"
-            >
-                <div
-                    class="flex items-center gap-3 text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100"
-                >
-                    <CheckCircle2 class="w-4 h-4" />
-                    <p
-                        class="text-[10px] font-black uppercase tracking-[0.2em]"
-                    >
-                        Verified: {previewBills.filter((b) => b.import_selected)
-                            .length} units
-                    </p>
-                </div>
-
-                <div class="flex gap-4">
-                    <button
-                        onclick={() => {
-                            rawImportData = "";
-                            showImportModal = false;
-                        }}
-                        class="btn-secondary px-8"
-                    >
-                        Abort
-                    </button>
-                    <button
-                        onclick={executeImport}
-                        disabled={!previewBills.some(
-                            (b) => b.import_selected,
-                        ) || isSaving}
-                        class="btn-primary px-12 py-4 text-lg shadow-2xl shadow-indigo-100"
-                    >
-                        {#if isSaving}
-                            <Loader2 class="w-6 h-6 animate-spin" />
-                            <span>Persisting Batch...</span>
-                        {:else}
-                            <span>Confirm & Commit</span>
-                        {/if}
-                    </button>
-                </div>
             </div>
         </div>
     </div>

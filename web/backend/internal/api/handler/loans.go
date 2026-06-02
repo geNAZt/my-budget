@@ -81,47 +81,6 @@ func (l *Loans) Save(s *api.WebsocketSession, reqID string, reqObj *apiproto.Loa
 	l.handler.SendResponse(s, reqID, mapLoanToProto(domainObj), true)
 }
 
-// SaveBulk automatically registers as "loans::save_bulk"
-func (l *Loans) SaveBulk(s *api.WebsocketSession, reqID string, reqList *apiproto.LoanList) {
-	userID, _ := s.GetAuth()
-	if userID == "" {
-		l.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var domainObjs []domain.Loan
-
-	for _, reqObj := range reqList.Loans {
-		domainObj := domain.Loan{
-			ID:              reqObj.Id,
-			UserID:          userID,
-			Name:            reqObj.Name,
-			AccountIDs:      reqObj.AccountIds,
-			LinkToScenarios: reqObj.LinkToScenarios,
-			ActiveVersion:   mapProtoToLoanVersion(reqObj.ActiveVersion),
-		}
-		if reqObj.PoolId != "" {
-			domainObj.PoolID = &reqObj.PoolId
-		}
-		domainObjs = append(domainObjs, domainObj)
-	}
-
-	if err := l.loans.SaveBulk(userID, domainObjs); err != nil {
-		l.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp := &apiproto.LoanList{}
-	for _, d := range domainObjs {
-		if len(d.LinkToScenarios) > 0 {
-			l.scenarios.LinkEntityToScenarios(userID, d.ID, "LOAN", d.LinkToScenarios)
-		}
-		resp.Loans = append(resp.Loans, mapLoanToProto(d))
-	}
-
-	l.handler.SendResponse(s, reqID, resp, true)
-}
-
 // Delete automatically registers as "loans::delete"
 func (l *Loans) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

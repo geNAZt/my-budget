@@ -37,12 +37,9 @@
         Undo2,
         Pencil,
         PieChart,
-        ClipboardPaste,
         CheckCircle2,
         AlertCircle,
         Check,
-        Globe,
-        Languages,
         Target,
         TrendingUp,
         LineChart,
@@ -106,7 +103,6 @@
         poolId?: string | null;
         accountIds?: string[];
         activeVersion?: AssetVersion;
-        import_selected?: boolean;
     }
 
     interface Loan {
@@ -149,17 +145,11 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let showImportModal = $state(false);
     let currentAsset = $state<Asset>(createNewAsset());
     let amountInput = $state("");
     let targetInput = $state("");
     let interestInput = $state("");
     let assetToDelete = $state<string | null>(null);
-
-    // Import State
-    let rawImportData = $state("");
-    let previewAssets = $state<Asset[]>([]);
-    let importLocale = $state<"DE" | "US">("US");
 
     function createNewAsset(): Asset {
         const now = new Date();
@@ -237,19 +227,6 @@
         return num.toLocaleString("de-DE", { useGrouping: false });
     }
 
-    function parseDateString(val: string): string {
-        if (!val || val.trim() === "") {
-            return "";
-        }
-        const parts = val.split("/");
-        if (parts.length === 2) {
-            const month = parts[0].padStart(2, "0");
-            const year = parts[1];
-            return `${year}-${month}-01T00:00:00Z`;
-        }
-        return new Date().toISOString();
-    }
-
     function calculateRequiredRate(
         targetVal: string,
         start: string,
@@ -273,97 +250,6 @@
         }
         return target / runtime;
     }
-
-    $effect(() => {
-        if (rawImportData.trim() === "") {
-            previewAssets = [];
-            return;
-        }
-
-        const lines = rawImportData.trim().split("\n");
-        const startIndex = lines[0].toLowerCase().includes("asset") ? 1 : 0;
-        const result: Asset[] = [];
-
-        for (let i = startIndex; i < lines.length; i++) {
-            const cols = lines[i].split("\t");
-            if (cols.length < 2) continue;
-
-            const name = cols[0].trim();
-            const targetVal = cols[1].trim();
-            const interest = parseNumeric(cols[2], importLocale);
-            let amount = parseNumeric(cols[3], importLocale);
-            const start = parseDateString(cols[4]);
-            const end =
-                cols[5] && cols[5].trim() !== ""
-                    ? parseDateString(cols[5])
-                    : null;
-            const interval = (cols[6] || "Yearly").trim() as
-                | "Monthly"
-                | "Yearly"
-                | "ETF";
-
-            let type: "STATIC" | "ETF" = interval === "ETF" ? "ETF" : "STATIC";
-            let etfConfig: ETFTracker[] = [];
-
-            if (type === "ETF") {
-                try {
-                    if (cols[2].startsWith("[")) {
-                        etfConfig = decode(cols[2]);
-                    }
-                } catch (e) {
-                    console.error("Failed to parse ETF JSON", e);
-                }
-            }
-
-            if (
-                type === "STATIC" &&
-                amount === 0 &&
-                start &&
-                end &&
-                !isNaN(parseFloat(targetVal.replace(",", ".")))
-            ) {
-                amount = calculateRequiredRate(targetVal, start, end, interest);
-            }
-
-            if (name) {
-                let resolvedTargetValue = targetVal;
-                let resolvedDumpingLoanId = null;
-
-                // Try to resolve loan name to ID
-                const matchedLoan = loans.find((l) => l.name === targetVal);
-                if (matchedLoan) {
-                    resolvedDumpingLoanId = matchedLoan.id;
-                    resolvedTargetValue = "0"; // If it's a loan, threshold is 0 (handled by dumping logic)
-                } else {
-                    // Make sure it's a numeric string for targetValue if not a loan
-                    const num = parseNumeric(targetVal, importLocale);
-                    resolvedTargetValue = num.toString();
-                }
-
-                result.push({
-                    name,
-                    activeVersion: {
-                        type,
-                        targetValue: resolvedTargetValue,
-                        dumpingLoanId: resolvedDumpingLoanId,
-                        stopModificationId: null,
-                        interestRate: type === "STATIC" ? interest : 0,
-                        interestInterval:
-                            type === "STATIC" ? (interval as any) : "Yearly",
-                        amountPerMonth: amount,
-                        remainderStartDate: null,
-                        startDate: start || new Date().toISOString(),
-                        endDate: end,
-                        etfConfig: etfConfig,
-                        penalties: [],
-                        subAssets: [],
-                    },
-                    import_selected: true,
-                });
-            }
-        }
-        previewAssets = result;
-    });
 
     async function saveAsset() {
         if (!currentAsset.name) return;
@@ -517,101 +403,6 @@
         }
     }
 
-    async function executeImport() {
-        isSaving = true;
-        try {
-            const toImport = previewAssets.filter((a) => a.importSelected);
-            const [, err] = await wsCall(
-                "assets::save_bulk",
-                AssetListSchema,
-                {
-                    assets: toImport.map((a: any) => ({
-                        id: a.id || "",
-                        name: a.name || "",
-                        poolId: a.poolId || "",
-                        accountIds: a.accountIds || [],
-                        linkToScenarios: a.linkToScenarios || [],
-                        activeVersion: a.activeVersion
-                            ? {
-                                  id: a.activeVersion.id || "",
-                                  assetId: a.activeVersion.assetId || "",
-                                  type: a.activeVersion.type || "STOCKS",
-                                  targetValue:
-                                      parseFloat(a.activeVersion.targetValue) ||
-                                      0,
-                                  dumpingLoanId:
-                                      a.activeVersion.dumpingLoanId || "",
-                                  stopModificationId:
-                                      a.activeVersion.stopModificationId || "",
-                                  interestRate:
-                                      parseFloat(
-                                          a.activeVersion.interestRate,
-                                      ) || 0,
-                                  interestInterval:
-                                      a.activeVersion.interestInterval ||
-                                      "YEARLY",
-                                  amountPerMonth:
-                                      parseFloat(
-                                          a.activeVersion.amountPerMonth,
-                                      ) || 0,
-                                  remainderStartDate:
-                                      a.activeVersion.remainderStartDate || "",
-                                  startDate: a.activeVersion.startDate || "",
-                                  endDate: a.activeVersion.endDate || "",
-                                  etfConfig: (
-                                      a.activeVersion.etfConfig || []
-                                  ).map((t: any) => ({
-                                      tracker: t.tracker || "",
-                                      historicalTracker: t.historicalTracker || "",
-                                      conversionTracker: t.conversionTracker || "",
-                                      historyProvider: t.historyProvider || "",
-                                      percentage: parseFloat(t.percentage) || 0,
-                                      ter: parseFloat(t.ter) || 0,
-                                  })),
-                                  penalties: (
-                                      a.activeVersion.penalties || []
-                                  ).map((p: any) => ({
-                                      name: p.name || "",
-                                      triggerType: p.triggerType || "",
-                                      percentage: parseFloat(p.percentage) || 0,
-                                  })),
-                                  subAssets: (
-                                      a.activeVersion.subAssets || []
-                                  ).map((s: any) => ({
-                                      id: s.id || "",
-                                      name: s.name || "",
-                                      targetValue:
-                                          parseFloat(s.targetValue) || 0,
-                                      amountPerMonth:
-                                          parseFloat(s.amountPerMonth) || 0,
-                                      isRemainderConsumer:
-                                          !!s.isRemainderConsumer,
-                                      remainderStartDate:
-                                          s.remainderStartDate || "",
-                                      dumpingLoanId: s.dumpingLoanId || "",
-                                      startDate: s.startDate || "",
-                                      endDate: s.endDate || "",
-                                      earliestDumpDate:
-                                          s.earliestDumpDate || "",
-                                  })),
-                              }
-                            : undefined,
-                    })),
-                },
-                [AssetListSchema],
-            ).one();
-            if (err) throw err;
-            await fetchData();
-            showImportModal = false;
-            previewAssets = [];
-            rawImportData = "";
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            isSaving = false;
-        }
-    }
-
     function confirmDelete(mode?: string) {
         deleteAsset(mode);
     }
@@ -713,13 +504,6 @@
             </p>
         </div>
         <div class="flex gap-4">
-            <button
-                onclick={() => (showImportModal = true)}
-                class="btn-secondary"
-            >
-                <ClipboardPaste class="w-4 h-4" />
-                Bulk Import
-            </button>
             <button
                 onclick={() => {
                     currentAsset = createNewAsset();
@@ -2039,197 +1823,6 @@
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-{/if}
-
-<!-- Bulk Import Modal -->
-{#if showImportModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-5xl bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] flex flex-col overflow-hidden"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <button
-                onclick={() => (showImportModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-            >
-                <Plus class="w-6 h-6 rotate-45" />
-            </button>
-
-            <div class="p-10 pb-0">
-                <div class="mb-8">
-                    <h3
-                        class="text-3xl font-black text-slate-900 tracking-tight"
-                    >
-                        Asset Verification Engine
-                    </h3>
-                    <p class="text-slate-500 font-medium">
-                        Deterministic review of external wealth data nodes.
-                    </p>
-                </div>
-            </div>
-
-            <div
-                class="grid grid-cols-1 lg:grid-cols-12 gap-10 flex-1 overflow-hidden px-10"
-            >
-                <div
-                    class="lg:col-span-4 flex flex-col space-y-6 overflow-hidden"
-                >
-                    <div class="flex-1 flex flex-col space-y-2">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >TSV Source Data</label
-                        >
-                        <textarea
-                            bind:value={rawImportData}
-                            placeholder="Paste columns from Sheets..."
-                            class="flex-1 w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-mono text-[10px] leading-relaxed resize-none"
-                        ></textarea>
-                    </div>
-
-                    <div
-                        class="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4"
-                    >
-                        <p
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"
-                        >
-                            Numeric Strategy
-                        </p>
-                        <div
-                            class="flex p-1 bg-white border border-slate-200 rounded-xl"
-                        >
-                            <button
-                                onclick={() => (importLocale = "US")}
-                                class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-2 transition-all {importLocale ===
-                                'US'
-                                    ? 'bg-emerald-600 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-slate-600'}"
-                                >International</button
-                            >
-                            <button
-                                onclick={() => (importLocale = "DE")}
-                                class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black flex items-center justify-center gap-2 transition-all {importLocale ===
-                                'DE'
-                                    ? 'bg-emerald-600 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-slate-600'}"
-                                >German</button
-                            >
-                        </div>
-                    </div>
-                </div>
-
-                <div class="lg:col-span-8 flex flex-col overflow-hidden">
-                    <div class="flex items-center justify-between mb-4">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Verification List ({previewAssets.length})</label
-                        >
-                    </div>
-
-                    <div
-                        class="flex-1 overflow-y-auto border border-slate-100 rounded-2xl bg-slate-50/30"
-                    >
-                        <table class="w-full text-left border-collapse text-xs">
-                            <thead class="sticky top-0 bg-white shadow-sm z-10">
-                                <tr>
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400 w-12"
-                                    ></th>
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Asset</th
-                                    >
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Target/Growth</th
-                                    >
-                                    <th
-                                        class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                        >Logic</th
-                                    >
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each previewAssets as a}
-                                    <tr
-                                        class="group hover:bg-white transition-colors border-b border-slate-50"
-                                    >
-                                        <td class="p-4 text-center">
-                                            <button
-                                                onclick={() =>
-                                                    (a.import_selected =
-                                                        !a.import_selected)}
-                                                class="w-5 h-5 rounded border-2 transition-all flex items-center justify-center {a.import_selected
-                                                    ? 'bg-emerald-600 border-emerald-600 text-white'
-                                                    : 'border-slate-200 bg-white text-transparent'}"
-                                                ><Check
-                                                    class="w-4 h-4"
-                                                /></button
-                                            >
-                                        </td>
-                                        <td
-                                            class="p-4 font-black text-slate-900"
-                                            >{a.name}</td
-                                        >
-                                        <td class="p-4">
-                                            <p class="font-black">
-                                                {a.activeVersion.targetValue}
-                                            </p>
-                                            <p
-                                                class="text-[9px] font-bold text-emerald-600 uppercase"
-                                            >
-                                                Rate: {formatGermanAmount(
-                                                    a.activeVersion
-                                                        .amountPerMonth,
-                                                )} €
-                                            </p>
-                                            {#if a.activeVersion.type === "ETF"}
-                                                <p
-                                                    class="text-[8px] font-bold text-slate-400"
-                                                >
-                                                    Trackers: {a.activeVersion.etfConfig
-                                                        .map((t) => t.tracker)
-                                                        .join(", ")}
-                                                </p>
-                                            {/if}
-                                        </td>
-                                        <td class="p-4">
-                                            <span
-                                                class="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-[4px] font-black uppercase tracking-tighter text-[9px]"
-                                                >{a.activeVersion.type}</span
-                                            >
-                                        </td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                class="mt-8 pt-6 border-t border-slate-100 flex gap-4 justify-end p-10 pt-0"
-            >
-                <button
-                    onclick={() => (showImportModal = false)}
-                    class="btn-secondary px-8">Abort</button
-                >
-                <button
-                    onclick={executeImport}
-                    disabled={!previewAssets.some((a) => a.import_selected) ||
-                        isSaving}
-                    class="btn-primary px-12 bg-indigo-600 hover:bg-indigo-700 shadow-2xl shadow-indigo-100"
-                    >Confirm & Commit Batch</button
-                >
             </div>
         </div>
     </div>

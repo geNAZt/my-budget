@@ -177,7 +177,7 @@
             </div>
         {:else if profile}
             <!-- Timezone Section -->
-            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden" in:fade>
+            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm" in:fade>
                 <div class="p-8 md:p-10">
                     <div class="flex items-center gap-4 mb-8">
                         <div class="p-3 bg-indigo-50 rounded-2xl">
@@ -208,7 +208,7 @@
             </div>
 
             <!-- Passkeys Section -->
-            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden" in:fade={{ delay: 100 }}>
+            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm" in:fade={{ delay: 100 }}>
                 <div class="p-8 md:p-10">
                     <div class="flex items-center justify-between mb-8">
                         <div class="flex items-center gap-4">
@@ -289,7 +289,7 @@
             </div>
 
             <!-- Recovery Section -->
-            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden" in:fade={{ delay: 200 }}>
+            <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm" in:fade={{ delay: 200 }}>
                 <div class="p-8 md:p-10">
                     <div class="flex items-center gap-4 mb-8">
                         <div class="p-3 bg-rose-50 rounded-2xl">

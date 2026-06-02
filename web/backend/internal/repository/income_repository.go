@@ -134,53 +134,6 @@ func (r *IncomeRepository) Save(userID string, income *domain.Income) error {
 	return tx.Commit()
 }
 
-func (r *IncomeRepository) SaveBulk(userID string, incomes []domain.Income) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	for _, income := range incomes {
-		if income.ID == "" {
-			income.ID = uuid.New().String()
-			_, err = tx.Exec("INSERT INTO incomes (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", income.ID, userID, income.Name, income.PoolID)
-		} else {
-			_, err = tx.Exec("UPDATE incomes SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", income.Name, income.PoolID, income.ID, userID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Save multiple virtual account linkages
-		_, err = tx.Exec("DELETE FROM entity_virtual_accounts WHERE entity_id = ? AND entity_type = 'INCOME'", income.ID)
-		if err != nil {
-			return err
-		}
-		for _, vaID := range income.AccountIDs {
-			if vaID != "" {
-				_, err = tx.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) VALUES (?, 'INCOME', ?)", income.ID, vaID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		v := income.ActiveVersion
-		v.ID = uuid.New().String()
-		v.IncomeID = income.ID
-		_, err = tx.Exec(`
-			INSERT INTO income_versions (id, income_id, amount, stop_modification_id, start_date, end_date, interval_months)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			v.ID, v.IncomeID, v.Amount, v.StopModificationID, v.StartDate, v.EndDate, v.IntervalMonths)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
-}
-
 // ArchiveFull soft-deletes the entire income entity
 func (r *IncomeRepository) ArchiveFull(userID string, id string) error {
 	_, err := r.db.Exec("UPDATE incomes SET is_deleted = TRUE WHERE id = ? AND user_id = ?", id, userID)

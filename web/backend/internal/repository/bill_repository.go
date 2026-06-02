@@ -130,53 +130,6 @@ func (r *BillRepository) Save(userID string, bill *domain.Bill) error {
 	return tx.Commit()
 }
 
-func (r *BillRepository) SaveBulk(userID string, bills []domain.Bill) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	for _, bill := range bills {
-		if bill.ID == "" {
-			bill.ID = uuid.New().String()
-			_, err = tx.Exec("INSERT INTO bills (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", bill.ID, userID, bill.Name, bill.PoolID)
-		} else {
-			_, err = tx.Exec("UPDATE bills SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", bill.Name, bill.PoolID, bill.ID, userID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Save multiple virtual account linkages
-		_, err = tx.Exec("DELETE FROM entity_virtual_accounts WHERE entity_id = ? AND entity_type = 'BILL'", bill.ID)
-		if err != nil {
-			return err
-		}
-		for _, vaID := range bill.AccountIDs {
-			if vaID != "" {
-				_, err = tx.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) VALUES (?, 'BILL', ?)", bill.ID, vaID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		v := bill.ActiveVersion
-		v.ID = uuid.New().String()
-		v.BillID = bill.ID
-		_, err = tx.Exec(`
-			INSERT INTO bill_versions (id, bill_id, amount, start_date, end_date, interval_months)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			v.ID, v.BillID, v.Amount, v.StartDate, v.EndDate, v.IntervalMonths)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
-}
-
 func (r *BillRepository) ArchiveFull(userID string, id string) error {
 	_, err := r.db.Exec("UPDATE bills SET is_deleted = TRUE WHERE id = ? AND user_id = ?", id, userID)
 	return err

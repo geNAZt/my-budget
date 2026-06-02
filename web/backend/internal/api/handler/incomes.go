@@ -81,47 +81,6 @@ func (i *Incomes) Save(s *api.WebsocketSession, reqID string, reqIncome *apiprot
 	i.handler.SendResponse(s, reqID, mapIncomeToProto(domainIncome), true)
 }
 
-// SaveBulk automatically registers as "incomes::save_bulk"
-func (i *Incomes) SaveBulk(s *api.WebsocketSession, reqID string, reqList *apiproto.IncomeList) {
-	userID, _ := s.GetAuth()
-	if userID == "" {
-		i.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var domainIncomes []domain.Income
-
-	for _, reqIncome := range reqList.Incomes {
-		domainIncome := domain.Income{
-			ID:              reqIncome.Id,
-			UserID:          userID,
-			Name:            reqIncome.Name,
-			AccountIDs:      reqIncome.AccountIds,
-			LinkToScenarios: reqIncome.LinkToScenarios,
-			ActiveVersion:   mapProtoToIncomeVersion(reqIncome.ActiveVersion),
-		}
-		if reqIncome.PoolId != "" {
-			domainIncome.PoolID = &reqIncome.PoolId
-		}
-		domainIncomes = append(domainIncomes, domainIncome)
-	}
-
-	if err := i.incomes.SaveBulk(userID, domainIncomes); err != nil {
-		i.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp := &apiproto.IncomeList{}
-	for _, income := range domainIncomes {
-		if len(income.LinkToScenarios) > 0 {
-			i.scenarios.LinkEntityToScenarios(userID, income.ID, "INCOME", income.LinkToScenarios)
-		}
-		resp.Incomes = append(resp.Incomes, mapIncomeToProto(income))
-	}
-
-	i.handler.SendResponse(s, reqID, resp, true)
-}
-
 // Delete automatically registers as "incomes::delete"
 func (i *Incomes) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

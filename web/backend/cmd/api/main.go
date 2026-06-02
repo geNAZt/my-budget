@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
@@ -65,23 +64,22 @@ func main() {
 		dbURL = "postgres://budget:budgetpass@localhost:5432/budget?sslmode=disable"
 	}
 
-	dbPath := os.Getenv("SQLITE_DB_PATH")
-	dataDir := "."
-	if dbPath == "" {
-		dbPath = "/app/data/budget.db"
-	}
-	dataDir = filepath.Dir(dbPath)
-
 	database, err := db.InitDB(dbURL)
 	if err != nil {
 		e.Logger.Fatal(err)
 	}
 	defer database.Close()
 
+	// Data directory configuration
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/app/data"
+	}
+
 	// Backup database on startup
 	db.BackupDB(dbURL, dataDir)
 
-	userRepo := repository.NewSQLiteUserRepository(database)
+	userRepo := repository.NewUserRepository(database)
 	sessionRepo := repository.NewSessionRepository(database)
 	incomeRepo := repository.NewIncomeRepository(database)
 	billRepo := repository.NewBillRepository(database)

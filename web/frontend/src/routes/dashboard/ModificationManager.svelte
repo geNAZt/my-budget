@@ -23,12 +23,6 @@
         Archive,
         Undo2,
         Pencil,
-        ClipboardPaste,
-        CheckCircle2,
-        AlertCircle,
-        Check,
-        Globe,
-        Languages,
         Settings2,
         Layers,
         Hammer,
@@ -39,6 +33,7 @@
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
+    import { formatGermanAmount } from "$lib/utils/format";
 
     interface ModificationVersion {
         amount: number;
@@ -55,7 +50,6 @@
         targetType: "ASSET" | "LOAN";
         description: string;
         activeVersion?: ModificationVersion;
-        import_selected?: boolean;
     }
 
     let mods = $state<Modification[]>([]);
@@ -86,15 +80,9 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let showImportModal = $state(false);
     let currentMod = $state<Modification>(createNewMod());
     let amountInput = $state("");
     let modToDelete = $state<string | null>(null);
-
-    // Import State
-    let rawImportData = $state("");
-    let previewMods = $state<Modification[]>([]);
-    let importLocale = $state<"DE" | "US">("US");
 
     function createNewMod(): Modification {
         const now = new Date();
@@ -140,102 +128,6 @@
             isLoading = false;
         }
     }
-
-    function parseNumeric(val: string | number, locale: "DE" | "US"): number {
-        if (typeof val === "number") return val; if (!val) return 0;
-        let clean = val.trim();
-        if (locale === "DE") {
-            clean = clean.replace(/\./g, "").replace(",", ".");
-        } else {
-            clean = clean.replace(/,/g, "");
-        }
-        return parseFloat(clean) || 0;
-    }
-
-    function formatGermanAmount(val: number): string {
-        return val.toLocaleString("de-DE", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        });
-    }
-
-    function parseDateString(val: string): string {
-        if (!val || val.trim() === "") {
-            const now = new Date();
-            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
-        }
-
-        const parts = val.split("/");
-        if (parts.length === 2) {
-            const month = parts[0].padStart(2, "0");
-            const year = parts[1];
-            return `${year}-${month}-01T00:00:00Z`;
-        }
-        return new Date().toISOString();
-    }
-
-    $effect(() => {
-        if (!rawImportData) {
-            previewMods = [];
-            return;
-        }
-
-        const lines = rawImportData.trim().split("\n");
-        const result: Modification[] = [];
-
-        for (const line of lines) {
-            const cols = line.split("\t");
-            if (cols.length < 2) continue;
-
-            const targetName = cols[0].trim();
-            const desc = cols[1].trim();
-            const amount = parseNumeric(cols[2], importLocale);
-            const start =
-                cols[3] && cols[3].trim() !== ""
-                    ? parseDateString(cols[3])
-                    : new Date().toISOString();
-            const end =
-                cols[4] && cols[4].trim() !== ""
-                    ? parseDateString(cols[4])
-                    : null;
-            const interval = parseInt(cols[5]) || 0;
-
-            let targetId = "";
-            let targetIds: string[] = [];
-            let targetType: "ASSET" | "LOAN" = "ASSET";
-
-            const asset = allAssets.find((a) => a.name === targetName);
-            if (asset) {
-                targetId = asset.id;
-                targetIds = [asset.id];
-                targetType = "ASSET";
-            } else {
-                const loan = allLoans.find((l) => l.name === targetName);
-                if (loan) {
-                    targetId = loan.id;
-                    targetType = "LOAN";
-                }
-            }
-
-            if (desc) {
-                result.push({
-                    targetId: targetId,
-                    targetIds: targetIds,
-                    targetType: targetType,
-                    description: desc,
-                    activeVersion: {
-                        amount,
-                        startDate: start,
-                        endDate: end,
-                        intervalMonths: interval,
-                        withdrawalPercentage: 0,
-                    },
-                    import_selected: targetId !== "" || targetIds.length > 0,
-                });
-            }
-        }
-        previewMods = result;
-    });
 
     async function saveMod() {
         if (!currentMod.description) return;
@@ -329,73 +221,6 @@
         }
     }
 
-    async function executeImport() {
-        const toImport = previewMods.filter((m) => m.import_selected);
-        if (toImport.length === 0) return;
-
-        isSaving = true;
-        try {
-            const [, err] = await wsCall(
-                "modifications::save_bulk",
-                ModificationListSchema,
-                {
-                    modifications: toImport.map((m) => ({
-                        id: m.id || "",
-                        targetId: m.targetId || "",
-                        targetIds: m.targetIds || [],
-                        targetType: m.targetType || "ASSET",
-                        description: m.description,
-                        activeVersion: m.activeVersion
-                            ? {
-                                  id: m.activeVersion?.id || "",
-                                  modificationId:
-                                      m.activeVersion?.modificationId || "",
-                                  amount: m.activeVersion?.amount || 0,
-                                  withdrawalPercentage:
-                                      m.activeVersion?.withdrawalPercentage ||
-                                      0,
-                                  startDate: m.activeVersion?.startDate || "",
-                                  endDate: m.activeVersion?.endDate || "",
-                                  intervalMonths:
-                                      m.activeVersion?.intervalMonths || 0,
-                                  createdAt: m.activeVersion?.createdAt || "",
-                              }
-                            : undefined,
-                    })),
-                },
-                [ErrorSchema],
-            ).one();
-            if (err) throw err;
-            showImportModal = false;
-            rawImportData = "";
-            previewMods = [];
-            await fetchData();
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            isSaving = false;
-        }
-    }
-
-    function toInputMonth(isoStr: string | null): string {
-        if (!isoStr) return "";
-        return isoStr.substring(0, 7); // "YYYY-MM"
-    }
-
-    function fromInputMonth(val: string): string {
-        if (!val) return "";
-        return val + "-01T00:00:00Z";
-    }
-
-    function formatDate(dateStr: string | null) {
-        if (!dateStr) return "Ongoing";
-        const d = new Date(dateStr);
-        return d.toLocaleDateString("de-DE", {
-            year: "numeric",
-            month: "2-digit",
-        });
-    }
-
     function getTargetNames(m: Modification) {
         if (m.targetType === "LOAN") {
             return (
@@ -435,11 +260,6 @@
             </p>
         </div>
         <div class="flex gap-4">
-            <button
-                onclick={() => (showImportModal = true)}
-                class="btn-secondary"
-                ><ClipboardPaste class="w-4 h-4" /> Bulk Import</button
-            >
             <button
                 onclick={() => {
                     currentMod = createNewMod();
@@ -864,187 +684,6 @@
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-{/if}
-
-{#if showImportModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-5xl bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] flex flex-col overflow-hidden"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <button
-                onclick={() => (showImportModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-                ><Plus class="w-6 h-6 rotate-45" /></button
-            >
-            <div class="p-10 flex flex-col overflow-hidden h-full">
-                <div class="mb-8">
-                    <h3
-                        class="text-3xl font-black text-slate-900 tracking-tight"
-                    >
-                        Modification Verification Engine
-                    </h3>
-                    <p class="text-slate-500 font-medium">
-                        Verify deterministic balance adjustments.
-                    </p>
-                </div>
-                <div
-                    class="grid grid-cols-1 lg:grid-cols-12 gap-10 flex-1 overflow-hidden"
-                >
-                    <div class="lg:col-span-4 flex flex-col space-y-6">
-                        <textarea
-                            bind:value={rawImportData}
-                            placeholder="Paste columns..."
-                            class="flex-1 w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-mono text-[10px] resize-none shadow-sm focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                        ></textarea>
-                        <div
-                            class="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm space-y-4"
-                        >
-                            <p
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"
-                            >
-                                Numeric Parsing Strategy
-                            </p>
-                            <div
-                                class="flex p-1 bg-white border border-slate-200 rounded-xl"
-                            >
-                                <button
-                                    onclick={() => (importLocale = "US")}
-                                    class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black transition-all {importLocale ===
-                                    'US'
-                                        ? 'bg-indigo-600 text-white shadow-lg'
-                                        : 'text-slate-400'}"
-                                    >International</button
-                                ><button
-                                    onclick={() => (importLocale = "DE")}
-                                    class="flex-1 py-2 px-3 rounded-lg text-[11px] font-black transition-all {importLocale ===
-                                    'DE'
-                                        ? 'bg-indigo-600 text-white shadow-lg'
-                                        : 'text-slate-400'}">German</button
-                                >
-                            </div>
-                        </div>
-                    </div>
-                    <div class="lg:col-span-8 flex flex-col overflow-hidden">
-                        <div
-                            class="flex-1 overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-sm"
-                        >
-                            <table
-                                class="w-full text-left border-collapse text-xs"
-                            >
-                                <thead class="sticky top-0 bg-white shadow-sm">
-                                    <tr>
-                                        <th
-                                            class="p-4 w-12 text-[10px] font-black uppercase text-slate-400"
-                                        ></th>
-                                        <th
-                                            class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                            >Target</th
-                                        >
-                                        <th
-                                            class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                            >Adjustment</th
-                                        >
-                                        <th
-                                            class="p-4 text-[10px] font-black uppercase text-slate-400"
-                                            >Node Logic</th
-                                        >
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {#each previewMods as pm}
-                                        <tr
-                                            class="group hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
-                                        >
-                                            <td class="p-4 text-center"
-                                                ><button
-                                                    onclick={() =>
-                                                        (pm.import_selected =
-                                                            !pm.import_selected)}
-                                                    class="w-5 h-5 rounded border-2 transition-all {pm.import_selected
-                                                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                        : 'border-slate-200 bg-white'}"
-                                                    ><Check
-                                                        class="w-4 h-4"
-                                                    /></button
-                                                ></td
-                                            >
-                                            <td class="p-4"
-                                                ><p
-                                                    class="font-black text-slate-900"
-                                                >
-                                                    {pm.targetId
-                                                        ? allAssets.find(
-                                                              (a) =>
-                                                                  a.id ===
-                                                                  pm.targetId,
-                                                          )?.name ||
-                                                          allLoans.find(
-                                                              (l) =>
-                                                                  l.id ===
-                                                                  pm.targetId,
-                                                          )?.name
-                                                        : "MISSING TARGET"}
-                                                </p>
-                                                <p
-                                                    class="text-[9px] text-slate-400 uppercase font-bold tracking-wider"
-                                                >
-                                                    {pm.targetType}
-                                                </p></td
-                                            >
-                                            <td
-                                                class="p-4 font-black {pm
-                                                    .activeVersion.amount >= 0
-                                                    ? 'text-emerald-600'
-                                                    : 'text-rose-600'}"
-                                                >{pm.activeVersion?.amount >= 0
-                                                    ? "+"
-                                                    : ""}{formatGermanAmount(
-                                                    pm.activeVersion?.amount,
-                                                )} €</td
-                                            >
-                                            <td
-                                                class="p-4 font-bold text-slate-500 uppercase text-[9px] tracking-wider"
-                                                >{pm.activeVersion
-                                                    .intervalMonths === 0
-                                                    ? "One-Time"
-                                                    : pm.activeVersion
-                                                          .intervalMonths + "m"} @
-                                                {formatDate(
-                                                    pm.activeVersion?.startDate,
-                                                )}</td
-                                            >
-                                        </tr>
-                                    {/each}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <div
-                    class="mt-10 pt-8 border-t border-slate-100 flex gap-4 justify-end"
-                >
-                    <button
-                        onclick={() => (showImportModal = false)}
-                        class="btn-secondary px-8">Abort</button
-                    ><button
-                        onclick={executeImport}
-                        disabled={!previewMods.some((m) => m.import_selected) ||
-                            isSaving}
-                        class="btn-primary px-12 py-4 text-lg shadow-2xl shadow-indigo-100 bg-indigo-600 text-white"
-                        >Commit Batch Adjustments</button
-                    >
-                </div>
             </div>
         </div>
     </div>
