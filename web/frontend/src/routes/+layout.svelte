@@ -193,13 +193,13 @@
                                 title="Toggle Theme"
                             >
                                 {#if isDark}
-                                    <Sun class="h-5 w-5 text-amber-500 animate-spin-slow" />
+                                    <Sun class="h-5 w-5 text-amber-500" />
                                 {:else}
                                     <Moon class="h-5 w-5 text-slate-400" />
                                 {/if}
                             </button>
 
-                            <div class="hidden md:flex flex-col items-end">
+                            <a href="/profile" class="hidden md:flex flex-col items-end hover:opacity-80 transition-opacity">
                                 <span
                                     class="text-xs font-black text-slate-900 tracking-tight"
                                     >{auth.user?.username}</span
@@ -208,7 +208,7 @@
                                     class="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]"
                                     >Verified Node</span
                                 >
-                            </div>
+                            </a>
                             <button
                                 onclick={handleLogout}
                                 class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all group shadow-sm border border-transparent hover:border-red-100"

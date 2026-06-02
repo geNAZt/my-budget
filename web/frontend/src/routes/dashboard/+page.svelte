@@ -163,12 +163,6 @@
         class="flex flex-col md:flex-row md:items-end justify-between gap-6"
     >
         <div class="space-y-2">
-            <div class="flex items-center gap-2 text-indigo-600">
-                <LayoutDashboard class="w-4 h-4" />
-                <span class="text-xs font-black uppercase tracking-[0.2em]"
-                    >Command Center</span
-                >
-            </div>
             <h1 class="text-5xl font-black tracking-tight text-slate-900">
                 Wealth <span class="gradient-text">Nodes</span>.
             </h1>

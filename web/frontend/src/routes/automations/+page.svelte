@@ -1,6 +1,6 @@
 <script lang="ts">
     import { wsCall } from "$lib/utils/ws_fetch";
-    import { ExecutionPlanListSchema, ExecutionConnectionListSchema, ExecutionPlanSchema, GenericIDSchema, ExecutionConnectionSchema, ExecutionLogListSchema, ErrorSchema } from "$lib/gen/api_pb.js";
+    import { ExecutionPlanListSchema, ExecutionConnectionListSchema, ExecutionPlanSchema, GenericIDSchema, ExecutionConnectionSchema, ExecutionLogListSchema, ErrorSchema, IntegrationListSchema } from "$lib/gen/api_pb.js";
     import { onMount } from "svelte";
     import { fade, slide } from "svelte/transition";
     import {
@@ -42,6 +42,7 @@
     let selectedLog = $derived(logs.find((l) => l.id === selectedLogId));
 
     let connections = $state<any[]>([]);
+    let integrations = $state<any[]>([]);
     let isAddingSecret = $state(false);
     let newSecretName = $state("");
     let newSecretValue = $state("");
@@ -58,12 +59,14 @@
     async function loadAllData() {
         isLoading = true;
         try {
-            const [plansData, connectionsData] = await Promise.all([
+            const [plansData, connectionsData, integrationsData] = await Promise.all([
                 wsCall("automations::plans::list", null, null, [ExecutionPlanListSchema]).one(),
                 wsCall("automations::connections::list", null, null, [ExecutionConnectionListSchema]).one(),
+                wsCall("integrations::list", null, null, [IntegrationListSchema]).one(),
             ]);
             plans = plansData[0] ? plansData[0].plans : [];
             connections = connectionsData[0] ? connectionsData[0].connections : [];
+            integrations = integrationsData[0] ? integrationsData[0].integrations : [];
             if (plans.length > 0) {
                 selectPlan(plans[0]);
             } else {
@@ -286,7 +289,7 @@ console.log("Current budget sheet loaded:", budget);
 
     const syncTriggerOptions = $derived([
         { id: "ALL", label: "Any Bank Integration" },
-        ...plans.map((p) => ({ id: p.id, label: p.name })),
+        ...integrations.map((i) => ({ id: i.id, label: i.name })),
     ]);
 
     const bankTriggerOptions = [
@@ -298,26 +301,17 @@ console.log("Current budget sheet loaded:", budget);
     <title>Automations &amp; Workflows — BudgetScript</title>
 </svelte:head>
 
-<div class="max-w-[1440px] mx-auto p-4 md:p-8 space-y-8 min-h-screen">
+<div class="space-y-12">
     <!-- Header Hero Section -->
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4"
+    <header
+        class="flex flex-col md:flex-row md:items-end justify-between gap-6"
     >
-        <div class="space-y-1">
-            <div class="flex items-center gap-2">
-                <div
-                    class="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-100"
-                >
-                    <Cpu class="w-6 h-6 text-white" />
-                </div>
-                <h2 class="text-3xl font-black text-slate-900 tracking-tight">
-                    Automation Lab
-                </h2>
-            </div>
-            <p
-                class="text-sm text-slate-400 font-bold uppercase tracking-widest ml-1"
-            >
-                Event-Driven Execution & Sandboxing
+        <div class="space-y-2">
+            <h1 class="text-5xl font-black tracking-tight text-slate-900">
+                Automation <span class="gradient-text">Lab</span>.
+            </h1>
+            <p class="text-slate-500 font-medium text-lg">
+                Event-driven execution & sandboxing.
             </p>
         </div>
 
@@ -328,7 +322,7 @@ console.log("Current budget sheet loaded:", budget);
             <Plus class="w-4 h-4" />
             Forge New Plan
         </button>
-    </div>
+    </header>
 
     <!-- Loading State Shield -->
     {#if isLoading}

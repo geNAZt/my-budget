@@ -5,8 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +18,7 @@ import (
 	apiproto "github.com/genazt/my-budget-script/web/backend/internal/api/proto"
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
+	"github.com/genazt/my-budget-script/web/backend/internal/integration"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
 	"github.com/genazt/my-budget-script/web/backend/internal/service"
 )
@@ -291,7 +295,14 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 
 	activeIntegrations, _ := t.syncService.GetAccountActiveIntegrations(userID, mikCache, integrations)
 
-	resp := &apiproto.DiscoveredTransactionList{}
+	type parsedTx struct {
+		tx   domain.BankTransaction
+		meta integration.TransactionMetadata
+		p    *apiproto.Transaction
+	}
+
+	parsedTxs := []*parsedTx{}
+	groups := make(map[string][]*parsedTx)
 
 	for _, tx := range txs {
 		if tx.IsDeleted {
@@ -303,18 +314,18 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			continue
 		}
 
-		var integration *domain.Integration
+		var integrationObj *domain.Integration
 		for _, i := range integrations {
 			if i.ID == tx.IntegrationID {
-				integration = &i
+				integrationObj = &i
 				break
 			}
 		}
-		if integration == nil {
+		if integrationObj == nil {
 			continue
 		}
 
-		provider := t.syncService.GetProvider(integration.ServiceType)
+		provider := t.syncService.GetProvider(integrationObj.ServiceType)
 		if provider == nil {
 			continue
 		}
@@ -329,17 +340,86 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			poolID = *tx.PoolID
 		}
 
-		resp.Transactions = append(resp.Transactions, &apiproto.Transaction{
-			Id:            tx.ID,
-			IntegrationId: tx.IntegrationID,
-			AccountId:     tx.AccountID,
-			PoolId:        poolID,
-			Amount:        meta.Amount,
-			Receiver:      meta.Receiver,
-			ReceiverIban:  meta.ReceiverIBAN,
-			Description:   meta.Description,
-			CreatedAt:     tx.CreatedAt.Format(time.RFC3339),
-		})
+		potentialLinkId := ""
+		if tx.LinkedTransactionID != nil {
+			potentialLinkId = *tx.LinkedTransactionID
+		}
+
+		p := &apiproto.Transaction{
+			Id:                   tx.ID,
+			IntegrationId:        tx.IntegrationID,
+			AccountId:            tx.AccountID,
+			PoolId:               poolID,
+			Amount:               meta.Amount,
+			Receiver:             meta.Receiver,
+			ReceiverIban:         meta.ReceiverIBAN,
+			Description:          meta.Description,
+			CreatedAt:            tx.CreatedAt.Format(time.RFC3339),
+			Tags:                 tx.Tags,
+			SourceAccountId:      tx.SourceAccountID,
+			DestinationAccountId: tx.DestinationAccountID,
+			IsLinkConfirmed:      tx.IsLinkConfirmed,
+			PotentialLinkId:      potentialLinkId,
+			DeniedDuplicateIds:   tx.DeniedDuplicateIDs,
+			ExternalId:           tx.ExternalID,
+			CorrelationId:        tx.CorrelationID,
+		}
+
+		ptx := &parsedTx{tx: tx, meta: meta, p: p}
+		parsedTxs = append(parsedTxs, ptx)
+
+		// Create DuplicateKey: date | abs_amount
+		dk := fmt.Sprintf("%s|%.2f", tx.CreatedAt.Format("2006-01-02"), math.Abs(meta.Amount))
+		p.DuplicateKey = dk
+		groups[dk] = append(groups[dk], ptx)
+	}
+
+	for _, group := range groups {
+		if len(group) < 2 {
+			continue
+		}
+
+		for _, txA := range group {
+			// If already confirmed linked, we don't need to look for other potential links
+			if txA.tx.IsLinkConfirmed {
+				continue
+			}
+
+			for _, txB := range group {
+				if txA.p.Id == txB.p.Id {
+					continue
+				}
+
+				// Potential link: different signs
+				if (txA.meta.Amount > 0 && txB.meta.Amount < 0) || (txA.meta.Amount < 0 && txB.meta.Amount > 0) {
+					if txA.p.PotentialLinkId == "" {
+						txA.p.PotentialLinkId = txB.p.Id
+					}
+				}
+
+				// Potential duplicate: same signs
+				if (txA.meta.Amount > 0 && txB.meta.Amount > 0) || (txA.meta.Amount < 0 && txB.meta.Amount < 0) {
+					isDenied := false
+					if txA.tx.DeniedDuplicateIDs != "" {
+						for _, dID := range strings.Split(txA.tx.DeniedDuplicateIDs, ",") {
+							if dID == txB.p.Id {
+								isDenied = true
+								break
+							}
+						}
+					}
+
+					if !isDenied {
+						txA.p.IsPotentialDuplicate = true
+					}
+				}
+			}
+		}
+	}
+
+	resp := &apiproto.DiscoveredTransactionList{}
+	for _, ptx := range parsedTxs {
+		resp.Transactions = append(resp.Transactions, ptx.p)
 	}
 
 	t.handler.SendResponse(s, reqID, resp, true)
@@ -367,7 +447,9 @@ func (t *IntegrationsTransactions) Unlink(s *api.WebsocketSession, reqID string,
 		return
 	}
 
+	log.Printf("[LINK] User %s unlinking %s", userID, req.Id)
 	if err := t.repo.UnlinkTransaction(userID, req.Id); err != nil {
+		log.Printf("[LINK] Error unlinking: %v", err)
 		t.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -382,7 +464,9 @@ func (t *IntegrationsTransactions) Link(s *api.WebsocketSession, reqID string, r
 		return
 	}
 
+	log.Printf("[LINK] User %s linking %s and %s", userID, req.Id, req.TargetId)
 	if err := t.repo.LinkTransactions(userID, req.Id, req.TargetId); err != nil {
+		log.Printf("[LINK] Error linking: %v", err)
 		t.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -432,7 +516,7 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 	}
 
 	// 1. Update core fields in DB (accounts, tags)
-	err = t.repo.Update(userID, req.Id, tx.AccountID, req.SourceAccountId, req.DestinationAccountId, req.Tags)
+	err = t.repo.Update(userID, req.Id, req.AccountId, req.SourceAccountId, req.DestinationAccountId, req.Tags)
 	if err != nil {
 		t.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return

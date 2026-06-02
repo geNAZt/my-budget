@@ -997,17 +997,24 @@ func (s *ExecutionService) TriggerPlansForSyncFinished(userID string, integratio
 			continue
 		}
 
-		// Trigger only plans with sync finished annotation (TopicSyncFinished trigger)
-		if strings.Contains(p.Code, "TopicSyncFinished") {
+		// Trigger if TriggerType matches OR legacy TopicSyncFinished annotation is present
+		if p.TriggerType == "SYNC_FINISHED" || strings.Contains(p.Code, "TopicSyncFinished") {
+			// If it's a specific integration trigger, verify ID
+			if p.TriggerType == "SYNC_FINISHED" && p.TriggerValue != "" && p.TriggerValue != "ALL" {
+				if p.TriggerValue != integrationID {
+					continue
+				}
+			}
+
 			go func(planID string) {
 				triggerMap := map[string]interface{}{
 					"type": "SYNC_FINISHED",
 					"data": map[string]interface{}{
-						"integration_id":   integrationID,
-						"integration_name": integrationName,
-						"service_type":     serviceType,
-						"discovered_count": discoveredCount,
-						"timestamp":        time.Now().Format(time.RFC3339),
+						"integration_id":          integrationID,
+						"integration_name":        integrationName,
+						"service_type":            serviceType,
+						"discovered_transactions": discoveredCount,
+						"timestamp":               time.Now().Format(time.RFC3339),
 					},
 				}
 
@@ -1028,16 +1035,19 @@ func (s *ExecutionService) TriggerPlansForTransaction(userID string, tx domain.B
 			continue
 		}
 
-		if strings.Contains(p.Code, "TopicTransactionDiscovered") {
+		// Trigger if TriggerType matches OR legacy TopicTransactionDiscovered annotation is present
+		if p.TriggerType == "TRANSACTION_NEW" || strings.Contains(p.Code, "TopicTransactionDiscovered") {
 			go func(planID string) {
 				triggerMap := map[string]interface{}{
-					"type": "TRANSACTION_DISCOVERED",
+					"type": "TRANSACTION",
 					"data": map[string]interface{}{
-						"tx":          tx,
-						"amount":      amount,
-						"receiver":    receiver,
-						"description": description,
-						"timestamp":   time.Now().Format(time.RFC3339),
+						"id":             tx.ID,
+						"amount":         amount,
+						"receiver":       receiver,
+						"description":    description,
+						"integration_id": tx.IntegrationID,
+						"account_id":     tx.AccountID,
+						"timestamp":      time.Now().Format(time.RFC3339),
 					},
 				}
 

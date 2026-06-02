@@ -143,6 +143,42 @@ func (r *AuthRegister) Begin(s *api.WebsocketSession, reqID string, req *apiprot
 	r.handler.SendResponse(s, reqID, resp, true)
 }
 
+// BeginAdd maps to -> "auth::register::begin_add"
+func (r *AuthRegister) BeginAdd(s *api.WebsocketSession, reqID string, req *apiproto.AuthBeginRequest) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		r.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	user, err := r.users.GetUserByID(userID)
+	if err != nil || user == nil {
+		r.handler.SendError(s, reqID, http.StatusNotFound, "User not found")
+		return
+	}
+
+	options, session, err := r.wauth.BeginRegistration(user)
+	if err != nil {
+		r.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := r.sessions.SaveSession(user.Username, &repository.AuthSession{
+		WebAuthnSession: session,
+		User:            user,
+	}); err != nil {
+		r.handler.SendError(s, reqID, http.StatusInternalServerError, "failed to save session")
+		return
+	}
+
+	optionsJSON, _ := json.Marshal(options)
+	resp := &apiproto.AuthBeginResponse{
+		UserId:  user.ID,
+		Options: optionsJSON,
+	}
+	r.handler.SendResponse(s, reqID, resp, true)
+}
+
 // Finish maps to -> "auth::register::finish"
 func (r *AuthRegister) Finish(s *api.WebsocketSession, reqID string, req *apiproto.AuthFinishRequest) {
 	authSession, err := r.sessions.GetSession(req.Username)
@@ -184,13 +220,68 @@ func (r *AuthRegister) Finish(s *api.WebsocketSession, reqID string, req *apipro
 		return
 	}
 
-	if err := r.users.AddCredential(user.ID, credential); err != nil {
+	if err := r.users.AddCredential(user.ID, credential, "Initial Passkey"); err != nil {
 		r.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	r.sessions.DeleteSession(req.Username)
 
+	token, err := issueTokenForWS(r.jwtKey, user, "FULL")
+	if err != nil {
+		r.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.SetAuth(user.ID, token)
+	r.handler.SendResponse(s, reqID, mapAuthSuccessResponse(user, token, "FULL"), true)
+}
+
+// FinishAdd maps to -> "auth::register::finish_add"
+func (r *AuthRegister) FinishAdd(s *api.WebsocketSession, reqID string, req *apiproto.AuthFinishRequest) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		r.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	authSession, err := r.sessions.GetSession(req.Username)
+	if err != nil || authSession == nil {
+		r.handler.SendError(s, reqID, http.StatusBadRequest, "no session found")
+		return
+	}
+
+	user, err := r.users.GetUserByID(userID)
+	if err != nil || user == nil {
+		r.handler.SendError(s, reqID, http.StatusNotFound, "User not found")
+		return
+	}
+
+	if user.Username != req.Username {
+		r.handler.SendError(s, reqID, http.StatusForbidden, "username mismatch")
+		return
+	}
+
+	parsedCredential, err := protocol.ParseCredentialCreationResponseBytes(req.WebauthnPayload)
+	if err != nil {
+		r.handler.SendError(s, reqID, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	credential, err := r.wauth.CreateCredential(user, *authSession.WebAuthnSession, parsedCredential)
+	if err != nil {
+		r.handler.SendError(s, reqID, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := r.users.AddCredential(user.ID, credential, "New Passkey"); err != nil {
+		r.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	r.sessions.DeleteSession(req.Username)
+
+	// Refresh token in case of RECOVERY upgrade
 	token, err := issueTokenForWS(r.jwtKey, user, "FULL")
 	if err != nil {
 		r.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())

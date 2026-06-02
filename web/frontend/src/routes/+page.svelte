@@ -16,7 +16,7 @@
 
 	<!-- Hero Section -->
 	<header class="relative z-10 pt-32 pb-20 px-6 max-w-[1400px] mx-auto text-center" in:fade={{ duration: 800 }}>
-		<div class="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100 mb-8 animate-bounce">
+		<div class="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100 mb-8">
 			<Sparkles class="w-4 h-4 text-indigo-600" />
 			<span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Deterministic Wealth Engine</span>
 		</div>

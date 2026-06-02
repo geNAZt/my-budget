@@ -18,6 +18,7 @@ import (
 
 type ProjectionService struct {
 	scenarioRepo       *repository.ScenarioRepository
+	userRepo           *repository.UserRepository
 	incomeRepo         *repository.IncomeRepository
 	billRepo           *repository.BillRepository
 	expenseRepo        *repository.ExpenseRepository
@@ -48,6 +49,26 @@ func (s *ProjectionService) SetVirtualAccountRepo(r *repository.VirtualAccountRe
 	s.virtualAccountRepo = r
 }
 
+func (s *ProjectionService) SetUserRepo(r *repository.UserRepository) {
+
+	s.userRepo = r
+}
+
+func (s *ProjectionService) getUserLocation(userID string) *time.Location {
+	if s.userRepo == nil {
+		return time.UTC
+	}
+	user, err := s.userRepo.GetUserByID(userID)
+	if err != nil || user == nil || user.Timezone == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(user.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 func (s *ProjectionService) SetRealtimeData(tr *repository.TransactionRepository, cs *crypto.CryptoService, ss *SyncService) {
 
 	s.transactionRepo = tr
@@ -63,6 +84,7 @@ func (s *ProjectionService) SetAdditionalRepos(lr *repository.LoanRepository, mr
 
 func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay int) (map[string]map[string]float64, error) {
 	balances := make(map[string]map[string]float64)
+	loc := s.getUserLocation(userID)
 
 	if s.transactionRepo == nil || s.cryptoService == nil || s.syncService == nil {
 		return balances, nil
@@ -132,7 +154,7 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 		}
 		amount = meta.Amount
 
-		monthStr := projectionMonthForDate(t.CreatedAt.UTC(), monthStartDay).Format("2006-01")
+		monthStr := projectionMonthForDate(t.CreatedAt.UTC(), monthStartDay, loc).Format("2006-01")
 
 		// Aggregate into parent pools
 		currPoolID := poolID
@@ -974,6 +996,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		monthStartDay = 1
 	}
 
+	loc := s.getUserLocation(userID)
+
 	incomes, _ := s.resolveIncomes(userID, scenario)
 	bills, _ := s.resolveBills(userID, scenario)
 	expenses, _ := s.resolveExpenses(userID, scenario)
@@ -1009,7 +1033,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			now = scenarioStart
 		}
 	}
-	startDate := projectionMonthForDate(now, monthStartDay)
+	startDate := projectionMonthForDate(now, monthStartDay, loc)
 
 	// Setup file logging
 	logFile, err := os.OpenFile(fmt.Sprintf("logs/scenarios/%s.log", scenario.ID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
@@ -1245,7 +1269,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	// --- CATCH UP PHASE ---
 	// Calculate true balances by simulating from original StartDate up to startDate
 	log.Printf("[PROJECTION] Catching up historical data from entity start dates to %s", startDate.Format("01/2006"))
-	for curr := s.findEarliestStart(assets, loans, monthStartDay); curr.Before(startDate); curr = curr.AddDate(0, 1, 0) {
+	for curr := s.findEarliestStart(assets, loans, monthStartDay, loc); curr.Before(startDate); curr = curr.AddDate(0, 1, 0) {
 		for _, as := range assetStates {
 			as.currentMonth = curr
 		}
@@ -1703,7 +1727,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		for _, as := range assetStates {
 			as.currentMonth = currentDate
 		}
-		periodStart, periodEnd := projectionPeriodBounds(currentDate, monthStartDay)
+		periodStart, periodEnd := projectionPeriodBounds(currentDate, monthStartDay, loc)
 		log.Printf("[PROJECTION] --- MONTH: %s ---", currentDate.Format("01/2006"))
 		month := domain.ProjectionMonth{
 			Date:        currentDate,
@@ -1749,7 +1773,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 		for _, e := range expenses {
 			uDue := e.ActiveVersion.DueDate.UTC()
-			start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay)
+			start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
 			if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
 				month.Expenses += e.ActiveVersion.Amount
 				log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, e.ActiveVersion.Amount)
@@ -2915,7 +2939,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		// Post-process to link realtime balances by pool using prioritized consumption logic
 		monthKey := currentDate.Format("2006-01")
 		now := time.Now().UTC()
-		currentYearMonth := projectionMonthForDate(now, monthStartDay).Format("2006-01")
+		currentYearMonth := projectionMonthForDate(now, monthStartDay, loc).Format("2006-01")
 
 		if monthKey <= currentYearMonth {
 			type poolGroup struct {
@@ -3587,7 +3611,7 @@ func (s *ProjectionService) resolveModifications(userID string, scenario *domain
 	return filtered, nil
 }
 
-func (s *ProjectionService) findEarliestStart(assets []domain.Asset, loans []domain.Loan, monthStartDay int) time.Time {
+func (s *ProjectionService) findEarliestStart(assets []domain.Asset, loans []domain.Loan, monthStartDay int, loc *time.Location) time.Time {
 	earliest := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 	found := false
 	for _, a := range assets {
@@ -3604,36 +3628,46 @@ func (s *ProjectionService) findEarliestStart(assets []domain.Asset, loans []dom
 	}
 	if !found {
 		now := time.Now().UTC()
-		return projectionMonthForDate(now, monthStartDay)
+		return projectionMonthForDate(now, monthStartDay, loc)
 	}
-	return projectionMonthForDate(earliest, monthStartDay)
+	return projectionMonthForDate(earliest, monthStartDay, loc)
 }
 
-func projectionMonthForDate(date time.Time, monthStartDay int) time.Time {
+func projectionMonthForDate(date time.Time, monthStartDay int, loc *time.Location) time.Time {
+	if loc == nil {
+		loc = time.UTC
+	}
+	localDate := date.In(loc)
+
 	if monthStartDay <= 1 {
-		return time.Date(date.Year(), date.Month(), 1, 0, 0, 0, 0, time.UTC)
+		return time.Date(localDate.Year(), localDate.Month(), 1, 0, 0, 0, 0, time.UTC)
 	}
 	if monthStartDay > 28 {
 		monthStartDay = 28
 	}
 
-	label := time.Date(date.Year(), date.Month(), monthStartDay, 0, 0, 0, 0, time.UTC)
-	if date.Day() >= monthStartDay {
+	label := time.Date(localDate.Year(), localDate.Month(), monthStartDay, 0, 0, 0, 0, time.UTC)
+	if localDate.Day() >= monthStartDay {
 		label = label.AddDate(0, 1, 0)
 	}
 	return label
 }
 
-func projectionPeriodBounds(labelDate time.Time, monthStartDay int) (time.Time, time.Time) {
+func projectionPeriodBounds(labelDate time.Time, monthStartDay int, loc *time.Location) (time.Time, time.Time) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	localDate := labelDate.In(loc)
+
 	if monthStartDay <= 1 {
-		start := time.Date(labelDate.Year(), labelDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+		start := time.Date(localDate.Year(), localDate.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return start, start.AddDate(0, 1, 0)
 	}
 	if monthStartDay > 28 {
 		monthStartDay = 28
 	}
 
-	end := time.Date(labelDate.Year(), labelDate.Month(), monthStartDay, 0, 0, 0, 0, time.UTC)
+	end := time.Date(localDate.Year(), localDate.Month(), monthStartDay, 0, 0, 0, 0, time.UTC)
 	return end.AddDate(0, -1, 0), end
 }
 

@@ -9,12 +9,12 @@ import (
 )
 
 func TestProjectionMonthBoundaryDay(t *testing.T) {
-	label := projectionMonthForDate(time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC), 26)
+	label := projectionMonthForDate(time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC), 26, nil)
 	if !label.Equal(time.Date(2026, time.May, 26, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("expected May projection month to be labelled 2026-05-26, got %s", label.Format(time.DateOnly))
 	}
 
-	start, end := projectionPeriodBounds(label, 26)
+	start, end := projectionPeriodBounds(label, 26, nil)
 	if !start.Equal(time.Date(2026, time.April, 26, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("expected May period to start 2026-04-26, got %s", start.Format(time.DateOnly))
 	}
@@ -22,7 +22,7 @@ func TestProjectionMonthBoundaryDay(t *testing.T) {
 		t.Fatalf("expected May period to end 2026-05-26, got %s", end.Format(time.DateOnly))
 	}
 
-	aprilPaycheck := projectionMonthForDate(time.Date(2026, time.April, 26, 0, 0, 0, 0, time.UTC), 26)
+	aprilPaycheck := projectionMonthForDate(time.Date(2026, time.April, 26, 0, 0, 0, 0, time.UTC), 26, nil)
 	if !aprilPaycheck.Equal(label) {
 		t.Fatalf("expected transaction on 2026-04-26 to bucket into May, got %s", aprilPaycheck.Format(time.DateOnly))
 	}

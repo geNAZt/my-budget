@@ -44,6 +44,7 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 	wg.Add(numCPUs)
 
 	simsPerWorker := simulations / numCPUs
+	baseSeed := uint64(time.Now().UnixNano())
 	for w := 0; w < numCPUs; w++ {
 		start := w * simsPerWorker
 		end := start + simsPerWorker
@@ -53,7 +54,7 @@ func (s *ProjectionService) runMonteCarloSIMD(v *domain.AssetVersion, history []
 
 		go func(startIndex, endIndex int) {
 			defer wg.Done()
-			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
+			r := rand.New(rand.NewPCG(baseSeed, uint64(startIndex)))
 
 			// Pre-calculate weights and TERs
 			weights := make([]float64, numTrackers)
@@ -159,6 +160,7 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 	wg.Add(numCPUs)
 
 	simsPerWorker := simulations / numCPUs
+	baseSeed := uint64(time.Now().UnixNano())
 	for w := 0; w < numCPUs; w++ {
 		start := w * simsPerWorker
 		end := start + simsPerWorker
@@ -168,7 +170,7 @@ func (s *ProjectionService) runTrackerMonteCarloSIMD(history []float64, ter floa
 
 		go func(startIndex, endIndex int) {
 			defer wg.Done()
-			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
+			r := rand.New(rand.NewPCG(baseSeed, uint64(startIndex)))
 			terPerStep := (ter / 100.0) / float64(stepsPerYear)
 
 			const batchSize = 4

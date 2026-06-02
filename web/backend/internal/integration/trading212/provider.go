@@ -557,7 +557,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		config.AccountsMetadata = make(map[string]*domain.AccountMeta)
 	}
 
-	backoffUntil := time.Now().Add(10 * time.Minute)
+	backoffUntil := time.Now().Add(1 * time.Hour)
 	nowSync := time.Now().UTC()
 
 	configChanged := false

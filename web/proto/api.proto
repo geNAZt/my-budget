@@ -689,3 +689,29 @@ message TransactionSaveBulkRequest {
   string account_id = 2;
   repeated Transaction transactions = 3;
 }
+
+message UserAuthenticator {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+}
+
+message UserProfile {
+  string id = 1;
+  string username = 2;
+  string timezone = 3;
+  repeated UserAuthenticator authenticators = 4;
+}
+
+message UpdateProfileRequest {
+  string timezone = 1;
+}
+
+message RenameAuthenticatorRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message CycleRecoveryResponse {
+  string new_recovery_token = 1;
+}

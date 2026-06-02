@@ -7,7 +7,7 @@ type ExecutionPlan struct {
 	UserID       string
 	Name         string
 	Code         string
-	TriggerType  string // 'CRON', 'TRANSACTION'
+	TriggerType  string // 'CRON', 'TRANSACTION_NEW', 'SYNC_FINISHED'
 	TriggerValue string // cron expression or event source ID
 	IsEnabled    bool
 	CreatedAt    time.Time

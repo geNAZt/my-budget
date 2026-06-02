@@ -50,6 +50,7 @@ Everything we design MUST be coherent with the already existing UI look and feel
 *   **Containers:** Use `.glass-card` for all content blocks (White 70%, `backdrop-blur-md`, `border-white/40`).
 *   **Surfaces:** Use pure White (`#ffffff`) for interactive inputs and nested cards inside the main Slate (`#f8fafc`) background. Avoid grey (`slate-50`) backgrounds for inputs.
 *   **Typography Hierarchy:**
+    *   **Page Titles:** Use the "Wealth Nodes." style: `text-5xl font-black tracking-tight text-slate-900` with the last word wrapped in `<span class="gradient-text">...</span>` and immediately followed by a dot (`.`). Do not use small icon-based subtitles above the main title. The main layout component (`+layout.svelte`) already enforces a padded, constrained viewport (`max-w-[1600px] py-12 px-4`). Page components MUST NOT implement their own outer padding/width wrappers (e.g. no `<div class="max-w-[1440px] p-8">`). Instead, root pages MUST start with a `<div class="space-y-12">` container followed by a `<header class="flex flex-col lg:flex-row lg:items-end justify-between gap-8">`.
     *   **Main Headings:** `font-black`, `tracking-tight`, `text-slate-900`, `text-3xl` to `text-5xl`.
     *   **Subheadings:** `font-black`, `uppercase`, `tracking-widest`, `text-xs` to `text-sm`.
     *   **Field Labels:** `font-black`, `uppercase`, `tracking-[0.2em]`, `text-[10px]`, `text-slate-400`.

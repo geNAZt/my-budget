@@ -6240,6 +6240,274 @@ func (x *TransactionSaveBulkRequest) GetTransactions() []*Transaction {
 	return nil
 }
 
+type UserAuthenticator struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserAuthenticator) Reset() {
+	*x = UserAuthenticator{}
+	mi := &file_api_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserAuthenticator) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserAuthenticator) ProtoMessage() {}
+
+func (x *UserAuthenticator) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserAuthenticator.ProtoReflect.Descriptor instead.
+func (*UserAuthenticator) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *UserAuthenticator) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UserAuthenticator) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UserAuthenticator) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+type UserProfile struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Username       string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	Timezone       string                 `protobuf:"bytes,3,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	Authenticators []*UserAuthenticator   `protobuf:"bytes,4,rep,name=authenticators,proto3" json:"authenticators,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UserProfile) Reset() {
+	*x = UserProfile{}
+	mi := &file_api_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserProfile) ProtoMessage() {}
+
+func (x *UserProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserProfile.ProtoReflect.Descriptor instead.
+func (*UserProfile) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *UserProfile) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UserProfile) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *UserProfile) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *UserProfile) GetAuthenticators() []*UserAuthenticator {
+	if x != nil {
+		return x.Authenticators
+	}
+	return nil
+}
+
+type UpdateProfileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Timezone      string                 `protobuf:"bytes,1,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProfileRequest) Reset() {
+	*x = UpdateProfileRequest{}
+	mi := &file_api_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProfileRequest) ProtoMessage() {}
+
+func (x *UpdateProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProfileRequest.ProtoReflect.Descriptor instead.
+func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *UpdateProfileRequest) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+type RenameAuthenticatorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenameAuthenticatorRequest) Reset() {
+	*x = RenameAuthenticatorRequest{}
+	mi := &file_api_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenameAuthenticatorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenameAuthenticatorRequest) ProtoMessage() {}
+
+func (x *RenameAuthenticatorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenameAuthenticatorRequest.ProtoReflect.Descriptor instead.
+func (*RenameAuthenticatorRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *RenameAuthenticatorRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RenameAuthenticatorRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type CycleRecoveryResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	NewRecoveryToken string                 `protobuf:"bytes,1,opt,name=new_recovery_token,json=newRecoveryToken,proto3" json:"new_recovery_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CycleRecoveryResponse) Reset() {
+	*x = CycleRecoveryResponse{}
+	mi := &file_api_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CycleRecoveryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CycleRecoveryResponse) ProtoMessage() {}
+
+func (x *CycleRecoveryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CycleRecoveryResponse.ProtoReflect.Descriptor instead.
+func (*CycleRecoveryResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *CycleRecoveryResponse) GetNewRecoveryToken() string {
+	if x != nil {
+		return x.NewRecoveryToken
+	}
+	return ""
+}
+
 var File_api_proto protoreflect.FileDescriptor
 
 const file_api_proto_rawDesc = "" +
@@ -6831,7 +7099,24 @@ const file_api_proto_rawDesc = "" +
 	"\x0eintegration_id\x18\x01 \x01(\tR\rintegrationId\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x02 \x01(\tR\taccountId\x124\n" +
-	"\ftransactions\x18\x03 \x03(\v2\x10.api.TransactionR\ftransactionsBCZAgithub.com/genazt/my-budget-script/web/backend/internal/api/protob\x06proto3"
+	"\ftransactions\x18\x03 \x03(\v2\x10.api.TransactionR\ftransactions\"V\n" +
+	"\x11UserAuthenticator\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\x95\x01\n" +
+	"\vUserProfile\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\btimezone\x18\x03 \x01(\tR\btimezone\x12>\n" +
+	"\x0eauthenticators\x18\x04 \x03(\v2\x16.api.UserAuthenticatorR\x0eauthenticators\"2\n" +
+	"\x14UpdateProfileRequest\x12\x1a\n" +
+	"\btimezone\x18\x01 \x01(\tR\btimezone\"@\n" +
+	"\x1aRenameAuthenticatorRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"E\n" +
+	"\x15CycleRecoveryResponse\x12,\n" +
+	"\x12new_recovery_token\x18\x01 \x01(\tR\x10newRecoveryTokenBCZAgithub.com/genazt/my-budget-script/web/backend/internal/api/protob\x06proto3"
 
 var (
 	file_api_proto_rawDescOnce sync.Once
@@ -6845,7 +7130,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 89)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 94)
 var file_api_proto_goTypes = []any{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Error)(nil),                       // 1: api.Error
@@ -6931,11 +7216,16 @@ var file_api_proto_goTypes = []any{
 	(*TransactionLinkRequest)(nil),      // 81: api.TransactionLinkRequest
 	(*TransactionDuplicateRequest)(nil), // 82: api.TransactionDuplicateRequest
 	(*TransactionSaveBulkRequest)(nil),  // 83: api.TransactionSaveBulkRequest
-	nil,                                 // 84: api.YieldMap.YieldsEntry
-	nil,                                 // 85: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 86: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 87: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 88: api.Scenario.EtfParamsEntry
+	(*UserAuthenticator)(nil),           // 84: api.UserAuthenticator
+	(*UserProfile)(nil),                 // 85: api.UserProfile
+	(*UpdateProfileRequest)(nil),        // 86: api.UpdateProfileRequest
+	(*RenameAuthenticatorRequest)(nil),  // 87: api.RenameAuthenticatorRequest
+	(*CycleRecoveryResponse)(nil),       // 88: api.CycleRecoveryResponse
+	nil,                                 // 89: api.YieldMap.YieldsEntry
+	nil,                                 // 90: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 91: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 92: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 93: api.Scenario.EtfParamsEntry
 }
 var file_api_proto_depIdxs = []int32{
 	9,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -6944,10 +7234,10 @@ var file_api_proto_depIdxs = []int32{
 	20, // 3: api.IntegrationList.integrations:type_name -> api.Integration
 	22, // 4: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	19, // 5: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	84, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	85, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	86, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	87, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	89, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	90, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	91, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	92, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	27, // 10: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	27, // 11: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	27, // 12: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -6957,7 +7247,7 @@ var file_api_proto_depIdxs = []int32{
 	28, // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	31, // 17: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
 	33, // 18: api.Scenario.entities:type_name -> api.ScenarioEntity
-	88, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	93, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	35, // 20: api.ScenarioList.scenarios:type_name -> api.Scenario
 	37, // 21: api.AssetVersion.etf_config:type_name -> api.ETFTracker
 	38, // 22: api.AssetVersion.penalties:type_name -> api.AssetPenalty
@@ -6982,12 +7272,13 @@ var file_api_proto_depIdxs = []int32{
 	67, // 41: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
 	72, // 42: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
 	19, // 43: api.TransactionSaveBulkRequest.transactions:type_name -> api.Transaction
-	34, // 44: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
-	45, // [45:45] is the sub-list for method output_type
-	45, // [45:45] is the sub-list for method input_type
-	45, // [45:45] is the sub-list for extension type_name
-	45, // [45:45] is the sub-list for extension extendee
-	0,  // [0:45] is the sub-list for field type_name
+	84, // 44: api.UserProfile.authenticators:type_name -> api.UserAuthenticator
+	34, // 45: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
+	46, // [46:46] is the sub-list for method output_type
+	46, // [46:46] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -7001,7 +7292,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_rawDesc), len(file_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   89,
+			NumMessages:   94,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

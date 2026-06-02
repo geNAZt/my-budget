@@ -135,20 +135,18 @@ export async function recoveryLogin(username: string, token: string) {
 
 export async function upgradeSecurityKey() {
   try {
-    // Note: Assuming we pass the username explicitly if needed, but since it's an authenticated route,
-    // the backend infers it from the active session. If it needs the username, we might need to get it from auth store.
     const username = auth.user?.username;
     if (!username) throw new Error("Not logged in");
 
     const [beginResp, error] = await wsCall(
-      "auth::register::begin",
+      "auth::register::begin_add",
       api.AuthBeginRequestSchema,
       { username },
       [api.AuthBeginResponseSchema],
     ).one();
 
     if (error) {
-      console.log("[WS] Register begin failed:", error);
+      console.log("[WS] Register begin_add failed:", error);
       return;
     }
 
@@ -158,7 +156,7 @@ export async function upgradeSecurityKey() {
     });
 
     const [finishResp, finishError] = await wsCall(
-      "auth::register::finish",
+      "auth::register::finish_add",
       api.AuthFinishRequestSchema,
       {
         username: username,
@@ -169,7 +167,7 @@ export async function upgradeSecurityKey() {
     ).one();
 
     if (finishError) {
-      console.log("[WS] Register finish failed:", finishError);
+      console.log("[WS] Register finish_add failed:", finishError);
       return;
     }
 
@@ -177,7 +175,6 @@ export async function upgradeSecurityKey() {
       throw new Error("Failed to finish key upgrade");
     }
 
-    // Refresh token scope from RECOVERY to FULL implicitly handled by the backend
     auth.login(finishResp);
     return finishResp;
   } catch (error: any) {

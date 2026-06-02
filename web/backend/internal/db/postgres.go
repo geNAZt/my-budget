@@ -223,13 +223,16 @@ func InitDB(dsn string) (*sql.DB, error) {
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         dashboard_scenario_id TEXT,
         dashboard_month_offset INTEGER DEFAULT 0,
-        recovery_hash TEXT
+        recovery_hash TEXT,
+        timezone TEXT DEFAULT 'UTC'
 	);
 
 	CREATE TABLE IF NOT EXISTS authenticators (
 		id BYTEA PRIMARY KEY,
 		user_id TEXT,
 		credential_json TEXT,
+		name TEXT DEFAULT '',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id)
 	);
 
@@ -955,6 +958,12 @@ func migrate(db *sql.DB) {
 	if !hasColumn(db, "authenticators", "credential_json") {
 		db.Exec("ALTER TABLE authenticators ADD COLUMN credential_json TEXT")
 	}
+	if !hasColumn(db, "authenticators", "name") {
+		db.Exec("ALTER TABLE authenticators ADD COLUMN name TEXT DEFAULT ''")
+	}
+	if !hasColumn(db, "authenticators", "created_at") {
+		db.Exec("ALTER TABLE authenticators ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	}
 
 	// Scenarios
 	if !hasColumn(db, "scenarios", "month_start_day") {
@@ -1121,6 +1130,10 @@ func migrate(db *sql.DB) {
 	}
 	if !hasColumn(db, "loans", "account_id") {
 		db.Exec("ALTER TABLE loans ADD COLUMN account_id TEXT DEFAULT ''")
+	}
+
+	if !hasColumn(db, "users", "timezone") {
+		db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
 	}
 
 	MigrateRulesToGlobal(db)

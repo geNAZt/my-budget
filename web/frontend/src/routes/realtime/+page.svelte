@@ -248,6 +248,8 @@
 
         if (showLinkedTransactions) {
             list = list.filter((t) => t.isLinkConfirmed || t.potentialLinkId);
+        } else {
+            list = list.filter((t) => !t.isLinkConfirmed);
         }
 
         return [...list].sort(
@@ -1028,13 +1030,6 @@
         class="flex flex-col lg:flex-row lg:items-end justify-between gap-8"
     >
         <div class="space-y-3">
-            <div class="flex items-center gap-3 text-indigo-600">
-                <ShieldCheck class="w-5 h-5" />
-                <span
-                    class="text-[10px] font-black uppercase tracking-[0.3em] bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100/50"
-                    >Identity-Bound Sync</span
-                >
-            </div>
             <h1 class="text-5xl font-black tracking-tight text-slate-900">
                 Realtime <span class="gradient-text">Stream</span>.
             </h1>
@@ -1893,7 +1888,7 @@
                                                     Linked
                                                 </span>
                                             {/if}
-                                            {#if tx.potentialLinkId}
+                                            {#if tx.potentialLinkId && !tx.isLinkConfirmed}
                                                 <div
                                                     class="flex items-center gap-2"
                                                 >
@@ -2493,7 +2488,7 @@
                         <Trash2 class="w-4 h-4" />
                         <span>Delete</span>
                     </button>
-                    {#if transactionToEdit.is_link_confirmed}
+                    {#if transactionToEdit.isLinkConfirmed}
                         <button
                             onclick={() =>
                                 unlinkTransaction(transactionToEdit.id)}

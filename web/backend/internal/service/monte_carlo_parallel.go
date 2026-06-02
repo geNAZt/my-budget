@@ -37,6 +37,7 @@ func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, histor
 	wg.Add(numCPUs)
 
 	simsPerWorker := simulations / numCPUs
+	baseSeed := uint64(time.Now().UnixNano())
 	for w := 0; w < numCPUs; w++ {
 		start := w * simsPerWorker
 		end := start + simsPerWorker
@@ -46,7 +47,7 @@ func (s *ProjectionService) runMonteCarloParallel(v *domain.AssetVersion, histor
 
 		go func(startIndex, endIndex int) {
 			defer wg.Done()
-			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
+			r := rand.New(rand.NewPCG(baseSeed, uint64(startIndex)))
 
 			// Pre-calculate weights and TERs
 			weights := make([]float64, numTrackers)
@@ -130,6 +131,7 @@ func (s *ProjectionService) runTrackerMonteCarloParallel(history []float64, ter 
 	wg.Add(numCPUs)
 
 	simsPerWorker := simulations / numCPUs
+	baseSeed := uint64(time.Now().UnixNano())
 	for w := 0; w < numCPUs; w++ {
 		start := w * simsPerWorker
 		end := start + simsPerWorker
@@ -139,7 +141,7 @@ func (s *ProjectionService) runTrackerMonteCarloParallel(history []float64, ter 
 
 		go func(startIndex, endIndex int) {
 			defer wg.Done()
-			r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(startIndex)))
+			r := rand.New(rand.NewPCG(baseSeed, uint64(startIndex)))
 
 			const batchSize = 8
 			logReturns := make([]float64, batchSize)

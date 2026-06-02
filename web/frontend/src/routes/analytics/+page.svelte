@@ -175,6 +175,7 @@
 
             await new Promise<void>(async (resolve, reject) => {
                 try {
+                    let batchedMonths: any[] = [];
                     for await (const [message, error] of callResult.many()) {
                         if (error) {
                             reject(error);
@@ -187,10 +188,16 @@
                                     ...((message as any).yields || {}),
                                 };
                             } else if (typeName === "api.ProjectionMonth") {
-                                projections[id].months = [
-                                    ...projections[id].months,
-                                    message,
-                                ];
+                                batchedMonths.push(message);
+                                
+                                // Batch update every 24 months to keep UI alive but reduce re-renders
+                                if (batchedMonths.length >= 24) {
+                                    projections[id].months = [
+                                        ...projections[id].months,
+                                        ...batchedMonths,
+                                    ];
+                                    batchedMonths = [];
+                                }
                             } else if (typeName === "api.PenaltyAnalysis") {
                                 projections[id].penalty_events = [
                                     ...((message as any).events || []),
@@ -198,6 +205,15 @@
                             }
                         }
                     }
+                    
+                    // Final flush
+                    if (batchedMonths.length > 0) {
+                        projections[id].months = [
+                            ...projections[id].months,
+                            ...batchedMonths,
+                        ];
+                    }
+                    
                     resolve();
                 } catch (e) {
                     reject(e);
@@ -500,6 +516,7 @@
     const assetChartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
             legend: {
                 display: true,
@@ -1119,6 +1136,7 @@
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
             legend: {
                 display: false,
@@ -1417,6 +1435,7 @@
     const realChartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
             legend: {
                 display: true,
@@ -1620,6 +1639,7 @@
     const contributionChartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         cutout: "70%",
         plugins: {
             legend: {
@@ -1677,12 +1697,6 @@
         class="flex flex-col md:flex-row md:items-end justify-between gap-6"
     >
         <div class="space-y-2">
-            <div class="flex items-center gap-2 text-indigo-600">
-                <TrendingUp class="w-4 h-4" />
-                <span class="text-xs font-black uppercase tracking-[0.2em]"
-                    >Deterministic Analytics</span
-                >
-            </div>
             <h1 class="text-5xl font-black tracking-tight text-slate-900">
                 Scenario <span class="gradient-text">Delta</span>.
             </h1>

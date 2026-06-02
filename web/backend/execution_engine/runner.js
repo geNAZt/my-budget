@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { exec } = require("child_process");
+const util = require("util");
+const execAsync = util.promisify(exec);
 const vm = require("vm");
 
 const executionEngineDir = __dirname;
@@ -102,7 +104,7 @@ async function handleFrame(frameBytes) {
       }
 
       // Ensure esbuild and dependency files are fully available
-      ensureDependenciesInstalled();
+      await ensureDependenciesInstalled();
 
       const esbuild = require("esbuild");
 
@@ -139,7 +141,7 @@ async function handleFrame(frameBytes) {
 
         if (!isInstalled) {
           try {
-            execSync(
+            await execAsync(
               `npm install --no-audit --no-fund --silent ${pkg}@${ver}`,
               { cwd: executionEngineDir },
             );
@@ -156,7 +158,7 @@ async function handleFrame(frameBytes) {
       // B. Transpile TypeScript to JavaScript in-memory using esbuild
       let compiled;
       try {
-        compiled = esbuild.transformSync(code, {
+        compiled = await esbuild.transform(code, {
           loader: "ts",
           format: "cjs",
           target: "node16",
@@ -237,6 +239,28 @@ async function handleFrame(frameBytes) {
       return require(moduleName);
     };
 
+    const activeTimeouts = new Set();
+    const activeIntervals = new Set();
+
+    const safeSetTimeout = (...args) => {
+      const id = setTimeout(...args);
+      activeTimeouts.add(id);
+      return id;
+    };
+    const safeClearTimeout = (id) => {
+      clearTimeout(id);
+      activeTimeouts.delete(id);
+    };
+    const safeSetInterval = (...args) => {
+      const id = setInterval(...args);
+      activeIntervals.add(id);
+      return id;
+    };
+    const safeClearInterval = (id) => {
+      clearInterval(id);
+      activeIntervals.delete(id);
+    };
+
     const context = vm.createContext({
       console: customConsole,
       secrets: secrets,
@@ -245,10 +269,10 @@ async function handleFrame(frameBytes) {
       process: {
         env: { ...process.env },
       },
-      setTimeout,
-      clearTimeout,
-      setInterval,
-      clearInterval,
+      setTimeout: safeSetTimeout,
+      clearTimeout: safeClearTimeout,
+      setInterval: safeSetInterval,
+      clearInterval: safeClearInterval,
     });
 
     let success = true;
@@ -274,6 +298,12 @@ async function handleFrame(frameBytes) {
       if (!stderrLogs.includes(errStr)) {
         stderrLogs.push(errStr);
       }
+    } finally {
+      // Forcefully clear any remaining active timers to prevent dangling events
+      for (const id of activeTimeouts) clearTimeout(id);
+      for (const id of activeIntervals) clearInterval(id);
+      activeTimeouts.clear();
+      activeIntervals.clear();
     }
 
     // Return multiplexed response frame
@@ -315,7 +345,7 @@ function writeFrame(responseBytes) {
 }
 
 // Ensure required packages are installed inside node_modules inside the execution engine directory
-function ensureDependenciesInstalled() {
+async function ensureDependenciesInstalled() {
   const requiredDeps = [
     "esbuild",
     "tsx",
@@ -331,7 +361,7 @@ function ensureDependenciesInstalled() {
   }
   if (needsInstall) {
     try {
-      execSync(
+      await execAsync(
         "npm install --no-audit --no-fund --silent esbuild tsx typescript @types/node",
         { cwd: executionEngineDir },
       );

@@ -122,6 +122,7 @@ func main() {
 	integrationRegistry.Register(eb_provider.NewProvider(integrationRepo, transactionRepo, cryptoService, ebService, ruleService, syncService, eventBus))
 
 	projectionService := service.NewProjectionService(scenarioRepo, incomeRepo, billRepo, expenseRepo, assetRepo, marketDataService)
+	projectionService.SetUserRepo(userRepo)
 	projectionService.SetAdditionalRepos(loanRepo, modRepo)
 	projectionService.SetVirtualAccountRepo(virtualAccountRepo)
 	projectionService.SetRealtimeData(transactionRepo, cryptoService, syncService)
@@ -161,7 +162,7 @@ func main() {
 	// 2. Register everything in a single, readable pass
 	webSocketHandler.Register(
 		authAPI,
-		handler.NewUser(webSocketHandler, userRepo),
+		handler.NewUser(webSocketHandler, userRepo, syncService),
 		handler.NewAssets(webSocketHandler, assetRepo, scenarioRepo),
 		handler.NewBills(webSocketHandler, billRepo, scenarioRepo),
 		handler.NewExpenses(webSocketHandler, expenseRepo, scenarioRepo),

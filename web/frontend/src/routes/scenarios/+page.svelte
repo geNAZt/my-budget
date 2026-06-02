@@ -199,6 +199,7 @@
 
         (async () => {
             try {
+                let batchedMonths: any[] = [];
                 // The projection stream sends multiple message types
                 for await (const [message, error] of callResult.many()) {
                     if (isCancelled) break;
@@ -209,10 +210,16 @@
                     if (message) {
                         const typeName = (message as any).$typeName;
                         if (typeName === "api.ProjectionMonth") {
-                            projectionResult.months = [
-                                ...projectionResult.months,
-                                message,
-                            ];
+                            batchedMonths.push(message);
+
+                            // Batch update every 24 months to keep UI alive but reduce re-renders
+                            if (batchedMonths.length >= 24) {
+                                projectionResult.months = [
+                                    ...projectionResult.months,
+                                    ...batchedMonths,
+                                ];
+                                batchedMonths = [];
+                            }
                         } else if (typeName === "api.YieldMap") {
                             console.log("Received Simulated Yields:", message);
                             projectionResult.simulated_yields = { ...((message as any).yields || {}) };
@@ -220,6 +227,14 @@
                             projectionResult.metrics = message;
                         }
                     }
+                }
+
+                // Final flush
+                if (batchedMonths.length > 0 && !isCancelled) {
+                    projectionResult.months = [
+                        ...projectionResult.months,
+                        ...batchedMonths,
+                    ];
                 }
             } finally {
                 if (!isCancelled) isProjecting = false;
@@ -396,24 +411,17 @@
     <title>Scenarios &amp; Playbooks — BudgetScript</title>
 </svelte:head>
 
-<div class="max-w-[1440px] mx-auto p-4 md:p-8 space-y-8 min-h-screen">
+<div class="space-y-12">
     <!-- Header -->
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6"
+    <header
+        class="flex flex-col md:flex-row md:items-end justify-between gap-6"
     >
-        <div class="space-y-1">
-            <div class="flex items-center gap-2">
-                <div class="p-2 bg-indigo-600 rounded-xl">
-                    <Layers class="w-6 h-6 text-white" />
-                </div>
-                <h2 class="text-3xl font-black text-slate-900 tracking-tight">
-                    Scenario Architect
-                </h2>
-            </div>
-            <p
-                class="text-sm text-slate-400 font-bold uppercase tracking-widest ml-1"
-            >
-                Deterministic & Probabilistic Projection Hub
+        <div class="space-y-2">
+            <h1 class="text-5xl font-black tracking-tight text-slate-900">
+                Scenario <span class="gradient-text">Architect</span>.
+            </h1>
+            <p class="text-slate-500 font-medium text-lg">
+                Deterministic & probabilistic projection hub.
             </p>
         </div>
 
@@ -444,7 +452,7 @@
             <Plus class="w-4 h-4" />
             New Simulation
         </button>
-    </div>
+    </header>
 
     {#if isLoading}
         <div
