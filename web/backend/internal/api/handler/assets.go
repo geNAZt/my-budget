@@ -100,6 +100,7 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 			Tracker:           tracker.Tracker,
 			HistoricalTracker: tracker.HistoricalTracker,
 			ConversionTracker: tracker.ConversionTracker,
+			HistoryProvider:   tracker.HistoryProvider,
 			Percentage:        tracker.Percentage,
 			TER:               tracker.Ter,
 		})
@@ -297,6 +298,7 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 				Tracker:           tracker.Tracker,
 				HistoricalTracker: tracker.HistoricalTracker,
 				ConversionTracker: tracker.ConversionTracker,
+				HistoryProvider:   tracker.HistoryProvider,
 				Percentage:        tracker.Percentage,
 				Ter:               tracker.TER,
 			})

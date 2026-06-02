@@ -2800,6 +2800,7 @@ type ETFTracker struct {
 	Ter               float64                `protobuf:"fixed64,3,opt,name=ter,proto3" json:"ter,omitempty"`
 	HistoricalTracker string                 `protobuf:"bytes,4,opt,name=historical_tracker,json=historicalTracker,proto3" json:"historical_tracker,omitempty"`
 	ConversionTracker string                 `protobuf:"bytes,5,opt,name=conversion_tracker,json=conversionTracker,proto3" json:"conversion_tracker,omitempty"`
+	HistoryProvider   string                 `protobuf:"bytes,6,opt,name=history_provider,json=historyProvider,proto3" json:"history_provider,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2865,6 +2866,13 @@ func (x *ETFTracker) GetHistoricalTracker() string {
 func (x *ETFTracker) GetConversionTracker() string {
 	if x != nil {
 		return x.ConversionTracker
+	}
+	return ""
+}
+
+func (x *ETFTracker) GetHistoryProvider() string {
+	if x != nil {
+		return x.HistoryProvider
 	}
 	return ""
 }
@@ -6499,7 +6507,7 @@ const file_api_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.api.ETFScenarioParamsR\x05value:\x028\x01\";\n" +
 	"\fScenarioList\x12+\n" +
-	"\tscenarios\x18\x01 \x03(\v2\r.api.ScenarioR\tscenarios\"\xb6\x01\n" +
+	"\tscenarios\x18\x01 \x03(\v2\r.api.ScenarioR\tscenarios\"\xe1\x01\n" +
 	"\n" +
 	"ETFTracker\x12\x18\n" +
 	"\atracker\x18\x01 \x01(\tR\atracker\x12\x1e\n" +
@@ -6508,7 +6516,8 @@ const file_api_proto_rawDesc = "" +
 	"percentage\x12\x10\n" +
 	"\x03ter\x18\x03 \x01(\x01R\x03ter\x12-\n" +
 	"\x12historical_tracker\x18\x04 \x01(\tR\x11historicalTracker\x12-\n" +
-	"\x12conversion_tracker\x18\x05 \x01(\tR\x11conversionTracker\"e\n" +
+	"\x12conversion_tracker\x18\x05 \x01(\tR\x11conversionTracker\x12)\n" +
+	"\x10history_provider\x18\x06 \x01(\tR\x0fhistoryProvider\"e\n" +
 	"\fAssetPenalty\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\ftrigger_type\x18\x02 \x01(\tR\vtriggerType\x12\x1e\n" +

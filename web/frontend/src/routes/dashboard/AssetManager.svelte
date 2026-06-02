@@ -60,6 +60,7 @@
         tracker: string;
         historicalTracker: string;
         conversionTracker: string;
+        historyProvider: string;
         percentage: number;
         ter: number;
     }
@@ -459,6 +460,7 @@
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
                             conversionTracker: t.conversionTracker || "",
+                            historyProvider: t.historyProvider || "",
                             percentage: parseFloat(t.percentage) || 0,
                             ter: parseFloat(t.ter) || 0,
                         })),
@@ -562,6 +564,7 @@
                                       tracker: t.tracker || "",
                                       historicalTracker: t.historicalTracker || "",
                                       conversionTracker: t.conversionTracker || "",
+                                      historyProvider: t.historyProvider || "",
                                       percentage: parseFloat(t.percentage) || 0,
                                       ter: parseFloat(t.ter) || 0,
                                   })),
@@ -1801,6 +1804,7 @@
                                                 tracker: "",
                                                 historicalTracker: "",
                                                 conversionTracker: "",
+                                                historyProvider: "",
                                                 percentage: 0.7,
                                                 ter: 0.2,
                                             },
@@ -1828,19 +1832,27 @@
                                         placeholder="Conv"
                                         class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
+                                    <select
+                                        bind:value={etf.historyProvider}
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
+                                    >
+                                        <option value="">Yahoo</option>
+                                        <option value="solactive">Solactive</option>
+                                        <option value="msci">MSCI</option>
+                                    </select>
                                     <input
                                         type="number"
                                         bind:value={etf.percentage}
                                         step="0.001"
                                         placeholder="0.7"
-                                        class="col-span-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
+                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
                                     <input
                                         type="number"
                                         bind:value={etf.ter}
                                         step="0.001"
                                         placeholder="0.2"
-                                        class="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
+                                        class="col-span-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold"
                                     />
                                     <button
                                         type="button"

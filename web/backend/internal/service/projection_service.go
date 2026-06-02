@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -183,7 +184,7 @@ type assetState struct {
 	accruedInterest      float64
 	isClosed             bool
 	contributionsStopped bool
-	etfHistory           [][]float64
+	etfHistory           []map[string]float64
 	simulatedYield       float64
 	lots                 []etfLot
 	subAssets            []*subAssetState
@@ -1057,8 +1058,12 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					fetchTicker = t.Tracker
 				}
 
-				returns, _ := s.marketData.GetHistoricalWeeklyReturns(fetchTicker, t.ConversionTracker)
+				returns, err := s.marketData.GetHistoricalWeeklyReturns(t)
+				if err != nil {
+					log.Printf("[PROJECTION] ERROR: Failed to fetch historical returns for %s: %v", t.Tracker, err)
+				}
 				if returns != nil {
+					log.Printf("[PROJECTION] Fetched %d weeks of history for %s", len(returns), fetchTicker)
 					state.etfHistory = append(state.etfHistory, returns)
 				}
 			}
@@ -1081,12 +1086,43 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 
+			// Find Common Dates for Correlation
+			var commonWeeks []string
+			if len(state.etfHistory) > 0 {
+				// Count occurrences of each week
+				weekCounts := make(map[string]int)
+				for _, returns := range state.etfHistory {
+					for week := range returns {
+						weekCounts[week]++
+					}
+				}
+				
+				// Keep only weeks that exist in ALL trackers
+				numTrackers := len(state.etfHistory)
+				for week, count := range weekCounts {
+					if count == numTrackers {
+						commonWeeks = append(commonWeeks, week)
+					}
+				}
+				
+				// Sort to ensure consistent ordering, mostly for lookback truncating (newest first like before)
+				// We can just sort descending as ISO string e.g. 2023-W42 sorts correctly
+				sort.Sort(sort.Reverse(sort.StringSlice(commonWeeks)))
+				
+				log.Printf("[PROJECTION] Found %d common weeks across %d trackers for %s", len(commonWeeks), numTrackers, a.Name)
+			}
+
 			var histories [][]float64
 			for _, returns := range state.etfHistory {
-				if lookbackYears > 0 && len(returns) > lookbackYears*52 {
-					histories = append(histories, returns[:lookbackYears*52])
+				var alignedReturns []float64
+				for _, week := range commonWeeks {
+					alignedReturns = append(alignedReturns, returns[week])
+				}
+
+				if lookbackYears > 0 && len(alignedReturns) > lookbackYears*52 {
+					histories = append(histories, alignedReturns[:lookbackYears*52])
 				} else {
-					histories = append(histories, returns)
+					histories = append(histories, alignedReturns)
 				}
 			}
 

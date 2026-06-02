@@ -314,6 +314,7 @@ message ETFTracker {
   double ter = 3;
   string historical_tracker = 4;
   string conversion_tracker = 5;
+  string history_provider = 6;
 }
 
 message AssetPenalty {

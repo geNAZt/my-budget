@@ -1,22 +1,16 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
+	"math"
+	"strings"
 	"time"
 
+	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
 	"github.com/wnjoon/go-yfinance/pkg/models"
-	"github.com/wnjoon/go-yfinance/pkg/ticker"
 )
-
-type TrackerCacheEntry struct {
-	Returns   []float64 `json:"returns"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
 
 type MarketDataService struct {
 	cacheRepo *repository.CacheRepository
@@ -31,164 +25,105 @@ func NewMarketDataService(cache *repository.CacheRepository, dataDir string) *Ma
 }
 
 func (s *MarketDataService) GetCachedReturns(ticker string) ([]float64, bool) {
-	// Try the new file-based cache first
-	cache, err := s.loadTrackerCache()
-	if err == nil {
-		if entry, ok := cache[ticker]; ok {
-			// Check if cache is still valid (1 week)
-			if time.Since(entry.UpdatedAt) < 7*24*time.Hour {
-				return entry.Returns, true
-			}
-		}
-	}
-
-	// Fallback to the old DB-based cache (might be useful for transition)
-	cacheKey := fmt.Sprintf("returns:%s", ticker)
-	if data, ok, _ := s.cacheRepo.Get(cacheKey); ok {
-		var returns []float64
-		if err := json.Unmarshal([]byte(data), &returns); err == nil {
-			return returns, true
-		}
-	}
-
 	return nil, false
 }
 
-func (s *MarketDataService) loadTrackerCache() (map[string]TrackerCacheEntry, error) {
-	cachePath := filepath.Join(s.dataDir, "caches", "tracker_history.json")
-	f, err := os.Open(cachePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return make(map[string]TrackerCacheEntry), nil
-		}
-		return nil, err
+func isoWeekToDate(year, week int) time.Time {
+	// Start with Jan 4 of the year (which is always in ISO week 1)
+	t := time.Date(year, 1, 4, 0, 0, 0, 0, time.UTC)
+	// Find Monday of that week
+	daysToMonday := int(t.Weekday()) - 1
+	if daysToMonday < 0 {
+		daysToMonday = 6
 	}
-	defer f.Close()
-
-	var cache map[string]TrackerCacheEntry
-	if err := json.NewDecoder(f).Decode(&cache); err != nil {
-		return nil, err
-	}
-	return cache, nil
+	monday := t.AddDate(0, 0, -daysToMonday)
+	// Add weeks
+	return monday.AddDate(0, 0, (week-1)*7)
 }
 
-func (s *MarketDataService) saveTrackerCache(cache map[string]TrackerCacheEntry) error {
-	cachePath := filepath.Join(s.dataDir, "caches", "tracker_history.json")
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
-		return err
+func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map[string]float64, error) {
+	historicalTicker := t.HistoricalTracker
+	if historicalTicker == "" {
+		historicalTicker = t.Tracker
 	}
 
-	f, err := os.Create(cachePath)
+	log.Printf("[MARKET_DATA] Fetching historical weekly returns for %s (provider: %s, conv: %s, anchor: %s)", historicalTicker, t.HistoryProvider, t.ConversionTracker, t.Tracker)
+
+	// 2. Select Provider
+	var provider HistoryProvider
+	switch strings.ToLower(t.HistoryProvider) {
+	case "solactive":
+		provider = NewSolactiveHistoryProvider(s.cacheRepo)
+	case "msci":
+		provider = NewMSCIHistoryProvider(s.cacheRepo)
+	default:
+		provider = NewYahooHistoryProvider(s.cacheRepo)
+	}
+
+	// 3. Fetch History
+	historyBars, err := provider.GetHistory(t)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer f.Close()
 
-	return json.NewEncoder(f).Encode(cache)
+	if len(historyBars) < 2 {
+		return nil, fmt.Errorf("not enough data points from provider %s", t.HistoryProvider)
+	}
+
+	log.Printf("[MARKET_DATA] Processing %d chronological bars from provider", len(historyBars))
+
+	// 4. Calculate returns (Newest First) and detect gaps
+	return calculateReturnsFromBars(historyBars, t.Tracker), nil
 }
 
-func (s *MarketDataService) GetHistoricalWeeklyReturns(tSymbol string, conversionSymbol string) ([]float64, error) {
-	log.Printf("[MARKET_DATA] Fetching historical weekly returns for ticker %s (conversion: %s)", tSymbol, conversionSymbol)
+func calculateReturnsFromBars(historyBars []models.Bar, trackerName string) map[string]float64 {
+	returns := make(map[string]float64)
+	for i := len(historyBars) - 1; i > 0; i-- {
+		newerBar := historyBars[i]
+		olderBar := historyBars[i-1]
+		
+		newerYear, newerWeek := newerBar.Date.ISOWeek()
+		olderYear, olderWeek := olderBar.Date.ISOWeek()
 
-	cacheKey := tSymbol
-	if conversionSymbol != "" {
-		cacheKey = fmt.Sprintf("%s_%s", tSymbol, conversionSymbol)
-	}
-
-	// 1. Try Cache
-	cache, _ := s.loadTrackerCache()
-	if entry, ok := cache[cacheKey]; ok {
-		if time.Since(entry.UpdatedAt) < 7*24*time.Hour {
-			log.Printf("[MARKET_DATA] Using cached returns for %s (age: %v)", cacheKey, time.Since(entry.UpdatedAt))
-			return entry.Returns, nil
-		}
-	}
-
-	// 2. Fetch from Yahoo Finance
-	t, err := ticker.New(tSymbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create yfinance ticker: %w", err)
-	}
-	defer t.Close()
-
-	params := models.HistoryParams{
-		Interval: "1wk",
-		Period:   "max",
-	}
-
-	bars, err := t.History(params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch history from yfinance: %w", err)
-	}
-
-	if len(bars) < 2 {
-		return nil, fmt.Errorf("not enough data points for ticker %s", tSymbol)
-	}
-
-	// Handle Conversion
-	if conversionSymbol != "" {
-		ct, err := ticker.New(conversionSymbol)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create conversion ticker: %w", err)
-		}
-		defer ct.Close()
-
-		cBars, err := ct.History(params)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch conversion history: %w", err)
+		newerISOStr := fmt.Sprintf("%04d-W%02d", newerYear, newerWeek)
+		
+		if olderBar.AdjClose <= 0 {
+			continue
 		}
 
-		// Align bars by date
-		cMap := make(map[string]float64)
-		for _, b := range cBars {
-			cMap[b.Date.Format("2006-01-02")] = b.AdjClose
-		}
-
-		var alignedBars []models.Bar
-		for _, b := range bars {
-			dateStr := b.Date.Format("2006-01-02")
-			if cPrice, ok := cMap[dateStr]; ok && cPrice > 0 {
-				// We assume conversion is Division (e.g. Index is USD, Conversion is EURUSD=X)
-				// Price_EUR = Price_USD / Rate_EURUSD
-				b.AdjClose = b.AdjClose / cPrice
-				alignedBars = append(alignedBars, b)
+		// Calculate total return over the period
+		totalReturn := (newerBar.AdjClose - olderBar.AdjClose) / olderBar.AdjClose
+		
+		// Gap detection: Calculate how many weeks passed
+		// A simple way is to divide duration by 7 days.
+		// Since we standardized dates to Monday in the providers, we can use exact duration.
+		duration := newerBar.Date.Sub(olderBar.Date)
+		weeksPassed := int(math.Round(duration.Hours() / 24.0 / 7.0))
+		
+		if weeksPassed > 1 {
+			log.Printf("[MARKET_DATA] Data gap detected for %s. %d weeks between %d/%d and %d/%d", 
+				trackerName, weeksPassed, olderWeek, olderYear, newerWeek, newerYear)
+			
+			// Geometric interpolation
+			// (1 + r)^weeksPassed = 1 + totalReturn
+			// r = (1 + totalReturn)^(1/weeksPassed) - 1
+			weeklyReturn := math.Pow(1.0+totalReturn, 1.0/float64(weeksPassed)) - 1.0
+			
+			// Fill the gap
+			currDate := newerBar.Date
+			for w := 0; w < weeksPassed; w++ {
+				y, wk := currDate.ISOWeek()
+				isoStr := fmt.Sprintf("%04d-W%02d", y, wk)
+				returns[isoStr] = weeklyReturn
+				currDate = currDate.AddDate(0, 0, -7)
 			}
-		}
-		bars = alignedBars
-	}
-
-	if len(bars) < 2 {
-		return nil, fmt.Errorf("not enough aligned data points for ticker %s after conversion", tSymbol)
-	}
-
-	// Calculate returns (Newest First)
-	var returns []float64
-	for i := len(bars) - 1; i > 0; i-- {
-		newer := bars[i].AdjClose
-		older := bars[i-1].AdjClose
-
-		if older > 0 {
-			ret := (newer - older) / older
-			returns = append(returns, ret)
+		} else if weeksPassed == 1 {
+			returns[newerISOStr] = totalReturn
+		} else {
+			// Zero weeks passed, shouldn't happen with proper weekly data, but just in case
+			log.Printf("[MARKET_DATA] WARNING: 0 weeks passed between consecutive data points for %s", trackerName)
 		}
 	}
 
-	// 3. Update Cache
-	if cache == nil {
-		cache = make(map[string]TrackerCacheEntry)
-	}
-	cache[cacheKey] = TrackerCacheEntry{
-		Returns:   returns,
-		UpdatedAt: time.Now(),
-	}
-	if err := s.saveTrackerCache(cache); err != nil {
-		log.Printf("[MARKET_DATA] Failed to save cache: %v", err)
-	}
-
-	// Also update DB-based cache for compatibility
-	dbCacheKey := fmt.Sprintf("returns:%s", cacheKey)
-	jsonBytes, _ := json.Marshal(returns)
-	s.cacheRepo.Set(dbCacheKey, string(jsonBytes))
-
-	return returns, nil
+	return returns
 }
