@@ -24,4 +24,5 @@ type ExpenseVersion struct {
 	Amount    float64
 	DueDate   time.Time
 	CreatedAt time.Time
+	Slices    []TimeSlice
 }

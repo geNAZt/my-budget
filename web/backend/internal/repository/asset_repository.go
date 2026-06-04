@@ -201,8 +201,18 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 	}
 	defer tx.Rollback()
 
-	if asset.ID == "" {
-		asset.ID = uuid.New().String()
+	var exists bool
+	if asset.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM assets WHERE id = ? AND user_id = ?", asset.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if asset.ID == "" {
+			asset.ID = uuid.New().String()
+		}
 		_, err = tx.Exec("INSERT INTO assets (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", asset.ID, userID, asset.Name, asset.PoolID)
 	} else {
 		_, err = tx.Exec("UPDATE assets SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", asset.Name, asset.PoolID, asset.ID, userID)

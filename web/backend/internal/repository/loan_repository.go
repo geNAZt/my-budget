@@ -96,8 +96,18 @@ func (r *LoanRepository) Save(userID string, loan *domain.Loan) error {
 	}
 	defer tx.Rollback()
 
-	if loan.ID == "" {
-		loan.ID = uuid.New().String()
+	var exists bool
+	if loan.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM loans WHERE id = ? AND user_id = ?", loan.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if loan.ID == "" {
+			loan.ID = uuid.New().String()
+		}
 		_, err = tx.Exec("INSERT INTO loans (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", loan.ID, userID, loan.Name, loan.PoolID)
 	} else {
 		_, err = tx.Exec("UPDATE loans SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", loan.Name, loan.PoolID, loan.ID, userID)

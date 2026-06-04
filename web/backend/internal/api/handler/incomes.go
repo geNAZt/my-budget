@@ -114,20 +114,27 @@ func mapIncomeToProto(i domain.Income) *apiproto.Income {
 
 	if i.ActiveVersion != nil {
 		pi.ActiveVersion = &apiproto.IncomeVersion{
-			Id:                 i.ActiveVersion.ID,
-			IncomeId:           i.ActiveVersion.IncomeID,
-			Amount:             i.ActiveVersion.Amount,
-			StopModificationId: "",
-			StartDate:          i.ActiveVersion.StartDate.Format(time.RFC3339),
-			EndDate:            "",
-			IntervalMonths:     int32(i.ActiveVersion.IntervalMonths),
-			CreatedAt:          i.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Id:                          i.ActiveVersion.ID,
+			IncomeId:                    i.ActiveVersion.IncomeID,
+			Amount:                      i.ActiveVersion.Amount,
+			StopModificationId:          "",
+			StartDate:                   i.ActiveVersion.StartDate.Format(time.RFC3339),
+			EndDate:                     "",
+			IntervalMonths:              int32(i.ActiveVersion.IntervalMonths),
+			CreatedAt:                   i.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Slices:                      mapTimeSlicesToProto(i.ActiveVersion.Slices),
+			IntervalIncreasePercentage:  i.ActiveVersion.IntervalIncreasePercentage,
+			IntervalIncreaseMonths:      int32(i.ActiveVersion.IntervalIncreaseMonths),
+			IntervalIncreaseStartDate:   "",
 		}
 		if i.ActiveVersion.StopModificationID != nil {
 			pi.ActiveVersion.StopModificationId = *i.ActiveVersion.StopModificationID
 		}
 		if i.ActiveVersion.EndDate != nil {
 			pi.ActiveVersion.EndDate = i.ActiveVersion.EndDate.Format(time.RFC3339)
+		}
+		if i.ActiveVersion.IntervalIncreaseStartDate != nil {
+			pi.ActiveVersion.IntervalIncreaseStartDate = i.ActiveVersion.IntervalIncreaseStartDate.Format(time.RFC3339)
 		}
 	}
 
@@ -139,10 +146,13 @@ func mapProtoToIncomeVersion(pi *apiproto.IncomeVersion) *domain.IncomeVersion {
 		return nil
 	}
 	div := &domain.IncomeVersion{
-		ID:             pi.Id,
-		IncomeID:       pi.IncomeId,
-		Amount:         pi.Amount,
-		IntervalMonths: int(pi.IntervalMonths),
+		ID:                         pi.Id,
+		IncomeID:                   pi.IncomeId,
+		Amount:                     pi.Amount,
+		IntervalMonths:             int(pi.IntervalMonths),
+		Slices:                     mapProtoToTimeSlices(pi.Slices),
+		IntervalIncreasePercentage: pi.IntervalIncreasePercentage,
+		IntervalIncreaseMonths:     int(pi.IntervalIncreaseMonths),
 	}
 	if pi.StopModificationId != "" {
 		div.StopModificationID = &pi.StopModificationId
@@ -155,6 +165,11 @@ func mapProtoToIncomeVersion(pi *apiproto.IncomeVersion) *domain.IncomeVersion {
 	if pi.EndDate != "" {
 		if t, err := time.Parse(time.RFC3339, pi.EndDate); err == nil {
 			div.EndDate = &t
+		}
+	}
+	if pi.IntervalIncreaseStartDate != "" {
+		if t, err := time.Parse(time.RFC3339, pi.IntervalIncreaseStartDate); err == nil {
+			div.IntervalIncreaseStartDate = &t
 		}
 	}
 	return div

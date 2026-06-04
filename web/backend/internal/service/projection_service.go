@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
@@ -128,11 +127,10 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 
 	for i := range txs {
 		t := &txs[i]
-		if t.PoolID == nil || *t.PoolID == "" {
+		if len(t.PoolIDs) == 0 {
 			continue
 		}
 
-		poolID := *t.PoolID
 		serviceType, exists := intTypeMap[t.IntegrationID]
 		if !exists {
 			continue
@@ -148,6 +146,7 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 		if provider == nil {
 			continue
 		}
+
 		meta, err := provider.ParseTransaction(decrypted)
 		if err != nil {
 			continue
@@ -156,21 +155,27 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 
 		monthStr := projectionMonthForDate(t.CreatedAt.UTC(), monthStartDay, loc).Format("2006-01")
 
-		// Aggregate into parent pools
-		currPoolID := poolID
-		visited := make(map[string]bool)
-		for currPoolID != "" && !visited[currPoolID] {
-			visited[currPoolID] = true
-			if balances[currPoolID] == nil {
-				balances[currPoolID] = make(map[string]float64)
+		for _, poolID := range t.PoolIDs {
+			if poolID == "" {
+				continue
 			}
-			balances[currPoolID][monthStr] += amount
 
-			// Move to parent
-			if p, ok := poolMap[currPoolID]; ok && p.ParentID != nil {
-				currPoolID = *p.ParentID
-			} else {
-				currPoolID = ""
+			// Aggregate into parent pools
+			currPoolID := poolID
+			visited := make(map[string]bool)
+			for currPoolID != "" && !visited[currPoolID] {
+				visited[currPoolID] = true
+				if balances[currPoolID] == nil {
+					balances[currPoolID] = make(map[string]float64)
+				}
+				balances[currPoolID][monthStr] += amount
+
+				// Move to parent
+				if p, ok := poolMap[currPoolID]; ok && p.ParentID != nil {
+					currPoolID = *p.ParentID
+				} else {
+					currPoolID = ""
+				}
 			}
 		}
 	}
@@ -403,6 +408,8 @@ func buildAssetBreakdownEntry(as *assetState, name string, amount float64, inter
 		Interest:   interest,
 		Penalty:    penalty,
 		Balance:    as.currentBalance,
+		AccountIDs: as.asset.AccountIDs,
+		PoolID:     as.asset.PoolID,
 	}
 	if as.asset.ActiveVersion.Type == domain.AssetTypeETF && len(as.trackerBalances) > 0 && as.currentBalance > 0 {
 		splits := make(map[string]float64)
@@ -968,6 +975,20 @@ type loanState struct {
 	activeBalloon        float64
 	activeIsInterestOnly bool
 	isRolloverTarget     bool
+}
+
+func (s *ProjectionService) getActiveSlice(slices []domain.TimeSlice, date time.Time) *domain.TimeSlice {
+	var best *domain.TimeSlice
+	for i := range slices {
+		slice := &slices[i]
+		if (slice.StartDate.Before(date) || slice.StartDate.Equal(date)) &&
+			(slice.EndDate == nil || slice.EndDate.After(date) || slice.EndDate.Equal(date)) {
+			if best == nil || slice.StartDate.After(best.StartDate) {
+				best = slice
+			}
+		}
+	}
+	return best
 }
 
 func (s *ProjectionService) Run(userID string, scenarioID string, onMonth func(domain.ProjectionMonth)) (*domain.ProjectionResult, error) {
@@ -1676,50 +1697,6 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		SimulatedYields: simulatedYields,
 	}
 
-	// Build maps of entity names to their linked pool IDs
-	incPoolMap := make(map[string]*string)
-	for _, inc := range incomes {
-		incPoolMap[inc.Name] = inc.PoolID
-	}
-	billPoolMap := make(map[string]*string)
-	for _, b := range bills {
-		billPoolMap[b.Name] = b.PoolID
-	}
-	expPoolMap := make(map[string]*string)
-	for _, e := range expenses {
-		expPoolMap[e.Name] = e.PoolID
-	}
-	assetPoolMap := make(map[string]*string)
-	for _, a := range assets {
-		assetPoolMap[a.Name] = a.PoolID
-	}
-	loanPoolMap := make(map[string]*string)
-	for _, l := range loans {
-		loanPoolMap[l.Name] = l.PoolID
-	}
-
-	// Build maps of entity names to their linked account IDs
-	incAccountMap := make(map[string][]string)
-	for _, inc := range incomes {
-		incAccountMap[inc.Name] = inc.AccountIDs
-	}
-	billAccountMap := make(map[string][]string)
-	for _, b := range bills {
-		billAccountMap[b.Name] = b.AccountIDs
-	}
-	expAccountMap := make(map[string][]string)
-	for _, e := range expenses {
-		expAccountMap[e.Name] = e.AccountIDs
-	}
-	assetAccountMap := make(map[string][]string)
-	for _, a := range assets {
-		assetAccountMap[a.Name] = a.AccountIDs
-	}
-	loanAccountMap := make(map[string][]string)
-	for _, l := range loans {
-		loanAccountMap[l.Name] = l.AccountIDs
-	}
-
 	unassignedRunningBalance := 0.0
 	currentBalance := 0.0
 	for i := 0; i < scenario.ProjectionMonths; i++ {
@@ -1744,43 +1721,119 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 		// 1. RESOLVE BASE INCOMES
 		for _, inc := range incomes {
-			if s.isActiveAt(inc.ActiveVersion.StartDate, inc.ActiveVersion.EndDate, currentDate, inc.ActiveVersion.IntervalMonths) {
-				if inc.ActiveVersion.StopModificationID != nil && triggeredMods[*inc.ActiveVersion.StopModificationID] {
-					log.Printf("[PROJECTION] Skipping income %s: Linked modification %s triggered.", inc.Name, *inc.ActiveVersion.StopModificationID)
+			v := inc.ActiveVersion
+			amount := v.Amount
+			interval := v.IntervalMonths
+			description := ""
+
+			if slice := s.getActiveSlice(v.Slices, currentDate); slice != nil {
+				amount = slice.Value
+				interval = slice.IntervalMonths
+				description = slice.Description
+			}
+
+			if s.isActiveAt(v.StartDate, v.EndDate, currentDate, interval) {
+				if v.StopModificationID != nil && triggeredMods[*v.StopModificationID] {
+					log.Printf("[PROJECTION] Skipping income %s: Linked modification %s triggered.", inc.Name, *v.StopModificationID)
 					continue
 				}
 
-				month.Income += inc.ActiveVersion.Amount
-				log.Printf("[PROJECTION] Income: %s, Amount: %.2f", inc.Name, inc.ActiveVersion.Amount)
+				// Apply interval increase
+				if v.IntervalIncreasePercentage > 0 && v.IntervalIncreaseMonths > 0 && v.IntervalIncreaseStartDate != nil {
+					if !currentDate.Before(*v.IntervalIncreaseStartDate) {
+						y1, m1, _ := v.IntervalIncreaseStartDate.Date()
+						y2, m2, _ := currentDate.Date()
+						totalMonths := int(y2-y1)*12 + int(m2-m1)
+
+						intervals := totalMonths / v.IntervalIncreaseMonths
+						if intervals > 0 {
+							amount = amount * math.Pow(1.0+(v.IntervalIncreasePercentage/100.0), float64(intervals))
+						}
+					}
+				}
+
+				month.Income += amount
+				log.Printf("[PROJECTION] Income: %s, Amount: %.2f", inc.Name, amount)
+
+				displayName := inc.Name
+				if description != "" {
+					displayName = fmt.Sprintf("%s (%s)", inc.Name, description)
+				}
+
 				month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-					Name:   inc.Name,
-					Amount: inc.ActiveVersion.Amount,
+					Name:       displayName,
+					Amount:     amount,
+					AccountIDs: inc.AccountIDs,
+					PoolID:     inc.PoolID,
 				})
 			}
 		}
 
 		// 2. RESOLVE BILLS & ONE-TIME EXPENSES
 		for _, b := range bills {
-			if s.isActiveAt(b.ActiveVersion.StartDate, b.ActiveVersion.EndDate, currentDate, b.ActiveVersion.IntervalMonths) {
-				month.Bills += b.ActiveVersion.Amount
-				log.Printf("[PROJECTION] Bill: %s, Amount: %.2f", b.Name, b.ActiveVersion.Amount)
+			v := b.ActiveVersion
+			amount := v.Amount
+			interval := v.IntervalMonths
+			description := ""
+
+			if slice := s.getActiveSlice(v.Slices, currentDate); slice != nil {
+				amount = slice.Value
+				interval = slice.IntervalMonths
+				description = slice.Description
+			}
+
+			if s.isActiveAt(v.StartDate, v.EndDate, currentDate, interval) {
+				month.Bills += amount
+				log.Printf("[PROJECTION] Bill: %s, Amount: %.2f", b.Name, amount)
+
+				displayName := b.Name
+				if description != "" {
+					displayName = fmt.Sprintf("%s (%s)", b.Name, description)
+				}
+
 				month.Breakdown.Bills = append(month.Breakdown.Bills, domain.EntryBreakdown{
-					Name:   b.Name,
-					Amount: b.ActiveVersion.Amount,
+					Name:       displayName,
+					Amount:     amount,
+					AccountIDs: b.AccountIDs,
+					PoolID:     b.PoolID,
 				})
 			}
 		}
 
 		for _, e := range expenses {
-			uDue := e.ActiveVersion.DueDate.UTC()
-			start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
-			if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
-				month.Expenses += e.ActiveVersion.Amount
-				log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, e.ActiveVersion.Amount)
-				month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
-					Name:   e.Name,
-					Amount: e.ActiveVersion.Amount,
-				})
+			v := e.ActiveVersion
+			if len(v.Slices) > 0 {
+				if slice := s.getActiveSlice(v.Slices, currentDate); slice != nil {
+					if s.isActiveAt(slice.StartDate, slice.EndDate, currentDate, slice.IntervalMonths) {
+						month.Expenses += slice.Value
+						log.Printf("[PROJECTION] Expense (Slice): %s, Amount: %.2f", e.Name, slice.Value)
+
+						displayName := e.Name
+						if slice.Description != "" {
+							displayName = fmt.Sprintf("%s (%s)", e.Name, slice.Description)
+						}
+
+						month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
+							Name:       displayName,
+							Amount:     slice.Value,
+							AccountIDs: e.AccountIDs,
+							PoolID:     e.PoolID,
+						})
+					}
+				}
+			} else {
+				uDue := v.DueDate.UTC()
+				start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
+				if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
+					month.Expenses += v.Amount
+					log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, v.Amount)
+					month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
+						Name:       e.Name,
+						Amount:     v.Amount,
+						AccountIDs: e.AccountIDs,
+						PoolID:     e.PoolID,
+					})
+				}
 			}
 		}
 
@@ -2047,6 +2100,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						EntityName: ls.loan.Name,
 						Amount:     netWithdrawn,
 						Balance:    ls.currentBalance,
+						AccountIDs: ls.loan.AccountIDs,
+						PoolID:     ls.loan.PoolID,
 					})
 					month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Aggregate Dump)", -netWithdrawn, 0, totalPenaltyPaid))
 
@@ -2089,9 +2144,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							month.Income += leftoverNet
 							availableFunds += leftoverNet
 							month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-								Name:    as.asset.Name + " (Leftover after Aggregate Dump)",
-								Amount:  leftoverNet,
-								Penalty: penaltyPaid,
+								Name:       as.asset.Name + " (Leftover after Aggregate Dump)",
+								Amount:     leftoverNet,
+								Penalty:    penaltyPaid,
+								AccountIDs: as.asset.AccountIDs,
+								PoolID:     as.asset.PoolID,
 							})
 						}
 						as.isClosed = true
@@ -2109,9 +2166,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								month.Income += leftoverNet
 								availableFunds += leftoverNet
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-									Name:    as.asset.Name + " (" + sa.name + " Leftover after Dump)",
-									Amount:  leftoverNet,
-									Penalty: penaltyPaidLeftover,
+									Name:       as.asset.Name + " (" + sa.name + " Leftover after Dump)",
+									Amount:     leftoverNet,
+									Penalty:    penaltyPaidLeftover,
+									AccountIDs: as.asset.AccountIDs,
+									PoolID:     as.asset.PoolID,
 								})
 							}
 							sa.isClosed = true
@@ -2167,6 +2226,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 										EntityName: ls.loan.Name,
 										Amount:     netFulfilled,
 										Balance:    ls.currentBalance,
+										AccountIDs: ls.loan.AccountIDs,
+										PoolID:     ls.loan.PoolID,
 									})
 									month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Dump at Payout)", -netFulfilled, 0, penaltyPaid))
 
@@ -2241,6 +2302,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 										EntityName: ls.loan.Name,
 										Amount:     netFulfilled,
 										Balance:    ls.currentBalance,
+										AccountIDs: ls.loan.AccountIDs,
+										PoolID:     ls.loan.PoolID,
 									})
 									month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Dump at Payout)", -netFulfilled, 0, penaltyPaid))
 
@@ -2276,6 +2339,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 									Amount:     netPayout,
 									Penalty:    penaltyPaid,
 									AccountIDs: as.asset.AccountIDs,
+									PoolID:     as.asset.PoolID,
 								})
 							}
 							sa.isClosed = true
@@ -2311,6 +2375,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								EntityName: ls.loan.Name,
 								Amount:     netFulfilled,
 								Balance:    ls.currentBalance,
+								AccountIDs: ls.loan.AccountIDs,
+								PoolID:     ls.loan.PoolID,
 							})
 							month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Dump at Payout)", -netFulfilled, 0, grossSold-netFulfilled))
 
@@ -2341,6 +2407,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								Amount:     netPayout,
 								Penalty:    penaltyPaid,
 								AccountIDs: as.asset.AccountIDs,
+								PoolID:     as.asset.PoolID,
 							})
 						}
 					}
@@ -2381,6 +2448,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							EntityName: ls.loan.Name,
 							Amount:     m.ActiveVersion.Amount,
 							Balance:    ls.currentBalance,
+							AccountIDs: ls.loan.AccountIDs,
+							PoolID:     ls.loan.PoolID,
 						})
 					}
 				}
@@ -2412,6 +2481,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					Amount:     payment,
 					Interest:   interest,
 					Balance:    ls.currentBalance,
+					AccountIDs: ls.loan.AccountIDs,
+					PoolID:     ls.loan.PoolID,
 				})
 
 				if ls.currentBalance <= 0.05 {
@@ -2505,6 +2576,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 									Amount:     netPayout,
 									Penalty:    penaltyPaid,
 									AccountIDs: as.asset.AccountIDs,
+									PoolID:     as.asset.PoolID,
 								})
 							}
 							sa.isClosed = true
@@ -2531,6 +2603,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							Amount:     netPayout,
 							Penalty:    penaltyPaid,
 							AccountIDs: as.asset.AccountIDs,
+							PoolID:     as.asset.PoolID,
 						})
 					}
 					as.isClosed = true
@@ -2762,6 +2835,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							EntityName: ls.loan.Name,
 							Amount:     consumed,
 							Balance:    ls.currentBalance,
+							AccountIDs: ls.loan.AccountIDs,
+							PoolID:     ls.loan.PoolID,
 						})
 
 						if ls.currentBalance <= 0.05 {
@@ -2829,6 +2904,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					Name:       as.asset.Name + " (Dividend)",
 					Amount:     payout,
 					AccountIDs: as.asset.AccountIDs,
+					PoolID:     as.asset.PoolID,
 				})
 
 				if as.penaltyAnalysis != nil {
@@ -2949,21 +3025,6 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 			poolGroups := make(map[string]*poolGroup)
 
-			getMatchedPool := func(entryName string, poolMap map[string]*string) *string {
-				var longestMatch string
-				var matchedPoolID *string
-				for name, poolID := range poolMap {
-					if strings.HasPrefix(entryName, name) && len(name) > len(longestMatch) {
-						longestMatch = name
-						matchedPoolID = poolID
-					}
-				}
-				if matchedPoolID != nil && *matchedPoolID != "" {
-					return matchedPoolID
-				}
-				return nil
-			}
-
 			getGroup := func(pid string) *poolGroup {
 				if _, ok := poolGroups[pid]; !ok {
 					poolGroups[pid] = &poolGroup{}
@@ -2973,8 +3034,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// 1. Collect Incomes (Fixed)
 			for i := range month.Breakdown.Incomes {
-				if pid := getMatchedPool(month.Breakdown.Incomes[i].Name, incPoolMap); pid != nil {
-					month.Breakdown.Incomes[i].PoolID = pid
+				if pid := month.Breakdown.Incomes[i].PoolID; pid != nil {
 					g := getGroup(*pid)
 					g.fixedEntries = append(g.fixedEntries, &month.Breakdown.Incomes[i])
 				}
@@ -2982,8 +3042,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// 2. Collect Bills (Fixed)
 			for i := range month.Breakdown.Bills {
-				if pid := getMatchedPool(month.Breakdown.Bills[i].Name, billPoolMap); pid != nil {
-					month.Breakdown.Bills[i].PoolID = pid
+				if pid := month.Breakdown.Bills[i].PoolID; pid != nil {
 					g := getGroup(*pid)
 					g.fixedEntries = append(g.fixedEntries, &month.Breakdown.Bills[i])
 				}
@@ -2991,8 +3050,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// 3. Collect Expenses (Variable)
 			for i := range month.Breakdown.Expenses {
-				if pid := getMatchedPool(month.Breakdown.Expenses[i].Name, expPoolMap); pid != nil {
-					month.Breakdown.Expenses[i].PoolID = pid
+				if pid := month.Breakdown.Expenses[i].PoolID; pid != nil {
 					g := getGroup(*pid)
 					g.variableEntries = append(g.variableEntries, &month.Breakdown.Expenses[i])
 					g.totalPlannedVariable += math.Abs(month.Breakdown.Expenses[i].Amount)
@@ -3005,8 +3063,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if assetName == "" {
 					assetName = month.Breakdown.Assets[i].Name
 				}
-				if pid := getMatchedPool(assetName, assetPoolMap); pid != nil {
-					month.Breakdown.Assets[i].PoolID = pid
+
+				if pid := month.Breakdown.Assets[i].PoolID; pid != nil {
 					g := getGroup(*pid)
 					// Check if this asset has a planned monthly rate (contribution)
 					isFixed := false
@@ -3036,12 +3094,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			// 5. Collect Loans (Variable)
 			for i := range month.Breakdown.Loans {
-				loanName := month.Breakdown.Loans[i].EntityName
-				if loanName == "" {
-					loanName = month.Breakdown.Loans[i].Name
-				}
-				if pid := getMatchedPool(loanName, loanPoolMap); pid != nil {
-					month.Breakdown.Loans[i].PoolID = pid
+				if pid := month.Breakdown.Loans[i].PoolID; pid != nil {
 					g := getGroup(*pid)
 					g.variableEntries = append(g.variableEntries, &month.Breakdown.Loans[i])
 					g.totalPlannedVariable += math.Abs(month.Breakdown.Loans[i].Amount)
@@ -3109,47 +3162,6 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				for i, entry := range g.fixedEntries {
 					val := fixedGiven[i] * math.Copysign(1, entry.Amount)
 					entry.RealtimeBalance = &val
-				}
-			}
-		}
-
-		// Map Account IDs to EntryBreakdowns
-		for k := range month.Breakdown.Incomes {
-			if aids := incAccountMap[month.Breakdown.Incomes[k].Name]; len(aids) > 0 {
-				month.Breakdown.Incomes[k].AccountIDs = aids
-			}
-		}
-		for k := range month.Breakdown.Bills {
-			if aids := billAccountMap[month.Breakdown.Bills[k].Name]; len(aids) > 0 {
-				month.Breakdown.Bills[k].AccountIDs = aids
-			}
-		}
-		for k := range month.Breakdown.Expenses {
-			if aids := expAccountMap[month.Breakdown.Expenses[k].Name]; len(aids) > 0 {
-				month.Breakdown.Expenses[k].AccountIDs = aids
-			}
-		}
-		for k := range month.Breakdown.Assets {
-			assetName := month.Breakdown.Assets[k].EntityName
-			if assetName == "" {
-				assetName = month.Breakdown.Assets[k].Name
-			}
-			for _, asset := range assets {
-				if asset.Name == assetName {
-					month.Breakdown.Assets[k].AccountIDs = asset.AccountIDs
-					break
-				}
-			}
-		}
-		for k := range month.Breakdown.Loans {
-			loanName := month.Breakdown.Loans[k].EntityName
-			if loanName == "" {
-				loanName = month.Breakdown.Loans[k].Name
-			}
-			for _, l := range loans {
-				if l.Name == loanName {
-					month.Breakdown.Loans[k].AccountIDs = l.AccountIDs
-					break
 				}
 			}
 		}

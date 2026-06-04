@@ -140,7 +140,7 @@ message Transaction {
   string tags = 8;
   string source_account_id = 9;
   string destination_account_id = 10;
-  string pool_id = 11;
+  repeated string pool_ids = 11;
   bool is_potential_duplicate = 12;
   string potential_link_id = 13;
   bool is_link_confirmed = 14;
@@ -407,6 +407,15 @@ message LoanList {
 
 // --- Income Domain Payloads ---
 
+message TimeSlice {
+  string id = 1;
+  double amount = 2;
+  int32 interval_months = 3;
+  string start_date = 4;
+  string end_date = 5;
+  string description = 6;
+}
+
 message IncomeVersion {
   string id = 1;
   string income_id = 2;
@@ -416,6 +425,10 @@ message IncomeVersion {
   string end_date = 6;
   int32 interval_months = 7;
   string created_at = 8;
+  repeated TimeSlice slices = 9;
+  double interval_increase_percentage = 10;
+  int32 interval_increase_months = 11;
+  string interval_increase_start_date = 12;
 }
 
 message Income {
@@ -444,6 +457,7 @@ message BillVersion {
   string end_date = 5;
   int32 interval_months = 6;
   string created_at = 7;
+  repeated TimeSlice slices = 8;
 }
 
 message Bill {
@@ -470,6 +484,7 @@ message ExpenseVersion {
   double amount = 3;
   string due_date = 4;
   string created_at = 5;
+  repeated TimeSlice slices = 6;
 }
 
 message Expense {

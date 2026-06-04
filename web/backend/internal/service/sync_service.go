@@ -672,11 +672,25 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 			accountTags = tagsMap[t.AccountID]
 		}
 
-		poolID, _ := s.ruleService.ProcessTransaction(userID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, meta.Amount)
+		poolIDs, _ := s.ruleService.ProcessTransaction(userID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, meta.Amount)
 
-		// Only update if pool_id actually changed
-		if (poolID == nil && t.PoolID != nil) || (poolID != nil && t.PoolID == nil) || (poolID != nil && t.PoolID != nil && *poolID != *t.PoolID) {
-			s.transactionRepo.UpdatePool(userID, t.ID, poolID)
+		// Check if pool_ids actually changed
+		changed := len(poolIDs) != len(t.PoolIDs)
+		if !changed {
+			poolMap := make(map[string]bool)
+			for _, p := range t.PoolIDs {
+				poolMap[p] = true
+			}
+			for _, p := range poolIDs {
+				if !poolMap[p] {
+					changed = true
+					break
+				}
+			}
+		}
+
+		if changed {
+			s.transactionRepo.UpdatePools(userID, t.ID, poolIDs)
 		}
 	}
 
@@ -876,7 +890,7 @@ func (s *SyncService) RetroactivelyFixGoCardlessSigns() {
 				createdAt = meta.CreatedAt
 			}
 
-			needsPoolFix := tx.PoolID == nil || *tx.PoolID == ""
+			needsPoolFix := len(tx.PoolIDs) == 0
 
 			// For GC, we especially want to fix cases where the receiver is the user themselves (old broken logic)
 			// But without the user's name at hand, it's hard.
@@ -888,8 +902,8 @@ func (s *SyncService) RetroactivelyFixGoCardlessSigns() {
 					accountTags = meta.Tags
 				}
 
-				poolID, _ := s.ruleService.ProcessTransaction(tx.UserID, tx.IntegrationID, receiver, desc, "", accountTags, amt)
-				tx.PoolID = poolID
+				poolIDs, _ := s.ruleService.ProcessTransaction(tx.UserID, tx.IntegrationID, receiver, desc, "", accountTags, amt)
+				tx.PoolIDs = poolIDs
 
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,

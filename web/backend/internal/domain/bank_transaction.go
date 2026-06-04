@@ -9,7 +9,7 @@ type BankTransaction struct {
 	AccountID            string
 	SourceAccountID      string
 	DestinationAccountID string
-	PoolID               *string
+	PoolIDs              []string
 	Tags                 string // Plaintext, comma-separated
 	ExternalID           string
 	EncryptedData        string

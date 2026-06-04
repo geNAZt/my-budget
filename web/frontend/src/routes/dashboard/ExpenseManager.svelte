@@ -42,10 +42,24 @@
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
+    import TimeSliceManager from "$lib/components/TimeSliceManager.svelte";
+
+    interface TimeSlice {
+        id?: string;
+        amount: number;
+        intervalMonths: number;
+        startDate: string;
+        endDate: string | null;
+        description: string;
+    }
 
     interface ExpenseVersion {
+        id?: string;
+        expenseId?: string;
         amount: number;
         dueDate: string;
+        createdAt?: string;
+        slices: TimeSlice[];
     }
 
     interface Expense {
@@ -105,6 +119,7 @@
             activeVersion: {
                 amount: 0,
                 dueDate: monthStr,
+                slices: [],
             },
         };
     }
@@ -165,6 +180,16 @@
                         dueDate: currentExpense.activeVersion.dueDate || "",
                         createdAt:
                             currentExpense.activeVersion.createdAt || "",
+                        slices: (currentExpense.activeVersion.slices || []).map(
+                            (s) => ({
+                                id: s.id || "",
+                                amount: s.amount,
+                                intervalMonths: s.intervalMonths,
+                                startDate: s.startDate,
+                                endDate: s.endDate || "",
+                                description: s.description,
+                            }),
+                        ),
                     },
                     linkToScenarios: currentExpense.linkToScenarios || [],
                 },
@@ -186,7 +211,11 @@
             currentExpense.activeVersion = {
                 amount: 0,
                 dueDate: new Date().toISOString(),
+                slices: [],
             };
+        }
+        if (!currentExpense.activeVersion.slices) {
+            currentExpense.activeVersion.slices = [];
         }
         amountInput = formatGermanAmount(currentExpense.activeVersion.amount);
         showAddModal = true;
@@ -520,6 +549,13 @@
                                 required
                             />
                         </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-8">
+                        <TimeSliceManager
+                            bind:slices={currentExpense.activeVersion.slices}
+                            label="Time Variations (Makes Recurring)"
+                        />
                     </div>
 
                     <div class="pt-6">

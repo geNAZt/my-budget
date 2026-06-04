@@ -261,6 +261,9 @@ func InitDB(dsn string) (*sql.DB, error) {
         interval_months INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         stop_modification_id TEXT,
+        interval_increase_percentage DOUBLE PRECISION DEFAULT 0,
+        interval_increase_months INTEGER DEFAULT 0,
+        interval_increase_start_date TIMESTAMP,
         FOREIGN KEY(income_id) REFERENCES incomes(id)
     );
 
@@ -464,6 +467,14 @@ func InitDB(dsn string) (*sql.DB, error) {
 		UNIQUE(user_id, external_id)
 	);
 
+	CREATE TABLE IF NOT EXISTS bank_transaction_pools (
+		transaction_id TEXT NOT NULL,
+		pool_id TEXT NOT NULL,
+		PRIMARY KEY(transaction_id, pool_id),
+		FOREIGN KEY(transaction_id) REFERENCES bank_transactions(id) ON DELETE CASCADE,
+		FOREIGN KEY(pool_id) REFERENCES transaction_pools(id) ON DELETE CASCADE
+	);
+
     CREATE TABLE IF NOT EXISTS scenarios (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -568,6 +579,18 @@ func InitDB(dsn string) (*sql.DB, error) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(virtual_account_id) REFERENCES virtual_accounts(id)
     );
+
+    CREATE TABLE IF NOT EXISTS time_slices (
+        id TEXT PRIMARY KEY,
+        version_id TEXT,
+        entity_type TEXT, -- 'BILL', 'EXPENSE', 'INCOME'
+        amount DOUBLE PRECISION,
+        interval_months INTEGER,
+        start_date TIMESTAMP,
+        end_date TIMESTAMP,
+        description TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 	`
 
 	_, err = db.Exec(schema)
@@ -668,6 +691,15 @@ func migrate(db *sql.DB) {
 	// Income versions
 	if !hasColumn(db, "income_versions", "stop_modification_id") {
 		db.Exec("ALTER TABLE income_versions ADD COLUMN stop_modification_id TEXT")
+	}
+	if !hasColumn(db, "income_versions", "interval_increase_percentage") {
+		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_percentage DOUBLE PRECISION DEFAULT 0")
+	}
+	if !hasColumn(db, "income_versions", "interval_increase_months") {
+		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_months INTEGER DEFAULT 0")
+	}
+	if !hasColumn(db, "income_versions", "interval_increase_start_date") {
+		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_start_date TIMESTAMP")
 	}
 
 	// Loan versions
@@ -882,6 +914,12 @@ func migrate(db *sql.DB) {
 	if !hasColumn(db, "users", "timezone") {
 		db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
 	}
+
+	// Migrate existing bank transactions to the many-to-many join table
+	db.Exec(`INSERT INTO bank_transaction_pools (transaction_id, pool_id)
+		SELECT id, pool_id FROM bank_transactions
+		WHERE pool_id IS NOT NULL AND pool_id != ''
+		ON CONFLICT DO NOTHING`)
 
 	MigrateRulesToGlobal(db)
 	MigrateVirtualAccountsToMulti(db)

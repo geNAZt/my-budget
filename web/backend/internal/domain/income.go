@@ -19,12 +19,16 @@ type Income struct {
 }
 
 type IncomeVersion struct {
-	ID                 string
-	IncomeID           string
-	Amount             float64
-	StopModificationID *string
-	StartDate          time.Time
-	EndDate            *time.Time
-	IntervalMonths     int
-	CreatedAt          time.Time
+	ID                         string
+	IncomeID                   string
+	Amount                     float64
+	StopModificationID         *string
+	StartDate                  time.Time
+	EndDate                    *time.Time
+	IntervalMonths             int
+	CreatedAt                  time.Time
+	Slices                     []TimeSlice
+	IntervalIncreasePercentage float64
+	IntervalIncreaseMonths     int
+	IntervalIncreaseStartDate  *time.Time
 }

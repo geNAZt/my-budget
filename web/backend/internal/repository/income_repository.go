@@ -17,7 +17,7 @@ func NewIncomeRepository(db *sql.DB) *IncomeRepository {
 
 func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 	query := `
-		SELECT i.id, i.name, i.pool_id, i.created_at, v.id, v.amount, v.stop_modification_id, v.start_date, v.end_date, v.interval_months, v.created_at
+		SELECT i.id, i.name, i.pool_id, i.created_at, v.id, v.amount, v.stop_modification_id, v.start_date, v.end_date, v.interval_months, v.created_at, v.interval_increase_percentage, v.interval_increase_months, v.interval_increase_start_date
 		FROM incomes i
 		INNER JOIN income_versions v ON i.id = v.income_id
 		WHERE i.user_id = ? AND i.is_deleted = FALSE
@@ -49,6 +49,27 @@ func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 		}
 	}
 
+	// Load all time slices for these versions
+	sliceMap := make(map[string][]domain.TimeSlice)
+	sliceRows, sliceErr := r.db.Query(`
+		SELECT id, version_id, amount, interval_months, start_date, end_date, description
+		FROM time_slices
+		WHERE entity_type = 'INCOME'`)
+	if sliceErr == nil {
+		defer sliceRows.Close()
+		for sliceRows.Next() {
+			var s domain.TimeSlice
+			var vID string
+			var endDate sql.NullTime
+			if err := sliceRows.Scan(&s.ID, &vID, &s.Value, &s.IntervalMonths, &s.StartDate, &endDate, &s.Description); err == nil {
+				if endDate.Valid {
+					s.EndDate = &endDate.Time
+				}
+				sliceMap[vID] = append(sliceMap[vID], s)
+			}
+		}
+	}
+
 	var incomes []domain.Income
 	for rows.Next() {
 		var i domain.Income
@@ -56,8 +77,9 @@ func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 		var endDate sql.NullTime
 		var stopModID sql.NullString
 		var poolID sql.NullString
+		var incStartDate sql.NullTime
 
-		err := rows.Scan(&i.ID, &i.Name, &poolID, &i.CreatedAt, &v.ID, &v.Amount, &stopModID, &v.StartDate, &endDate, &v.IntervalMonths, &v.CreatedAt)
+		err := rows.Scan(&i.ID, &i.Name, &poolID, &i.CreatedAt, &v.ID, &v.Amount, &stopModID, &v.StartDate, &endDate, &v.IntervalMonths, &v.CreatedAt, &v.IntervalIncreasePercentage, &v.IntervalIncreaseMonths, &incStartDate)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +93,11 @@ func (r *IncomeRepository) List(userID string) ([]domain.Income, error) {
 		if endDate.Valid {
 			v.EndDate = &endDate.Time
 		}
+		if incStartDate.Valid {
+			v.IntervalIncreaseStartDate = &incStartDate.Time
+		}
 		v.IncomeID = i.ID
+		v.Slices = sliceMap[v.ID]
 		i.ActiveVersion = &v
 		i.UserID = userID
 
@@ -95,8 +121,18 @@ func (r *IncomeRepository) Save(userID string, income *domain.Income) error {
 	}
 	defer tx.Rollback()
 
-	if income.ID == "" {
-		income.ID = uuid.New().String()
+	var exists bool
+	if income.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM incomes WHERE id = ? AND user_id = ?", income.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if income.ID == "" {
+			income.ID = uuid.New().String()
+		}
 		_, err = tx.Exec("INSERT INTO incomes (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", income.ID, userID, income.Name, income.PoolID)
 	} else {
 		_, err = tx.Exec("UPDATE incomes SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", income.Name, income.PoolID, income.ID, userID)
@@ -124,11 +160,23 @@ func (r *IncomeRepository) Save(userID string, income *domain.Income) error {
 	v.ID = uuid.New().String()
 	v.IncomeID = income.ID
 	_, err = tx.Exec(`
-		INSERT INTO income_versions (id, income_id, amount, stop_modification_id, start_date, end_date, interval_months)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		v.ID, v.IncomeID, v.Amount, v.StopModificationID, v.StartDate, v.EndDate, v.IntervalMonths)
+		INSERT INTO income_versions (id, income_id, amount, stop_modification_id, start_date, end_date, interval_months, interval_increase_percentage, interval_increase_months, interval_increase_start_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.ID, v.IncomeID, v.Amount, v.StopModificationID, v.StartDate, v.EndDate, v.IntervalMonths, v.IntervalIncreasePercentage, v.IntervalIncreaseMonths, v.IntervalIncreaseStartDate)
 	if err != nil {
 		return err
+	}
+
+	// Save slices
+	for _, s := range v.Slices {
+		s.ID = uuid.New().String()
+		_, err = tx.Exec(`
+			INSERT INTO time_slices (id, version_id, entity_type, amount, interval_months, start_date, end_date, description)
+			VALUES (?, ?, 'INCOME', ?, ?, ?, ?, ?)`,
+			s.ID, v.ID, s.Value, s.IntervalMonths, s.StartDate, s.EndDate, s.Description)
+		if err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

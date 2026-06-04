@@ -78,6 +78,119 @@
     let showConfig = $state(false);
     let showScopeModal = $state(false);
 
+    function getAllEntities() {
+        return [
+            ...allIncomes.map((i) => ({
+                entityId: i.id,
+                entityType: "INCOME",
+                versionId: i.activeVersion?.id || "",
+            })),
+            ...allBills.map((i) => ({
+                entityId: i.id,
+                entityType: "BILL",
+                versionId: i.activeVersion?.id || "",
+            })),
+            ...allAssets.map((i) => ({
+                entityId: i.id,
+                entityType: "ASSET",
+                versionId: i.activeVersion?.id || "",
+            })),
+            ...allLoans.map((i) => ({
+                entityId: i.id,
+                entityType: "LOAN",
+                versionId: i.activeVersion?.id || "",
+            })),
+        ];
+    }
+
+    function toggleEntity(id: string, type: string, versionId: string) {
+        if (!activeScenario) return;
+
+        const isImplicitAll = activeScenario.entities.length === 0;
+        const isIncluded =
+            isImplicitAll ||
+            activeScenario.entities.some(
+                (e) => e.entityId === id && e.entityType === type,
+            );
+
+        if (isIncluded) {
+            // We want to EXCLUDE this entity
+            if (isImplicitAll) {
+                // Transition from Implicit All to Explicit All Minus This One
+                activeScenario.entities = getAllEntities().filter(
+                    (e) => !(e.entityId === id && e.entityType === type),
+                );
+            } else {
+                // Remove from explicit list
+                activeScenario.entities = activeScenario.entities.filter(
+                    (e) => !(e.entityId === id && e.entityType === type),
+                );
+                // If it's now empty, add dummy to prevent "Implicit All"
+                if (activeScenario.entities.length === 0) {
+                    activeScenario.entities = [
+                        {
+                            entityId: "00000000-0000-0000-0000-000000000000",
+                            entityType: "NONE",
+                            versionId: "",
+                        },
+                    ];
+                }
+            }
+        } else {
+            // We want to INCLUDE this entity
+            const filtered = activeScenario.entities.filter(
+                (e) => e.entityType !== "NONE",
+            );
+            activeScenario.entities = [
+                ...filtered,
+                { entityId: id, entityType: type, versionId: versionId },
+            ];
+            
+            // Optimization: if we now have EVERYTHING, we can revert to Implicit All
+            if (activeScenario.entities.length === getAllEntities().length) {
+                activeScenario.entities = [];
+            }
+        }
+    }
+
+    function selectAllOfType(type: string) {
+        if (!activeScenario) return;
+        const allOfType = (type === 'INCOME' ? allIncomes : type === 'BILL' ? allBills : type === 'ASSET' ? allAssets : allLoans).map(i => ({
+            entityId: i.id,
+            entityType: type,
+            versionId: i.activeVersion?.id || "",
+        }));
+
+        if (activeScenario.entities.length === 0) return; // Already implicit all
+
+        const otherEntities = activeScenario.entities.filter(e => e.entityType !== type && e.entityType !== "NONE");
+        activeScenario.entities = [...otherEntities, ...allOfType];
+        
+        if (activeScenario.entities.length === getAllEntities().length) {
+            activeScenario.entities = [];
+        }
+    }
+
+    function deselectAllOfType(type: string) {
+        if (!activeScenario) return;
+        if (activeScenario.entities.length === 0) {
+            // Transition from Implicit All to everything EXCEPT this type
+            activeScenario.entities = getAllEntities().filter(e => e.entityType !== type);
+        } else {
+            activeScenario.entities = activeScenario.entities.filter(e => e.entityType !== type);
+        }
+        
+        if (activeScenario.entities.length === 0) {
+            activeScenario.entities = [
+                {
+                    entityId: "00000000-0000-0000-0000-000000000000",
+                    entityType: "NONE",
+                    versionId: "",
+                },
+            ];
+        }
+    }
+
     let selectedMonthIndex = $state<number | null>(null);
 
     let scenarioToDelete = $state<string | null>(null);
@@ -291,8 +404,9 @@
                 const index = scenarios.findIndex((s) => s.id === saved.id);
                 if (index !== -1) {
                     scenarios[index] = saved;
+                    scenarios = [...scenarios];
                 } else {
-                    scenarios.push(saved);
+                    scenarios = [...scenarios, saved];
                 }
                 activeScenario = saved;
                 runProjection(saved);
@@ -346,7 +460,7 @@
             if (err) throw err;
 
             if (forked) {
-                scenarios.push(forked);
+                scenarios = [...scenarios, forked];
                 activeScenario = forked;
                 runProjection(forked);
             }
@@ -476,30 +590,49 @@
                     >
                     <div class="space-y-3">
                         {#each scenarios as s}
-                            <button
-                                onclick={() => {
-                                    activeScenario = s;
-                                    runProjection(s);
-                                }}
-                                class="w-full text-left p-4 rounded-2xl border transition-all relative overflow-hidden group
-                                    {activeScenario?.id === s.id
-                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl'
-                                    : 'bg-white border-slate-100 hover:border-indigo-200'}"
-                            >
-                                <h4 class="font-black text-sm tracking-tight">
-                                    {s.name}
-                                </h4>
-                                <div class="flex items-center gap-2 mt-2">
-                                    <span
-                                        class="text-[9px] font-black uppercase {activeScenario?.id ===
-                                        s.id
-                                            ? 'text-indigo-200'
-                                            : 'text-slate-400'}"
+                            <div class="relative group">
+                                <button
+                                    onclick={() => {
+                                        activeScenario = s;
+                                        runProjection(s);
+                                    }}
+                                    class="w-full text-left p-4 rounded-2xl border transition-all relative overflow-hidden
+                                        {activeScenario?.id === s.id
+                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl'
+                                        : 'bg-white border-slate-100 hover:border-indigo-200'}"
+                                >
+                                    <h4 class="font-black text-sm tracking-tight">
+                                        {s.name}
+                                    </h4>
+                                    <div class="flex items-center gap-2 mt-2">
+                                        <span
+                                            class="text-[9px] font-black uppercase {activeScenario?.id ===
+                                            s.id
+                                                ? 'text-indigo-200'
+                                                : 'text-slate-400'}"
+                                        >
+                                            {s.projectionMonths / 12} Years
+                                        </span>
+                                    </div>
+                                </button>
+
+                                <div class="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onclick={(e) => { e.stopPropagation(); forkScenario(s); }}
+                                        class="p-1.5 rounded-lg {activeScenario?.id === s.id ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}"
+                                        title="Fork"
                                     >
-                                        {s.projectionMonths / 12} Years
-                                    </span>
+                                        <Copy class="w-3.5 h-3.5" />
+                                    </button>
+                                    <button 
+                                        onclick={(e) => { e.stopPropagation(); scenarioToDelete = s.id; showDeleteConfirm = true; }}
+                                        class="p-1.5 rounded-lg {activeScenario?.id === s.id ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-600'}"
+                                        title="Delete"
+                                    >
+                                        <Trash2 class="w-3.5 h-3.5" />
+                                    </button>
                                 </div>
-                            </button>
+                            </div>
                         {/each}
                     </div>
                 </div>
@@ -559,6 +692,16 @@
                                  >
                                      Logic Scope
                                  </button>
+                                 {#if activeScenario.id}
+                                     <button
+                                         onclick={() => forkScenario(activeScenario)}
+                                         class="px-5 py-3 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all cursor-pointer flex items-center gap-2"
+                                         title="Fork Scenario"
+                                     >
+                                         <Copy class="w-4 h-4" />
+                                         Fork
+                                     </button>
+                                 {/if}
                                  <button
                                      onclick={saveScenario}
                                      disabled={isSaving}
@@ -1102,23 +1245,29 @@
                 <div class="space-y-8">
                     <!-- INCOMES -->
                     <div class="space-y-4">
-                        <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                             <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Incomes</span>
+                            <div class="flex gap-2">
+                                <button 
+                                    onclick={() => selectAllOfType('INCOME')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                                >
+                                    All
+                                </button>
+                                <span class="text-slate-300">/</span>
+                                <button 
+                                    onclick={() => deselectAllOfType('INCOME')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                    None
+                                </button>
+                            </div>
                         </div>
                         <div class="flex flex-wrap gap-2.5">
                             {#each allIncomes as inc}
-                                {@const isIncluded = activeScenario.entities.some(e => e.entityId === inc.id && e.entityType === 'INCOME')}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === inc.id && e.entityType === 'INCOME')}
                                 <button
-                                    onclick={() => {
-                                        if (isIncluded) {
-                                            activeScenario.entities = activeScenario.entities.filter(e => !(e.entityId === inc.id && e.entityType === 'INCOME'));
-                                        } else {
-                                            activeScenario.entities = [
-                                                ...activeScenario.entities,
-                                                { entityId: inc.id, entityType: 'INCOME', versionId: inc.activeVersion?.id || "" }
-                                            ];
-                                        }
-                                    }}
+                                    onclick={() => toggleEntity(inc.id, 'INCOME', inc.activeVersion?.id || "")}
                                     class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
                                         {isIncluded
                                         ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
@@ -1135,23 +1284,29 @@
 
                     <!-- BILLS -->
                     <div class="space-y-4">
-                        <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                             <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Bills</span>
+                            <div class="flex gap-2">
+                                <button 
+                                    onclick={() => selectAllOfType('BILL')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                                >
+                                    All
+                                </button>
+                                <span class="text-slate-300">/</span>
+                                <button 
+                                    onclick={() => deselectAllOfType('BILL')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                    None
+                                </button>
+                            </div>
                         </div>
                         <div class="flex flex-wrap gap-2.5">
                             {#each allBills as bill}
-                                {@const isIncluded = activeScenario.entities.some(e => e.entityId === bill.id && e.entityType === 'BILL')}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === bill.id && e.entityType === 'BILL')}
                                 <button
-                                    onclick={() => {
-                                        if (isIncluded) {
-                                            activeScenario.entities = activeScenario.entities.filter(e => !(e.entityId === bill.id && e.entityType === 'BILL'));
-                                        } else {
-                                            activeScenario.entities = [
-                                                ...activeScenario.entities,
-                                                { entityId: bill.id, entityType: 'BILL', versionId: bill.activeVersion?.id || "" }
-                                            ];
-                                        }
-                                    }}
+                                    onclick={() => toggleEntity(bill.id, 'BILL', bill.activeVersion?.id || "")}
                                     class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
                                         {isIncluded
                                         ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
@@ -1171,23 +1326,29 @@
                 <div class="space-y-8">
                     <!-- ASSETS -->
                     <div class="space-y-4">
-                        <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                             <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Assets</span>
+                            <div class="flex gap-2">
+                                <button 
+                                    onclick={() => selectAllOfType('ASSET')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                                >
+                                    All
+                                </button>
+                                <span class="text-slate-300">/</span>
+                                <button 
+                                    onclick={() => deselectAllOfType('ASSET')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                    None
+                                </button>
+                            </div>
                         </div>
                         <div class="flex flex-wrap gap-2.5">
                             {#each allAssets as asset}
-                                {@const isIncluded = activeScenario.entities.some(e => e.entityId === asset.id && e.entityType === 'ASSET')}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === asset.id && e.entityType === 'ASSET')}
                                 <button
-                                    onclick={() => {
-                                        if (isIncluded) {
-                                            activeScenario.entities = activeScenario.entities.filter(e => !(e.entityId === asset.id && e.entityType === 'ASSET'));
-                                        } else {
-                                            activeScenario.entities = [
-                                                ...activeScenario.entities,
-                                                { entityId: asset.id, entityType: 'ASSET', versionId: asset.activeVersion?.id || "" }
-                                            ];
-                                        }
-                                    }}
+                                    onclick={() => toggleEntity(asset.id, 'ASSET', asset.activeVersion?.id || "")}
                                     class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
                                         {isIncluded
                                         ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
@@ -1204,23 +1365,29 @@
 
                     <!-- LOANS -->
                     <div class="space-y-4">
-                        <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                             <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Loans</span>
+                            <div class="flex gap-2">
+                                <button 
+                                    onclick={() => selectAllOfType('LOAN')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                                >
+                                    All
+                                </button>
+                                <span class="text-slate-300">/</span>
+                                <button 
+                                    onclick={() => deselectAllOfType('LOAN')}
+                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                    None
+                                </button>
+                            </div>
                         </div>
                         <div class="flex flex-wrap gap-2.5">
                             {#each allLoans as loan}
-                                {@const isIncluded = activeScenario.entities.some(e => e.entityId === loan.id && e.entityType === 'LOAN')}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === loan.id && e.entityType === 'LOAN')}
                                 <button
-                                    onclick={() => {
-                                        if (isIncluded) {
-                                            activeScenario.entities = activeScenario.entities.filter(e => !(e.entityId === loan.id && e.entityType === 'LOAN'));
-                                        } else {
-                                            activeScenario.entities = [
-                                                ...activeScenario.entities,
-                                                { entityId: loan.id, entityType: 'LOAN', versionId: loan.activeVersion?.id || "" }
-                                            ];
-                                        }
-                                    }}
+                                    onclick={() => toggleEntity(loan.id, 'LOAN', loan.activeVersion?.id || "")}
                                     class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
                                         {isIncluded
                                         ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
@@ -1319,10 +1486,45 @@
             <!-- Footer Save/Close Actions -->
             <div class="mt-8 pt-4 border-t border-slate-100 flex justify-end">
                 <button
-                    onclick={() => showScopeModal = false}
+                    onclick={async () => {
+                        await saveScenario();
+                        showScopeModal = false;
+                    }}
                     class="btn-primary"
                 >
-                    Apply Scope Configuration
+                    Apply & Run Simulation
+                </button>
+            </div>
+        </div>
+    </div>
+{/if}
+
+{#if showDeleteConfirm}
+    <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" transition:fade>
+        <div class="glass-card max-w-md w-full p-8 space-y-6 shadow-2xl" transition:slide>
+            <div class="flex items-center gap-4 text-rose-600">
+                <div class="p-3 bg-rose-50 rounded-2xl">
+                    <AlertCircle class="w-6 h-6" />
+                </div>
+                <h3 class="text-xl font-black tracking-tight">Archive Scenario?</h3>
+            </div>
+            
+            <p class="text-slate-500 font-medium leading-relaxed">
+                This will move the scenario to the archive. You can restore it later if needed, but it will no longer appear in your active simulations registry.
+            </p>
+
+            <div class="flex gap-3">
+                <button
+                    onclick={() => { showDeleteConfirm = false; scenarioToDelete = null; }}
+                    class="flex-1 px-6 py-3 border border-slate-200 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-50 transition-all"
+                >
+                    Cancel
+                </button>
+                <button
+                    onclick={deleteScenario}
+                    class="flex-1 px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-rose-700 transition-all shadow-lg shadow-rose-200"
+                >
+                    Archive
                 </button>
             </div>
         </div>

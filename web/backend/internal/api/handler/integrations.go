@@ -335,11 +335,6 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			continue
 		}
 
-		poolID := ""
-		if tx.PoolID != nil {
-			poolID = *tx.PoolID
-		}
-
 		potentialLinkId := ""
 		if tx.LinkedTransactionID != nil {
 			potentialLinkId = *tx.LinkedTransactionID
@@ -349,7 +344,7 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			Id:                   tx.ID,
 			IntegrationId:        tx.IntegrationID,
 			AccountId:            tx.AccountID,
-			PoolId:               poolID,
+			PoolIds:              tx.PoolIDs,
 			Amount:               meta.Amount,
 			Receiver:             meta.Receiver,
 			ReceiverIban:         meta.ReceiverIBAN,
@@ -568,10 +563,8 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 							}
 						}
 
-						newPoolID, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, meta.Amount)
-						if newPoolID != nil {
-							t.repo.UpdatePool(userID, tx.ID, newPoolID)
-						}
+						newPoolIDs, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, meta.Amount)
+						t.repo.UpdatePools(userID, tx.ID, newPoolIDs)
 					}
 				}
 			}

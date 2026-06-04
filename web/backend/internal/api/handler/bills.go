@@ -118,6 +118,7 @@ func mapBillToProto(b domain.Bill) *apiproto.Bill {
 			StartDate:      b.ActiveVersion.StartDate.Format(time.RFC3339),
 			IntervalMonths: int32(b.ActiveVersion.IntervalMonths),
 			CreatedAt:      b.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Slices:         mapTimeSlicesToProto(b.ActiveVersion.Slices),
 		}
 		if b.ActiveVersion.EndDate != nil {
 			pb.ActiveVersion.EndDate = b.ActiveVersion.EndDate.Format(time.RFC3339)
@@ -135,6 +136,7 @@ func mapProtoToBillVersion(pv *apiproto.BillVersion) *domain.BillVersion {
 		BillID:         pv.BillId,
 		Amount:         pv.Amount,
 		IntervalMonths: int(pv.IntervalMonths),
+		Slices:         mapProtoToTimeSlices(pv.Slices),
 	}
 	if pv.StartDate != "" {
 		if t, err := time.Parse(time.RFC3339, pv.StartDate); err == nil {
@@ -147,4 +149,46 @@ func mapProtoToBillVersion(pv *apiproto.BillVersion) *domain.BillVersion {
 		}
 	}
 	return dbv
+}
+
+func mapTimeSlicesToProto(slices []domain.TimeSlice) []*apiproto.TimeSlice {
+	var pbs []*apiproto.TimeSlice
+	for _, s := range slices {
+		pb := &apiproto.TimeSlice{
+			Id:             s.ID,
+			Amount:         s.Value,
+			IntervalMonths: int32(s.IntervalMonths),
+			StartDate:      s.StartDate.Format(time.RFC3339),
+			Description:    s.Description,
+		}
+		if s.EndDate != nil {
+			pb.EndDate = s.EndDate.Format(time.RFC3339)
+		}
+		pbs = append(pbs, pb)
+	}
+	return pbs
+}
+
+func mapProtoToTimeSlices(pbs []*apiproto.TimeSlice) []domain.TimeSlice {
+	var slices []domain.TimeSlice
+	for _, pb := range pbs {
+		s := domain.TimeSlice{
+			ID:             pb.Id,
+			Value:          pb.Amount,
+			IntervalMonths: int(pb.IntervalMonths),
+			Description:    pb.Description,
+		}
+		if pb.StartDate != "" {
+			if t, err := time.Parse(time.RFC3339, pb.StartDate); err == nil {
+				s.StartDate = t
+			}
+		}
+		if pb.EndDate != "" {
+			if t, err := time.Parse(time.RFC3339, pb.EndDate); err == nil {
+				s.EndDate = &t
+			}
+		}
+		slices = append(slices, s)
+	}
+	return slices
 }

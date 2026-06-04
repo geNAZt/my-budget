@@ -36,13 +36,30 @@
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
+    import TimeSliceManager from "$lib/components/TimeSliceManager.svelte";
+
+    interface TimeSlice {
+        id?: string;
+        amount: number;
+        intervalMonths: number;
+        startDate: string;
+        endDate: string | null;
+        description: string;
+    }
 
     interface IncomeVersion {
+        id?: string;
+        incomeId?: string;
         amount: number;
         stopModificationId: string | null;
         startDate: string;
         endDate: string | null;
         intervalMonths: number;
+        createdAt?: string;
+        slices: TimeSlice[];
+        intervalIncreasePercentage: number;
+        intervalIncreaseMonths: number;
+        intervalIncreaseStartDate: string | null;
     }
 
     interface Income {
@@ -109,6 +126,10 @@
                 startDate: monthStr,
                 endDate: null,
                 intervalMonths: 1,
+                slices: [],
+                intervalIncreasePercentage: 0,
+                intervalIncreaseMonths: 0,
+                intervalIncreaseStartDate: null,
             },
             linkToScenarios: [],
         };
@@ -153,7 +174,7 @@
     }
 
     async function saveIncome() {
-        if (!currentIncome.name) return;
+        if (!currentIncome.name || !currentIncome.activeVersion) return;
         isSaving = true;
         try {
             currentIncome.activeVersion.amount = parseGermanAmount(amountInput);
@@ -177,6 +198,25 @@
                         intervalMonths:
                             currentIncome.activeVersion.intervalMonths || 1,
                         createdAt: currentIncome.activeVersion.createdAt || "",
+                        slices: (currentIncome.activeVersion.slices || []).map(
+                            (s) => ({
+                                id: s.id || "",
+                                amount: s.amount,
+                                intervalMonths: s.intervalMonths,
+                                startDate: s.startDate,
+                                endDate: s.endDate || "",
+                                description: s.description,
+                            }),
+                        ),
+                        intervalIncreasePercentage:
+                            currentIncome.activeVersion
+                                .intervalIncreasePercentage || 0,
+                        intervalIncreaseMonths:
+                            currentIncome.activeVersion
+                                .intervalIncreaseMonths || 0,
+                        intervalIncreaseStartDate:
+                            currentIncome.activeVersion
+                                .intervalIncreaseStartDate || "",
                     },
                     linkToScenarios: currentIncome.linkToScenarios || [],
                 },
@@ -201,7 +241,19 @@
                 startDate: new Date().toISOString(),
                 endDate: null,
                 intervalMonths: 1,
+                slices: [],
+                intervalIncreasePercentage: 0,
+                intervalIncreaseMonths: 0,
+                intervalIncreaseStartDate: null,
             };
+        }
+        if (!currentIncome.activeVersion.slices) {
+            currentIncome.activeVersion.slices = [];
+        }
+        if (currentIncome.activeVersion.intervalIncreasePercentage === undefined) {
+            currentIncome.activeVersion.intervalIncreasePercentage = 0;
+            currentIncome.activeVersion.intervalIncreaseMonths = 0;
+            currentIncome.activeVersion.intervalIncreaseStartDate = null;
         }
         amountInput = formatGermanAmount(currentIncome.activeVersion.amount);
         showAddModal = true;
@@ -498,148 +550,220 @@
                     }}
                     class="space-y-8"
                 >
-                    <div class="space-y-6">
+                    {#if currentIncome.activeVersion}
+                        <div class="space-y-6">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-2">
+                                    <label
+                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                        >Label</label
+                                    >
+                                    <input
+                                        bind:value={currentIncome.name}
+                                        placeholder="e.g. Primary Salary"
+                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
+                                        required
+                                    />
+                                </div>
+                                <SearchableMultiSelect
+                                    label="Planned Account Link"
+                                    options={virtualAccountMultiOptions}
+                                    bind:values={currentIncome.accountIds}
+                                    placeholder="Select accounts..."
+                                />
+                            </div>
+                            <div class="grid grid-cols-2 gap-6">
+                                <SearchableDropdown
+                                    label="Realtime Pool Link"
+                                    options={poolOptions}
+                                    bind:value={currentIncome.poolId}
+                                    placeholder="None / Uncategorized"
+                                />
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-2 gap-6">
                             <div class="space-y-2">
                                 <label
                                     class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Label</label
+                                    >Amount (€)</label
+                                >
+                                <div class="relative">
+                                    <div
+                                        class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
+                                    >
+                                        <Euro class="w-4 h-4 text-slate-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        bind:value={amountInput}
+                                        placeholder="1.234,56"
+                                        class="block w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label
+                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                    >Interval</label
+                                >
+                                <select
+                                    bind:value={currentIncome.activeVersion
+                                        .intervalMonths}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer"
+                                >
+                                    <option value={1}>Monthly</option>
+                                    <option value={3}>Quarterly</option>
+                                    <option value={12}>Yearly</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div
+                            class="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm space-y-6"
+                        >
+                            <div class="flex items-center gap-3">
+                                <div class="p-2 bg-indigo-50 rounded-lg">
+                                    <Plus class="w-4 h-4 text-indigo-600" />
+                                </div>
+                                <h4
+                                    class="text-sm font-black text-slate-900 uppercase tracking-widest"
+                                >
+                                    Interval Increase
+                                </h4>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-2">
+                                    <label
+                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                        >Increase (%)</label
+                                    >
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        bind:value={currentIncome.activeVersion
+                                            .intervalIncreasePercentage}
+                                        placeholder="e.g. 2.0"
+                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
+                                    />
+                                </div>
+                                <div class="space-y-2">
+                                    <label
+                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                        >Increase Interval (Months)</label
+                                    >
+                                    <input
+                                        type="number"
+                                        bind:value={currentIncome.activeVersion
+                                            .intervalIncreaseMonths}
+                                        placeholder="e.g. 12"
+                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <label
+                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                    >Increase Start Month</label
                                 >
                                 <input
-                                    bind:value={currentIncome.name}
-                                    placeholder="e.g. Primary Salary"
+                                    type="month"
+                                    value={toInputMonth(
+                                        currentIncome.activeVersion
+                                            .intervalIncreaseStartDate,
+                                    )}
+                                    oninput={(e: any) =>
+                                        (currentIncome.activeVersion.intervalIncreaseStartDate =
+                                            e.target.value
+                                                ? fromInputMonth(e.target.value)
+                                                : null)}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
+                                />
+                            </div>
+                        </div>
+
+                        <div
+                            class="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm space-y-4"
+                        >
+                            <div class="space-y-2">
+                                <label
+                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                    >Termination Trigger</label
+                                >
+                                <select
+                                    bind:value={currentIncome.activeVersion
+                                        .stopModificationId}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer"
+                                >
+                                    <option value={null}>None (Ongoing)</option>
+                                    {#each modifications.filter((m) => m.activeVersion.withdrawalPercentage > 0) as m}
+                                        <option value={m.id}
+                                            >{m.description} ({m.activeVersion
+                                                .withdrawalPercentage}%
+                                            Dynamic)</option
+                                        >
+                                    {/each}
+                                </select>
+                                <p
+                                    class="text-[9px] font-medium text-slate-500 ml-1"
+                                >
+                                    Automatically stop this income once the
+                                    selected modification triggers.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label
+                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                    >Start Month</label
+                                >
+                                <input
+                                    type="month"
+                                    value={toInputMonth(
+                                        currentIncome.activeVersion.startDate,
+                                    )}
+                                    oninput={(e: any) =>
+                                        (currentIncome.activeVersion.startDate =
+                                            fromInputMonth(e.target.value))}
                                     class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
                                     required
                                 />
                             </div>
-                            <SearchableMultiSelect
-                                label="Planned Account Link"
-                                options={virtualAccountMultiOptions}
-                                bind:values={currentIncome.accountIds}
-                                placeholder="Select accounts..."
-                            />
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <SearchableDropdown
-                                label="Realtime Pool Link"
-                                options={poolOptions}
-                                bind:value={currentIncome.poolId}
-                                placeholder="None / Uncategorized"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Amount (€)</label
-                            >
-                            <div class="relative">
-                                <div
-                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
+                            <div class="space-y-2">
+                                <label
+                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                                    >End Month (Optional)</label
                                 >
-                                    <Euro class="w-4 h-4 text-slate-400" />
-                                </div>
                                 <input
-                                    type="text"
-                                    bind:value={amountInput}
-                                    placeholder="1.234,56"
-                                    class="block w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                    required
+                                    type="month"
+                                    value={toInputMonth(
+                                        currentIncome.activeVersion.endDate,
+                                    )}
+                                    oninput={(e: any) =>
+                                        (currentIncome.activeVersion.endDate = e
+                                            .target.value
+                                            ? fromInputMonth(e.target.value)
+                                            : null)}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
                                 />
                             </div>
                         </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Interval</label
-                            >
-                            <select
-                                bind:value={
-                                    currentIncome.activeVersion.intervalMonths
-                                }
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                            >
-                                <option value={1}>Monthly</option>
-                                <option value={3}>Quarterly</option>
-                                <option value={12}>Yearly</option>
-                            </select>
-                        </div>
-                    </div>
 
-                    <div
-                        class="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm space-y-4"
-                    >
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Termination Trigger</label
-                            >
-                            <select
-                                bind:value={
-                                    currentIncome.activeVersion
-                                        .stopModificationId
-                                }
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                            >
-                                <option value={null}>None (Ongoing)</option>
-                                {#each modifications.filter((m) => m.activeVersion.withdrawalPercentage > 0) as m}
-                                    <option value={m.id}
-                                        >{m.description} ({m.activeVersion
-                                            .withdrawalPercentage}% Dynamic)</option
-                                    >
-                                {/each}
-                            </select>
-                            <p
-                                class="text-[9px] font-medium text-slate-500 ml-1"
-                            >
-                                Automatically stop this income once the selected
-                                modification triggers.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Start Month</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentIncome.activeVersion.startDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentIncome.activeVersion.startDate =
-                                        fromInputMonth(e.target.value))}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                required
+                        <div class="border-t border-slate-100 pt-8">
+                            <TimeSliceManager
+                                bind:slices={currentIncome.activeVersion.slices}
+                                label="Revenue Variations"
                             />
                         </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >End Month (Optional)</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentIncome.activeVersion.endDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentIncome.activeVersion.endDate = e
-                                        .target.value
-                                        ? fromInputMonth(e.target.value)
-                                        : null)}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                            />
-                        </div>
-                    </div>
+                    {/if}
 
                     <!-- Scenario Linker (New Entities Only) -->
-                    {#if !currentIncome.id && scenarios.length > 0}
+{#if !currentIncome.id && scenarios.length > 0}
                         <div class="space-y-4 pt-4 border-t border-slate-100">
                             <label
                                 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"

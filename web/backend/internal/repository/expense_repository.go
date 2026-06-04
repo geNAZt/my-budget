@@ -49,6 +49,27 @@ func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 		}
 	}
 
+	// Load all time slices for these versions
+	sliceMap := make(map[string][]domain.TimeSlice)
+	sliceRows, sliceErr := r.db.Query(`
+		SELECT id, version_id, amount, interval_months, start_date, end_date, description
+		FROM time_slices
+		WHERE entity_type = 'EXPENSE'`)
+	if sliceErr == nil {
+		defer sliceRows.Close()
+		for sliceRows.Next() {
+			var s domain.TimeSlice
+			var vID string
+			var endDate sql.NullTime
+			if err := sliceRows.Scan(&s.ID, &vID, &s.Value, &s.IntervalMonths, &s.StartDate, &endDate, &s.Description); err == nil {
+				if endDate.Valid {
+					s.EndDate = &endDate.Time
+				}
+				sliceMap[vID] = append(sliceMap[vID], s)
+			}
+		}
+	}
+
 	var expenses []domain.Expense
 	for rows.Next() {
 		var e domain.Expense
@@ -64,6 +85,7 @@ func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 			e.PoolID = &poolID.String
 		}
 		v.ExpenseID = e.ID
+		v.Slices = sliceMap[v.ID]
 		e.ActiveVersion = &v
 		e.UserID = userID
 
@@ -87,8 +109,18 @@ func (r *ExpenseRepository) Save(userID string, expense *domain.Expense) error {
 	}
 	defer tx.Rollback()
 
-	if expense.ID == "" {
-		expense.ID = uuid.New().String()
+	var exists bool
+	if expense.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM expenses WHERE id = ? AND user_id = ?", expense.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if expense.ID == "" {
+			expense.ID = uuid.New().String()
+		}
 		_, err = tx.Exec("INSERT INTO expenses (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", expense.ID, userID, expense.Name, expense.PoolID)
 	} else {
 		_, err = tx.Exec("UPDATE expenses SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", expense.Name, expense.PoolID, expense.ID, userID)
@@ -120,6 +152,18 @@ func (r *ExpenseRepository) Save(userID string, expense *domain.Expense) error {
 		v.ID, v.ExpenseID, v.Amount, v.DueDate)
 	if err != nil {
 		return err
+	}
+
+	// Save slices
+	for _, s := range v.Slices {
+		s.ID = uuid.New().String()
+		_, err = tx.Exec(`
+			INSERT INTO time_slices (id, version_id, entity_type, amount, interval_months, start_date, end_date, description)
+			VALUES (?, ?, 'EXPENSE', ?, ?, ?, ?, ?)`,
+			s.ID, v.ID, s.Value, s.IntervalMonths, s.StartDate, s.EndDate, s.Description)
+		if err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

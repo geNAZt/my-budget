@@ -49,6 +49,27 @@ func (r *BillRepository) List(userID string) ([]domain.Bill, error) {
 		}
 	}
 
+	// Load all time slices for these versions
+	sliceMap := make(map[string][]domain.TimeSlice)
+	sliceRows, sliceErr := r.db.Query(`
+		SELECT id, version_id, amount, interval_months, start_date, end_date, description
+		FROM time_slices
+		WHERE entity_type = 'BILL'`)
+	if sliceErr == nil {
+		defer sliceRows.Close()
+		for sliceRows.Next() {
+			var s domain.TimeSlice
+			var vID string
+			var endDate sql.NullTime
+			if err := sliceRows.Scan(&s.ID, &vID, &s.Value, &s.IntervalMonths, &s.StartDate, &endDate, &s.Description); err == nil {
+				if endDate.Valid {
+					s.EndDate = &endDate.Time
+				}
+				sliceMap[vID] = append(sliceMap[vID], s)
+			}
+		}
+	}
+
 	var bills []domain.Bill
 	for rows.Next() {
 		var b domain.Bill
@@ -68,6 +89,7 @@ func (r *BillRepository) List(userID string) ([]domain.Bill, error) {
 			v.EndDate = &endDate.Time
 		}
 		v.BillID = b.ID
+		v.Slices = sliceMap[v.ID]
 		b.ActiveVersion = &v
 		b.UserID = userID
 
@@ -91,8 +113,18 @@ func (r *BillRepository) Save(userID string, bill *domain.Bill) error {
 	}
 	defer tx.Rollback()
 
-	if bill.ID == "" {
-		bill.ID = uuid.New().String()
+	var exists bool
+	if bill.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM bills WHERE id = ? AND user_id = ?", bill.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if bill.ID == "" {
+			bill.ID = uuid.New().String()
+		}
 		_, err = tx.Exec("INSERT INTO bills (id, user_id, name, pool_id) VALUES (?, ?, ?, ?)", bill.ID, userID, bill.Name, bill.PoolID)
 	} else {
 		_, err = tx.Exec("UPDATE bills SET name = ?, pool_id = ? WHERE id = ? AND user_id = ?", bill.Name, bill.PoolID, bill.ID, userID)
@@ -125,6 +157,18 @@ func (r *BillRepository) Save(userID string, bill *domain.Bill) error {
 		v.ID, v.BillID, v.Amount, v.StartDate, v.EndDate, v.IntervalMonths)
 	if err != nil {
 		return err
+	}
+
+	// Save slices
+	for _, s := range v.Slices {
+		s.ID = uuid.New().String()
+		_, err = tx.Exec(`
+			INSERT INTO time_slices (id, version_id, entity_type, amount, interval_months, start_date, end_date, description)
+			VALUES (?, ?, 'BILL', ?, ?, ?, ?, ?)`,
+			s.ID, v.ID, s.Value, s.IntervalMonths, s.StartDate, s.EndDate, s.Description)
+		if err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

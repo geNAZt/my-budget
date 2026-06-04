@@ -18,8 +18,8 @@ func NewRuleService(repo *repository.RuleRepository) *RuleService {
 	return &RuleService{repo: repo}
 }
 
-// ProcessTransaction matches a single transaction against all applicable rules and returns the target pool ID
-func (s *RuleService) ProcessTransaction(userID string, integrationID string, receiver string, description string, tags string, accountTags string, amount float64) (*string, error) {
+// ProcessTransaction matches a single transaction against all applicable rules and returns the target pool IDs
+func (s *RuleService) ProcessTransaction(userID string, integrationID string, receiver string, description string, tags string, accountTags string, amount float64) ([]string, error) {
 
 	rules, err := s.repo.ListRules(userID)
 	if err != nil {
@@ -31,13 +31,19 @@ func (s *RuleService) ProcessTransaction(userID string, integrationID string, re
 		return rules[i].Priority > rules[j].Priority
 	})
 
+	var matchedPools []string
+	seenPools := make(map[string]bool)
+
 	for _, rule := range rules {
 		if s.evaluateRule(rule, integrationID, receiver, description, tags, accountTags, amount) {
-			return rule.TargetPoolID, nil
+			if rule.TargetPoolID != nil && *rule.TargetPoolID != "" && !seenPools[*rule.TargetPoolID] {
+				matchedPools = append(matchedPools, *rule.TargetPoolID)
+				seenPools[*rule.TargetPoolID] = true
+			}
 		}
 	}
 
-	return nil, nil
+	return matchedPools, nil
 }
 
 func (s *RuleService) evaluateRule(rule domain.TransactionRule, integrationID string, receiver string, description string, tags string, accountTags string, amount float64) bool {

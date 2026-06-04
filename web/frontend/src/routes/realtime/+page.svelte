@@ -57,6 +57,7 @@
     import { fade, slide } from "svelte/transition";
     import BudgetSheet from "$lib/components/BudgetSheet.svelte";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
+    import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
     import RuleArchitect from "./RuleArchitect.svelte";
     import IntegrationWizard from "./IntegrationWizard.svelte";
     import ChainAccountEditor from "./ChainAccountEditor.svelte";
@@ -188,9 +189,9 @@
 
         if (selectedPoolIDs.length > 0) {
             list = list.filter((t) => {
-                if (selectedPoolIDs.includes("uncategorized") && !t.poolId)
+                if (selectedPoolIDs.includes("uncategorized") && (!t.poolIds || t.poolIds.length === 0))
                     return true;
-                return selectedPoolIDs.includes(t.poolId);
+                return t.poolIds?.some((pID: string) => selectedPoolIDs.includes(pID));
             });
         }
 
@@ -231,7 +232,7 @@
         }
 
         if (showUnmatchedOnly) {
-            list = list.filter((t) => !t.poolId);
+            list = list.filter((t) => !t.poolIds || t.poolIds.length === 0);
         }
 
         if (showDuplicatesOnly) {
@@ -262,15 +263,19 @@
         > = {};
 
         filteredTransactions.forEach((t) => {
-            const pool = pools.find((p) => p.id === t.poolId);
-            const name = pool?.name || "Uncategorized";
-            const color = pool?.color || "#cbd5e1";
+            const pIDs = t.poolIds && t.poolIds.length > 0 ? t.poolIds : [null];
+            
+            pIDs.forEach((pID: string | null) => {
+                const pool = pID ? pools.find((p) => p.id === pID) : null;
+                const name = pool?.name || "Uncategorized";
+                const color = pool?.color || "#cbd5e1";
 
-            if (!groups[name]) {
-                groups[name] = { name, color, total: 0, count: 0 };
-            }
-            groups[name].total += getTxAmount(t);
-            groups[name].count++;
+                if (!groups[name]) {
+                    groups[name] = { name, color, total: 0, count: 0 };
+                }
+                groups[name].total += getTxAmount(t);
+                groups[name].count++;
+            });
         });
 
         return Object.values(groups).sort((a, b) => b.total - a.total);
@@ -594,6 +599,13 @@
         return mappedAccounts[id]?.name || "";
     }
 
+    const poolOptions = $derived(
+        (pools || []).map((p) => ({
+            id: p.id,
+            label: p.name,
+        })),
+    );
+
     function openTransactionEdit(tx: any) {
         transactionToEdit = decode(tx);
         editTagsInput = tx.tags || "";
@@ -622,6 +634,7 @@
                     sourceAccountId: transactionToEdit.sourceAccountId || "",
                     destinationAccountId:
                         transactionToEdit.destinationAccountId || "",
+                    poolIds: transactionToEdit.poolIds || [],
                 },
                 [ErrorSchema],
             ).one();
@@ -704,6 +717,7 @@
                     sourceAccountId: transactionToEdit.sourceAccountId || "",
                     destinationAccountId:
                         transactionToEdit.destinationAccountId || "",
+                    poolIds: transactionToEdit.poolIds || [],
                 },
                 [ErrorSchema],
             ).one();
@@ -1549,9 +1563,6 @@
                                     </div>
                                 {/if}
 
-                                {@const pool = (pools || []).find(
-                                    (p) => p.id === tx.poolId,
-                                )}
                                 {@const isHovered = tx.id === hoveredTxId}
                                 {@const isLinkTarget =
                                     tx.id === hoveredTargetId}
@@ -1628,11 +1639,20 @@
                                             >
                                                 {getTxDescription(tx)}
                                             </h4>
-                                            {#if pool}<span
-                                                    class="px-2 py-0.5 text-[8px] font-black rounded-lg uppercase"
-                                                    style="background: {pool.color}15; color: {pool.color}"
-                                                    >{pool.name}</span
-                                                >{/if}
+                                            {#if tx.poolIds && tx.poolIds.length > 0}
+                                                <div class="flex gap-1.5 flex-wrap">
+                                                    {#each tx.poolIds as pID}
+                                                        {@const pool = pools.find((p) => p.id === pID)}
+                                                        {#if pool}
+                                                            <span
+                                                                class="px-2 py-0.5 text-[8px] font-black rounded-lg uppercase"
+                                                                style="background: {pool.color}15; color: {pool.color}"
+                                                                >{pool.name}</span
+                                                            >
+                                                        {/if}
+                                                    {/each}
+                                                </div>
+                                            {/if}
                                             {#if tx.tags}
                                                 {#each tx.tags.split(",") as tag}
                                                     {#if tag.trim()}
@@ -2181,28 +2201,37 @@
                     </div>
                 </div>
 
-                <div
-                    class="p-6 bg-white rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm"
-                >
-                    <div class="space-y-1">
-                        <span
-                            class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >Anchored Integration Node</span
-                        >
-                        <p
-                            class="text-xs font-black text-slate-900 uppercase tracking-[0.1em]"
-                        >
-                            {integrations.find(
-                                (i) =>
-                                    i.integrationId ===
-                                    transactionToEdit.integrationId,
-                            )?.integrationName || "Unknown Integration"}
-                        </p>
-                    </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <SearchableMultiSelect
+                        label="Assigned Pools"
+                        options={poolOptions}
+                        bind:values={transactionToEdit.poolIds}
+                        placeholder="Select pools..."
+                    />
+
                     <div
-                        class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 text-slate-400 group-hover:text-indigo-500 transition-colors"
+                        class="p-6 bg-white rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm"
                     >
-                        <ShieldCheck class="w-5 h-5" />
+                        <div class="space-y-1">
+                            <span
+                                class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
+                                >Anchored Integration Node</span
+                            >
+                            <p
+                                class="text-xs font-black text-slate-900 uppercase tracking-[0.1em]"
+                            >
+                                {integrations.find(
+                                    (i) =>
+                                        i.integrationId ===
+                                        transactionToEdit.integrationId,
+                                )?.integrationName || "Unknown Integration"}
+                            </p>
+                        </div>
+                        <div
+                            class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 text-slate-400 group-hover:text-indigo-500 transition-colors"
+                        >
+                            <ShieldCheck class="w-5 h-5" />
+                        </div>
                     </div>
                 </div>
 

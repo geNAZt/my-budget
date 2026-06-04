@@ -44,12 +44,26 @@
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
+    import TimeSliceManager from "$lib/components/TimeSliceManager.svelte";
+
+    interface TimeSlice {
+        id?: string;
+        amount: number;
+        intervalMonths: number;
+        startDate: string;
+        endDate: string | null;
+        description: string;
+    }
 
     interface BillVersion {
+        id?: string;
+        billId?: string;
         amount: number;
         startDate: string;
         endDate: string | null;
         intervalMonths: number;
+        createdAt?: string;
+        slices: TimeSlice[];
     }
 
     interface Bill {
@@ -110,6 +124,7 @@
                 startDate: monthStr,
                 endDate: null,
                 intervalMonths: 1,
+                slices: [],
             },
         };
     }
@@ -165,6 +180,16 @@
                         intervalMonths:
                             currentBill.activeVersion.intervalMonths || 1,
                         createdAt: currentBill.activeVersion.createdAt || "",
+                        slices: (currentBill.activeVersion.slices || []).map(
+                            (s) => ({
+                                id: s.id || "",
+                                amount: s.amount,
+                                intervalMonths: s.intervalMonths,
+                                startDate: s.startDate,
+                                endDate: s.endDate || "",
+                                description: s.description,
+                            }),
+                        ),
                     },
                     linkToScenarios: currentBill.linkToScenarios || [],
                 },
@@ -188,7 +213,11 @@
                 startDate: new Date().toISOString(),
                 endDate: null,
                 intervalMonths: 1,
+                slices: [],
             };
+        }
+        if (!currentBill.activeVersion.slices) {
+            currentBill.activeVersion.slices = [];
         }
         amountInput = formatGermanAmount(currentBill.activeVersion.amount);
         showAddModal = true;
@@ -572,6 +601,13 @@
                                 class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all font-bold"
                             />
                         </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-8">
+                        <TimeSliceManager
+                            bind:slices={currentBill.activeVersion.slices}
+                            label="Contractual Variations"
+                        />
                     </div>
 
                     <div class="pt-6">

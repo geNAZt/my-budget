@@ -116,6 +116,7 @@ func mapExpenseToProto(e domain.Expense) *apiproto.Expense {
 			Amount:    e.ActiveVersion.Amount,
 			DueDate:   e.ActiveVersion.DueDate.Format(time.RFC3339),
 			CreatedAt: e.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Slices:    mapTimeSlicesToProto(e.ActiveVersion.Slices),
 		}
 	}
 	return pe
@@ -129,6 +130,7 @@ func mapProtoToExpenseVersion(pe *apiproto.ExpenseVersion) *domain.ExpenseVersio
 		ID:        pe.Id,
 		ExpenseID: pe.ExpenseId,
 		Amount:    pe.Amount,
+		Slices:    mapProtoToTimeSlices(pe.Slices),
 	}
 	if pe.DueDate != "" {
 		if t, err := time.Parse(time.RFC3339, pe.DueDate); err == nil {

@@ -264,7 +264,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					accountTags = meta.Tags
 				}
 
-				poolID, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -289,7 +289,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					AccountID:            "T212_PORTFOLIO",
 					SourceAccountID:      sourceAcc,
 					DestinationAccountID: destAcc,
-					PoolID:               poolID,
+					PoolIDs:              poolIDs,
 					ExternalID:           externalID,
 					EncryptedData:        base64.StdEncoding.EncodeToString(encryptedData),
 					CorrelationID:        correlationID,
@@ -376,7 +376,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 						accountTags = meta.Tags
 					}
 
-					poolID, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, changeAmount)
+					poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, changeAmount)
 
 					// Generate a stable and completely unique ExternalID for this specific change event
 					externalID := fmt.Sprintf("T212_PORT_CHG_%s_%d", ticker, now.UnixNano())
@@ -405,7 +405,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 						AccountID:            "T212_PORTFOLIO",
 						SourceAccountID:      sourceAcc,
 						DestinationAccountID: destAcc,
-						PoolID:               poolID,
+						PoolIDs:              poolIDs,
 						ExternalID:           externalID,
 						EncryptedData:        base64.StdEncoding.EncodeToString(encryptedData),
 						CorrelationID:        correlationID,
@@ -499,7 +499,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				h.Write([]byte(uniquePayload))
 				externalID := fmt.Sprintf("T212_PENDING_%s", hex.EncodeToString(h.Sum(nil)))
 
-				poolID, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -517,7 +517,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					AccountID:            "T212_CASH",
 					SourceAccountID:      "T212_CASH",
 					DestinationAccountID: "",
-					PoolID:               poolID,
+					PoolIDs:              poolIDs,
 					ExternalID:           externalID,
 					EncryptedData:        base64.StdEncoding.EncodeToString(encryptedData),
 					CorrelationID:        correlationID,

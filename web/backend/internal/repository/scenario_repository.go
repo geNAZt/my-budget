@@ -105,8 +105,18 @@ func (r *ScenarioRepository) Save(userID string, s *domain.Scenario) error {
 	remainderOrderStr, _ := db.Marshal(s.RemainderOrder)
 	etfParamsStr, _ := db.Marshal(s.ETFParams)
 
-	if s.ID == "" {
-		s.ID = uuid.New().String()
+	var exists bool
+	if s.ID != "" {
+		err = tx.QueryRow("SELECT 1 FROM scenarios WHERE id = ? AND user_id = ?", s.ID, userID).Scan(&exists)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+	}
+
+	if !exists {
+		if s.ID == "" {
+			s.ID = uuid.New().String()
+		}
 		_, err = tx.Exec(`
 			INSERT INTO scenarios (id, user_id, name, description, projection_months, is_active, remainder_order_json, simulations, sim_years, sim_percent, start_date, etf_params_json, lookback_years, passive_income_percentage, mc_implementation, month_start_day)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

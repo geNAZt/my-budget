@@ -26,4 +26,5 @@ type BillVersion struct {
 	EndDate        *time.Time
 	IntervalMonths int
 	CreatedAt      time.Time
+	Slices         []TimeSlice
 }
