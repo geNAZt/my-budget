@@ -91,6 +91,14 @@ func (sc *Scenarios) Save(s *api.WebsocketSession, reqID string, reqObj *apiprot
 		}
 	}
 
+	for _, e := range reqObj.Entities {
+		domainObj.Entities = append(domainObj.Entities, domain.ScenarioEntity{
+			EntityID:   e.EntityId,
+			EntityType: e.EntityType,
+			VersionID:  e.VersionId,
+		})
+	}
+
 	if err := sc.scenarios.Save(userID, &domainObj); err != nil {
 		sc.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return

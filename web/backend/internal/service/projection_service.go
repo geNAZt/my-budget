@@ -1213,8 +1213,21 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		}
 
 		if len(a.ActiveVersion.SubAssets) > 0 {
-			state.subAssets = make([]*subAssetState, len(a.ActiveVersion.SubAssets))
-			for idx, sa := range a.ActiveVersion.SubAssets {
+			specificSubAssets := make(map[string]bool)
+			hasSubAssetFilter := false
+			for _, e := range scenario.Entities {
+				if e.EntityType == "SUB_ASSET" {
+					specificSubAssets[e.EntityID] = true
+					hasSubAssetFilter = true
+				}
+			}
+
+			state.subAssets = make([]*subAssetState, 0)
+			for _, sa := range a.ActiveVersion.SubAssets {
+				if hasSubAssetFilter && !specificSubAssets[sa.ID] {
+					continue
+				}
+
 				saRate := sa.AmountPerMonth
 				if saRate <= 0 && sa.EndDate != nil {
 					interestRateUsed := a.ActiveVersion.InterestRate
@@ -1223,19 +1236,19 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					}
 					saRate = s.calculateSubAssetRequiredRate(sa, interestRateUsed, loans)
 				}
-				state.subAssets[idx] = &subAssetState{
+				state.subAssets = append(state.subAssets, &subAssetState{
 					id:                  sa.ID,
 					name:                sa.Name,
 					currentBalance:      0,
 					targetValue:         sa.TargetValue,
-					amountPerMonth:      sa.AmountPerMonth,
+					amountPerMonth:      saRate,
 					isRemainderConsumer: sa.IsRemainderConsumer,
 					remainderStartDate:  sa.RemainderStartDate,
 					dumpingLoanID:       sa.DumpingLoanID,
 					startDate:           sa.StartDate,
 					endDate:             sa.EndDate,
 					earliestDumpDate:    sa.EarliestDumpDate,
-				}
+				})
 			}
 		}
 		log.Printf("[PROJECTION] Asset: %s, Target: %s, DumpingLoan: %v, Rate: %.2f", a.Name, a.ActiveVersion.TargetValue, a.ActiveVersion.DumpingLoanID, a.ActiveVersion.AmountPerMonth)

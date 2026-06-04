@@ -73,34 +73,48 @@
     let activeScenario = $state<Scenario | null>(null);
     let isLoading = $state(true);
     let isSaving = $state(false);
-    let projectionResult = $state<any>({ months: [], simulated_yields: {} });
+    let projectionResult = $state<any>({ months: [], simulatedYields: {} });
     let isProjecting = $state(false);
     let showConfig = $state(false);
     let showScopeModal = $state(false);
+    let scopeTab = $state<"INCOME" | "BILL" | "ASSET" | "LOAN" | "WATERFALL">("INCOME");
 
     function getAllEntities() {
-        return [
+        const entities = [
             ...allIncomes.map((i) => ({
-                entityId: i.id,
+                entityId: getID(i),
                 entityType: "INCOME",
-                versionId: i.activeVersion?.id || "",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
             ...allBills.map((i) => ({
-                entityId: i.id,
+                entityId: getID(i),
                 entityType: "BILL",
-                versionId: i.activeVersion?.id || "",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
             ...allAssets.map((i) => ({
-                entityId: i.id,
+                entityId: getID(i),
                 entityType: "ASSET",
-                versionId: i.activeVersion?.id || "",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
             ...allLoans.map((i) => ({
-                entityId: i.id,
+                entityId: getID(i),
                 entityType: "LOAN",
-                versionId: i.activeVersion?.id || "",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
         ];
+
+        allAssets.forEach((a) => {
+            const subAssets = getSubAssets(a);
+            subAssets.forEach((sa: any) => {
+                entities.push({
+                    entityId: getID(sa),
+                    entityType: "SUB_ASSET",
+                    versionId: "",
+                });
+            });
+        });
+
+        return entities;
     }
 
     function toggleEntity(id: string, type: string, versionId: string) {
@@ -113,17 +127,34 @@
                 (e) => e.entityId === id && e.entityType === type,
             );
 
+        let entitiesToToggle = [{ entityId: id, entityType: type, versionId: versionId }];
+        
+        // If it's an asset, also toggle all its sub-assets for consistency
+        if (type === 'ASSET') {
+            const asset = allAssets.find(a => getID(a) === id);
+            const subAssets = getSubAssets(asset);
+            subAssets.forEach((sa: any) => {
+                entitiesToToggle.push({
+                    entityId: getID(sa),
+                    entityType: 'SUB_ASSET',
+                    versionId: ""
+                });
+            });
+        }
+
         if (isIncluded) {
-            // We want to EXCLUDE this entity
+            // We want to EXCLUDE these entities
             if (isImplicitAll) {
-                // Transition from Implicit All to Explicit All Minus This One
+                // Transition from Implicit All to Explicit All Minus These
+                const toExclude = new Set(entitiesToToggle.map(e => e.entityId));
                 activeScenario.entities = getAllEntities().filter(
-                    (e) => !(e.entityId === id && e.entityType === type),
+                    (e) => !toExclude.has(e.entityId),
                 );
             } else {
                 // Remove from explicit list
+                const toExclude = new Set(entitiesToToggle.map(e => e.entityId));
                 activeScenario.entities = activeScenario.entities.filter(
-                    (e) => !(e.entityId === id && e.entityType === type),
+                    (e) => !toExclude.has(e.entityId),
                 );
                 // If it's now empty, add dummy to prevent "Implicit All"
                 if (activeScenario.entities.length === 0) {
@@ -137,13 +168,18 @@
                 }
             }
         } else {
-            // We want to INCLUDE this entity
+            // We want to INCLUDE these entities
             const filtered = activeScenario.entities.filter(
                 (e) => e.entityType !== "NONE",
             );
+            
+            // Avoid duplicates
+            const currentIds = new Set(filtered.map(e => e.entityId));
+            const newEntries = entitiesToToggle.filter(e => !currentIds.has(e.entityId));
+
             activeScenario.entities = [
                 ...filtered,
-                { entityId: id, entityType: type, versionId: versionId },
+                ...newEntries
             ];
             
             // Optimization: if we now have EVERYTHING, we can revert to Implicit All
@@ -155,16 +191,36 @@
 
     function selectAllOfType(type: string) {
         if (!activeScenario) return;
-        const allOfType = (type === 'INCOME' ? allIncomes : type === 'BILL' ? allBills : type === 'ASSET' ? allAssets : allLoans).map(i => ({
-            entityId: i.id,
-            entityType: type,
-            versionId: i.activeVersion?.id || "",
-        }));
+        
+        const entitiesToAdd: any[] = [];
+        const items = type === 'INCOME' ? allIncomes : type === 'BILL' ? allBills : type === 'ASSET' ? allAssets : allLoans;
+        
+        items.forEach(i => {
+            entitiesToAdd.push({
+                entityId: i.id,
+                entityType: type,
+                versionId: getActiveVersion(i)?.id || "",
+            });
+            
+            if (type === 'ASSET') {
+                const subAssets = getSubAssets(i);
+                subAssets.forEach((sa: any) => {
+                    entitiesToAdd.push({
+                        entityId: sa.id,
+                        entityType: "SUB_ASSET",
+                        versionId: "",
+                    });
+                });
+            }
+        });
 
         if (activeScenario.entities.length === 0) return; // Already implicit all
 
-        const otherEntities = activeScenario.entities.filter(e => e.entityType !== type && e.entityType !== "NONE");
-        activeScenario.entities = [...otherEntities, ...allOfType];
+        const typesToRemove = [type];
+        if (type === 'ASSET') typesToRemove.push('SUB_ASSET');
+
+        const otherEntities = activeScenario.entities.filter(e => !typesToRemove.includes(e.entityType) && e.entityType !== "NONE");
+        activeScenario.entities = [...otherEntities, ...entitiesToAdd];
         
         if (activeScenario.entities.length === getAllEntities().length) {
             activeScenario.entities = [];
@@ -173,11 +229,15 @@
 
     function deselectAllOfType(type: string) {
         if (!activeScenario) return;
+        
+        const typesToRemove = [type];
+        if (type === 'ASSET') typesToRemove.push('SUB_ASSET');
+
         if (activeScenario.entities.length === 0) {
             // Transition from Implicit All to everything EXCEPT this type
-            activeScenario.entities = getAllEntities().filter(e => e.entityType !== type);
+            activeScenario.entities = getAllEntities().filter(e => !typesToRemove.includes(e.entityType));
         } else {
-            activeScenario.entities = activeScenario.entities.filter(e => e.entityType !== type);
+            activeScenario.entities = activeScenario.entities.filter(e => !typesToRemove.includes(e.entityType));
         }
         
         if (activeScenario.entities.length === 0) {
@@ -192,6 +252,23 @@
     }
 
     let selectedMonthIndex = $state<number | null>(null);
+
+    function getID(entity: any) {
+        return entity?.id || entity?.Id || entity?.ID || "";
+    }
+
+    function getName(entity: any) {
+        return entity?.name || entity?.Name || "";
+    }
+
+    function getActiveVersion(entity: any) {
+        return entity?.activeVersion || entity?.active_version || entity?.ActiveVersion;
+    }
+
+    function getSubAssets(entity: any) {
+        const v = getActiveVersion(entity);
+        return v?.subAssets || v?.sub_assets || v?.SubAssets || [];
+    }
 
     let scenarioToDelete = $state<string | null>(null);
     let showDeleteConfirm = $state(false);
@@ -290,7 +367,7 @@
     async function runProjection(scenario: Scenario) {
         if (streamCancel) streamCancel();
         isProjecting = true;
-        projectionResult = { months: [], simulated_yields: {} };
+        projectionResult = { months: [], simulatedYields: {} };
         selectedMonthIndex = null;
 
         const callResult = wsCall(
@@ -335,7 +412,7 @@
                             }
                         } else if (typeName === "api.YieldMap") {
                             console.log("Received Simulated Yields:", message);
-                            projectionResult.simulated_yields = { ...((message as any).yields || {}) };
+                            projectionResult.simulatedYields = { ...((message as any).yields || {}) };
                         } else if (typeName === "api.PerformanceMetrics") {
                             projectionResult.metrics = message;
                         }
@@ -663,8 +740,8 @@
                                                 {formatCurrency(projectionResult.months.reduce((acc: number, m: any) => acc + m.remainder, 0) / projectionResult.months.length)} €
                                             </span>
                                         </div>
-                                        {#if projectionResult.simulated_yields && Object.keys(projectionResult.simulated_yields).length > 0}
-                                            {@const yields = Object.entries(projectionResult.simulated_yields).filter(([k, v]) => !k.includes('_') && typeof v === 'number').map(([k, v]) => v) as number[]}
+                                        {#if projectionResult.simulatedYields && Object.keys(projectionResult.simulatedYields).length > 0}
+                                            {@const yields = Object.entries(projectionResult.simulatedYields).filter(([k, v]) => !k.includes('_') && typeof v === 'number').map(([k, v]) => v) as number[]}
                                             {#if yields.length > 0}
                                                 <div class="flex items-center gap-1.5">
                                                     <TrendingUp class="w-3 h-3 text-emerald-600" />
@@ -1043,7 +1120,7 @@
                         </div>
 
                         <!-- Probabilistic Monte Carlo Results -->
-                        {#if projectionResult.simulated_yields && Object.keys(projectionResult.simulated_yields).length > 0}
+                        {#if projectionResult.simulatedYields && Object.keys(projectionResult.simulatedYields).length > 0}
                             {@const etfAssets = allAssets.filter(a => a.activeVersion?.type === 'ETF')}
                             {#if etfAssets.length > 0}
                                 <div class="space-y-4 pt-6 border-t border-slate-100">
@@ -1055,7 +1132,7 @@
                                     </div>
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {#each etfAssets as asset}
-                                            {@const assetYield = projectionResult.simulated_yields[asset.id]}
+                                            {@const assetYield = projectionResult.simulatedYields[asset.id]}
                                             <div class="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 hover:border-indigo-200/50 hover:shadow-md transition-all duration-300 relative overflow-hidden group">
                                                 <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-emerald-500"></div>
                                                 
@@ -1077,7 +1154,7 @@
                                                         <h5 class="text-[10px] font-black uppercase tracking-wider text-slate-400">Tracker Breakdowns</h5>
                                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                             {#each asset.activeVersion.etfConfig as tracker}
-                                                                {@const trackerYield = projectionResult.simulated_yields[`${asset.id}_${tracker.tracker}`]}
+                                                                {@const trackerYield = projectionResult.simulatedYields[`${asset.id}_${tracker.tracker}`]}
                                                                 <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2">
                                                                     <div class="flex items-start justify-between gap-2">
                                                                         <span class="font-extrabold text-slate-900 text-xs truncate" title={tracker.tracker}>
@@ -1218,282 +1295,287 @@
     >
         <!-- Modal Container -->
         <div
-            class="bg-white dark-budget-modal rounded-[32px] shadow-2xl border border-slate-100 max-w-5xl w-full max-h-[85vh] p-10 relative overflow-hidden flex flex-col"
+            class="bg-white dark-budget-modal rounded-[32px] shadow-2xl border border-slate-100 max-w-6xl w-full max-h-[85vh] relative overflow-hidden flex flex-row"
             transition:slide={{ duration: 200 }}
         >
-            <!-- Close Button -->
-            <button
-                onclick={() => showScopeModal = false}
-                class="absolute top-6 right-6 p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
-            >
-                <X class="w-5 h-5" />
-            </button>
+            <!-- Navigation Sidebar -->
+            <div class="w-72 bg-slate-50/50 dark:bg-slate-900/50 border-r border-slate-100 dark:border-slate-800 flex flex-col">
+                <div class="p-8">
+                    <h3 class="text-xl font-black text-slate-900 dark:text-white leading-none">
+                        Logic <span class="text-indigo-600">Scope</span>.
+                    </h3>
+                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-2">
+                        Fine-tune deterministic reach
+                    </p>
+                </div>
 
-            <!-- Modal Header -->
-            <div class="space-y-1 mb-8">
-                <h3 class="text-2xl font-black text-slate-900 leading-none">
-                    Logic Configuration
-                </h3>
-                <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">
-                    Fine-tune the deterministic scope.
-                </p>
+                <nav class="flex-1 px-4 space-y-1">
+                    {#each [
+                        { id: 'INCOME', label: 'Incomes', icon: Euro, items: allIncomes },
+                        { id: 'BILL', label: 'Bills', icon: Shield, items: allBills },
+                        { id: 'ASSET', label: 'Assets', icon: Boxes, items: allAssets },
+                        { id: 'LOAN', label: 'Loans', icon: History, items: allLoans },
+                        { id: 'WATERFALL', label: 'Waterfall', icon: Waves, items: activeScenario.remainderOrder }
+                    ] as tab}
+                        <button
+                            onclick={() => scopeTab = tab.id as any}
+                            class="w-full flex items-center justify-between px-4 py-3 rounded-2xl transition-all group
+                                {scopeTab === tab.id 
+                                ? 'bg-white dark:bg-indigo-600 shadow-sm border border-slate-100 dark:border-indigo-500 text-indigo-600 dark:text-white' 
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'}"
+                        >
+                            <div class="flex items-center gap-3">
+                                <tab.icon class="w-4 h-4 {scopeTab === tab.id ? 'text-indigo-600 dark:text-white' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}" />
+                                <span class="text-xs font-black uppercase tracking-wider">{tab.label}</span>
+                            </div>
+                            
+                            {#if tab.id !== 'WATERFALL'}
+                                {@const activeCount = activeScenario.entities.length === 0 
+                                    ? tab.items.length 
+                                    : tab.items.filter(i => activeScenario.entities.some(e => e.entityId === i.id && e.entityType === tab.id)).length}
+                                <span class="text-[10px] font-black {scopeTab === tab.id ? 'text-indigo-400 dark:text-indigo-200' : 'text-slate-300 dark:text-slate-600'}">
+                                    {activeCount}/{tab.items.length}
+                                </span>
+                            {:else}
+                                <span class="text-[10px] font-black {scopeTab === tab.id ? 'text-indigo-400 dark:text-indigo-200' : 'text-slate-300 dark:text-slate-600'}">
+                                    {activeScenario.remainderOrder.length}
+                                </span>
+                            {/if}
+                        </button>
+                    {/each}
+                </nav>
+
+                <div class="p-8 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                        onclick={async () => {
+                            await saveScenario();
+                            showScopeModal = false;
+                        }}
+                        class="w-full py-4 bg-slate-900 dark:bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 dark:hover:bg-indigo-700 transition-all shadow-xl shadow-slate-200 dark:shadow-none"
+                    >
+                        Apply & Run
+                    </button>
+                </div>
             </div>
 
-            <!-- Modal Content - Scrollable Columns -->
-            <div class="flex-1 overflow-y-auto pr-2 grid grid-cols-1 md:grid-cols-2 gap-8 min-h-0">
-                <!-- Left Column: Incomes & Bills -->
-                <div class="space-y-8">
-                    <!-- INCOMES -->
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Incomes</span>
-                            <div class="flex gap-2">
-                                <button 
-                                    onclick={() => selectAllOfType('INCOME')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                                >
-                                    All
-                                </button>
-                                <span class="text-slate-300">/</span>
-                                <button 
-                                    onclick={() => deselectAllOfType('INCOME')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
-                                >
-                                    None
-                                </button>
-                            </div>
+            <!-- Content Area -->
+            <div class="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#090d16]">
+                <header class="px-10 py-8 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                        <h4 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+                            Current Scope: <span class="text-slate-900 dark:text-white">{scopeTab}</span>
+                        </h4>
+                    </div>
+                    
+                    {#if scopeTab !== 'WATERFALL'}
+                        <div class="flex items-center gap-4">
+                            <button 
+                                onclick={() => selectAllOfType(scopeTab)}
+                                class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer px-3 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all"
+                            >
+                                Include All
+                            </button>
+                            <div class="w-px h-4 bg-slate-100 dark:bg-slate-800"></div>
+                            <button 
+                                onclick={() => deselectAllOfType(scopeTab)}
+                                class="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer px-3 py-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all"
+                            >
+                                Exclude All
+                            </button>
                         </div>
-                        <div class="flex flex-wrap gap-2.5">
+                    {/if}
+
+                    <button
+                        onclick={() => showScopeModal = false}
+                        class="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all cursor-pointer"
+                    >
+                        <X class="w-5 h-5" />
+                    </button>
+                </header>
+
+                <div class="flex-1 overflow-y-auto p-10 scrollbar-thin">
+                    {#if scopeTab === 'INCOME'}
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {#each allIncomes as inc}
                                 {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === inc.id && e.entityType === 'INCOME')}
                                 <button
                                     onclick={() => toggleEntity(inc.id, 'INCOME', inc.activeVersion?.id || "")}
-                                    class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
-                                        {isIncluded
-                                        ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
-                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}"
+                                    class="flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                        {isIncluded 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
+                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
                                 >
-                                    {inc.name}
+                                    <span class="text-xs font-bold truncate pr-4">{inc.name}</span>
+                                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                        {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                        {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                    </div>
                                 </button>
                             {/each}
-                            {#if allIncomes.length === 0}
-                                <span class="text-xs text-slate-400 font-semibold italic">No incomes found</span>
-                            {/if}
                         </div>
-                    </div>
-
-                    <!-- BILLS -->
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Bills</span>
-                            <div class="flex gap-2">
-                                <button 
-                                    onclick={() => selectAllOfType('BILL')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                                >
-                                    All
-                                </button>
-                                <span class="text-slate-300">/</span>
-                                <button 
-                                    onclick={() => deselectAllOfType('BILL')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
-                                >
-                                    None
-                                </button>
-                            </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2.5">
+                    {:else if scopeTab === 'BILL'}
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {#each allBills as bill}
                                 {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === bill.id && e.entityType === 'BILL')}
                                 <button
                                     onclick={() => toggleEntity(bill.id, 'BILL', bill.activeVersion?.id || "")}
-                                    class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
-                                        {isIncluded
-                                        ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
-                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}"
+                                    class="flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                        {isIncluded 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
+                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
                                 >
-                                    {bill.name}
+                                    <span class="text-xs font-bold truncate pr-4">{bill.name}</span>
+                                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                        {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                        {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                    </div>
                                 </button>
                             {/each}
-                            {#if allBills.length === 0}
-                                <span class="text-xs text-slate-400 font-semibold italic">No bills found</span>
-                            {/if}
                         </div>
-                    </div>
-                </div>
-
-                <!-- Right Column: Assets & Loans -->
-                <div class="space-y-8">
-                    <!-- ASSETS -->
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Assets</span>
-                            <div class="flex gap-2">
-                                <button 
-                                    onclick={() => selectAllOfType('ASSET')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                                >
-                                    All
-                                </button>
-                                <span class="text-slate-300">/</span>
-                                <button 
-                                    onclick={() => deselectAllOfType('ASSET')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
-                                >
-                                    None
-                                </button>
-                            </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2.5">
+                    {:else if scopeTab === 'ASSET'}
+                        <div class="space-y-6">
                             {#each allAssets as asset}
-                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === asset.id && e.entityType === 'ASSET')}
-                                <button
-                                    onclick={() => toggleEntity(asset.id, 'ASSET', asset.activeVersion?.id || "")}
-                                    class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
-                                        {isIncluded
-                                        ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
-                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}"
-                                >
-                                    {asset.name}
-                                </button>
-                            {/each}
-                            {#if allAssets.length === 0}
-                                <span class="text-xs text-slate-400 font-semibold italic">No assets found</span>
-                            {/if}
-                        </div>
-                    </div>
+                                {@const assetID = getID(asset)}
+                                {@const subAssets = getSubAssets(asset)}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === assetID && e.entityType === 'ASSET')}
+                                <div class="space-y-3">
+                                    <button
+                                        onclick={() => toggleEntity(assetID, 'ASSET', getActiveVersion(asset)?.id || getActiveVersion(asset)?.Id || "")}
+                                        class="w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                            {isIncluded 
+                                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-100 dark:shadow-none' 
+                                            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200'}"
+                                    >
+                                        <div class="flex items-center gap-3">
+                                            <div class="p-2 rounded-xl {isIncluded ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}">
+                                                <Boxes class="w-4 h-4" />
+                                            </div>
+                                            <span class="text-xs font-black uppercase tracking-wider">{getName(asset)}</span>
+                                        </div>
+                                        <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                            {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                            {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                        </div>
+                                    </button>
 
-                    <!-- LOANS -->
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Included Loans</span>
-                            <div class="flex gap-2">
-                                <button 
-                                    onclick={() => selectAllOfType('LOAN')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-700 cursor-pointer"
-                                >
-                                    All
-                                </button>
-                                <span class="text-slate-300">/</span>
-                                <button 
-                                    onclick={() => deselectAllOfType('LOAN')}
-                                    class="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-600 cursor-pointer"
-                                >
-                                    None
-                                </button>
-                            </div>
+                                    {#if subAssets.length > 0}
+                                        <div class="pl-14 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {#each subAssets as sa}
+                                                {@const saID = getID(sa)}
+                                                {@const saIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === saID && e.entityType === 'SUB_ASSET')}
+                                                <button
+                                                    onclick={() => toggleEntity(saID, 'SUB_ASSET', "")}
+                                                    class="flex items-center justify-between p-3 rounded-xl border transition-all text-left group
+                                                        {saIncluded 
+                                                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm' 
+                                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 opacity-60 hover:opacity-100'}"
+                                                >
+                                                    <span class="text-[10px] font-bold truncate pr-3">{getName(sa)}</span>
+                                                    <div class="w-4 h-4 rounded-full border flex items-center justify-center transition-all
+                                                        {saIncluded ? 'bg-white border-white text-emerald-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                                        {#if saIncluded}<CheckCircle2 class="w-2.5 h-2.5" />{/if}
+                                                    </div>
+                                                </button>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
                         </div>
-                        <div class="flex flex-wrap gap-2.5">
+                    {:else if scopeTab === 'LOAN'}
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {#each allLoans as loan}
                                 {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === loan.id && e.entityType === 'LOAN')}
                                 <button
                                     onclick={() => toggleEntity(loan.id, 'LOAN', loan.activeVersion?.id || "")}
-                                    class="px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer
-                                        {isIncluded
-                                        ? 'bg-indigo-600 border-indigo-600 text-white font-extrabold shadow-sm'
-                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}"
+                                    class="flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                        {isIncluded 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
+                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
                                 >
-                                    {loan.name}
+                                    <span class="text-xs font-bold truncate pr-4">{loan.name}</span>
+                                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                        {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                        {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                    </div>
                                 </button>
                             {/each}
-                            {#if allLoans.length === 0}
-                                <span class="text-xs text-slate-400 font-semibold italic">No loans found</span>
-                            {/if}
                         </div>
-                    </div>
-                </div>
-
-                <!-- Full Width: Remainder Waterfall -->
-                <div class="md:col-span-2 space-y-6 pt-8 border-t border-slate-100">
-                    <div class="space-y-1">
-                        <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Remainder Waterfall Priority</span>
-                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                            Define the priority order for surplus funds distribution. Surpluses will flow into these entities sequentially until targets are met.
-                        </p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <!-- Available for Waterfall -->
-                        <div class="space-y-4">
-                            <span class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Available Entities</span>
-                            <div class="flex flex-wrap gap-2.5">
-                                {#each [...allAssets, ...allLoans].filter(entity => !activeScenario.remainderOrder.includes(entity.id)) as entity}
-                                    <button
-                                        onclick={() => toggleInRemainderOrder(entity.id)}
-                                        class="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:border-indigo-200 hover:bg-indigo-50/30 transition-all cursor-pointer flex items-center gap-2"
-                                    >
-                                        <Plus class="w-3 h-3 text-slate-400" />
-                                        {entity.name}
-                                    </button>
-                                {/each}
-                            </div>
-                        </div>
-
-                        <!-- Active Waterfall Order -->
-                        <div class="space-y-4">
-                            <span class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Active Priority Order</span>
-                            <div class="space-y-2">
-                                {#each activeScenario.remainderOrder as entityId, i}
-                                    {@const entity = [...allAssets, ...allLoans].find(e => e.id === entityId)}
-                                    {#if entity}
-                                        <div class="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl group hover:border-indigo-200 transition-all">
-                                            <div class="flex flex-col gap-1">
-                                                <button
-                                                    onclick={() => moveInRemainderOrder(i, 'up')}
-                                                    disabled={i === 0}
-                                                    class="p-0.5 hover:text-indigo-600 disabled:opacity-30 transition-colors"
-                                                >
-                                                    <ChevronUp class="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                    onclick={() => moveInRemainderOrder(i, 'down')}
-                                                    disabled={i === activeScenario.remainderOrder.length - 1}
-                                                    class="p-0.5 hover:text-indigo-600 disabled:opacity-30 transition-colors"
-                                                >
-                                                    <ChevronDown class="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                            
-                                            <div class="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] font-black">
-                                                {i + 1}
-                                            </div>
-
-                                            <span class="flex-1 text-xs font-black text-slate-900 uppercase truncate">
-                                                {entity.name}
-                                            </span>
-
+                    {:else if scopeTab === 'WATERFALL'}
+                        <div class="space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                <!-- Available for Waterfall -->
+                                <div class="space-y-4">
+                                    <span class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 ml-1">Available Reservoir Targets</span>
+                                    <div class="flex flex-wrap gap-2.5">
+                                        {#each [...allAssets, ...allLoans].filter(entity => !activeScenario.remainderOrder.includes(entity.id)) as entity}
                                             <button
-                                                onclick={() => toggleInRemainderOrder(entityId)}
-                                                class="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                                                onclick={() => toggleInRemainderOrder(entity.id)}
+                                                class="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 text-xs font-bold hover:border-indigo-200 dark:hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-all cursor-pointer flex items-center gap-3 shadow-sm"
                                             >
-                                                <X class="w-4 h-4" />
+                                                <Plus class="w-3.5 h-3.5 text-slate-400" />
+                                                {entity.name}
                                             </button>
-                                        </div>
-                                    {/if}
-                                {/each}
-                                {#if activeScenario.remainderOrder.length === 0}
-                                    <div class="p-8 border-2 border-dashed border-slate-100 rounded-[32px] flex flex-col items-center justify-center space-y-2 opacity-50">
-                                        <Activity class="w-6 h-6 text-slate-300" />
-                                        <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Waterfall empty</p>
+                                        {/each}
                                     </div>
-                                {/if}
+                                </div>
+
+                                <!-- Active Waterfall Order -->
+                                <div class="space-y-4">
+                                    <span class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 ml-1">Active Priority Sequence</span>
+                                    <div class="space-y-3">
+                                        {#each activeScenario.remainderOrder as entityId, i}
+                                            {@const entity = [...allAssets, ...allLoans].find(e => e.id === entityId)}
+                                            {#if entity}
+                                                <div class="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl group hover:border-indigo-200 dark:hover:border-indigo-500 transition-all shadow-sm">
+                                                    <div class="flex flex-col gap-1.5">
+                                                        <button
+                                                            onclick={() => moveInRemainderOrder(i, 'up')}
+                                                            disabled={i === 0}
+                                                            class="p-1 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-30 transition-colors"
+                                                        >
+                                                            <ChevronUp class="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onclick={() => moveInRemainderOrder(i, 'down')}
+                                                            disabled={i === activeScenario.remainderOrder.length - 1}
+                                                            class="p-1 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-30 transition-colors"
+                                                        >
+                                                            <ChevronDown class="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs font-black shadow-lg shadow-indigo-200 dark:shadow-none">
+                                                        {i + 1}
+                                                    </div>
+
+                                                    <span class="flex-1 text-xs font-black text-slate-900 dark:text-white uppercase truncate">
+                                                        {entity.name}
+                                                    </span>
+
+                                                    <button
+                                                        onclick={() => toggleInRemainderOrder(entityId)}
+                                                        class="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                                                    >
+                                                        <X class="w-5 h-5" />
+                                                    </button>
+                                                </div>
+                                            {/if}
+                                        {/each}
+                                        {#if activeScenario.remainderOrder.length === 0}
+                                            <div class="p-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[40px] flex flex-col items-center justify-center space-y-4 opacity-50">
+                                                <Activity class="w-8 h-8 text-slate-200 dark:text-slate-700" />
+                                                <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
+                                                    No priority order defined.<br/>Funds will remain unassigned.
+                                                </p>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    {/if}
                 </div>
-            </div>
-
-            <!-- Footer Save/Close Actions -->
-            <div class="mt-8 pt-4 border-t border-slate-100 flex justify-end">
-                <button
-                    onclick={async () => {
-                        await saveScenario();
-                        showScopeModal = false;
-                    }}
-                    class="btn-primary"
-                >
-                    Apply & Run Simulation
-                </button>
             </div>
         </div>
     </div>
