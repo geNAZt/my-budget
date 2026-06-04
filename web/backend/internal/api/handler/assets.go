@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"fmt"
+	"log"
+	"math/rand/v2"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -9,6 +13,7 @@ import (
 	apiproto "github.com/genazt/my-budget-script/web/backend/internal/api/proto"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
+	"github.com/genazt/my-budget-script/web/backend/internal/service"
 )
 
 // Assets handles websocket requests for the "assets" namespace.
@@ -17,14 +22,16 @@ type Assets struct {
 	handler      *api.WebSocketHandler
 	repo         *repository.AssetRepository
 	scenarioRepo *repository.ScenarioRepository
+	marketData   *service.MarketDataService
 }
 
 // NewAssets creates a new instance of the Assets API handler namespace
-func NewAssets(handler *api.WebSocketHandler, repo *repository.AssetRepository, scenarioRepo *repository.ScenarioRepository) *Assets {
+func NewAssets(handler *api.WebSocketHandler, repo *repository.AssetRepository, scenarioRepo *repository.ScenarioRepository, marketData *service.MarketDataService) *Assets {
 	return &Assets{
 		handler:      handler,
 		repo:         repo,
 		scenarioRepo: scenarioRepo,
+		marketData:   marketData,
 	}
 }
 
@@ -96,6 +103,14 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 	}
 
 	for _, tracker := range reqVersion.EtfConfig {
+		var segments []domain.HistoryStitchingSegment
+		for _, seg := range tracker.StitchingSegments {
+			segments = append(segments, domain.HistoryStitchingSegment{
+				Provider:          seg.Provider,
+				LookupTicker:      seg.LookupTicker,
+				ConversionTracker: seg.ConversionTracker,
+			})
+		}
 		av.ETFConfig = append(av.ETFConfig, domain.ETFTracker{
 			Tracker:           tracker.Tracker,
 			HistoricalTracker: tracker.HistoricalTracker,
@@ -103,6 +118,7 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 			HistoryProvider:   tracker.HistoryProvider,
 			Percentage:        tracker.Percentage,
 			TER:               tracker.Ter,
+			StitchingSegments: segments,
 		})
 	}
 
@@ -254,6 +270,14 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 		}
 
 		for _, tracker := range a.ActiveVersion.ETFConfig {
+			var segments []*apiproto.HistoryStitchingSegment
+			for _, seg := range tracker.StitchingSegments {
+				segments = append(segments, &apiproto.HistoryStitchingSegment{
+					Provider:          seg.Provider,
+					LookupTicker:      seg.LookupTicker,
+					ConversionTracker: seg.ConversionTracker,
+				})
+			}
 			pa.ActiveVersion.EtfConfig = append(pa.ActiveVersion.EtfConfig, &apiproto.ETFTracker{
 				Tracker:           tracker.Tracker,
 				HistoricalTracker: tracker.HistoricalTracker,
@@ -261,6 +285,7 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 				HistoryProvider:   tracker.HistoryProvider,
 				Percentage:        tracker.Percentage,
 				Ter:               tracker.TER,
+				StitchingSegments: segments,
 			})
 		}
 
@@ -303,3 +328,190 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 
 	return pa
 }
+
+// GetTrackerCharts maps to route "assets::gettrackercharts"
+func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *apiproto.GenericID) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		a.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	assets, err := a.repo.List(userID)
+	if err != nil {
+		a.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp := &apiproto.TrackerChartsResponse{}
+	
+	// Avoid duplicate tracker fetching
+	processedTrackers := make(map[string]bool)
+
+	for _, asset := range assets {
+		if asset.ActiveVersion == nil || asset.ActiveVersion.Type != domain.AssetTypeETF {
+			continue
+		}
+		
+		for _, t := range asset.ActiveVersion.ETFConfig {
+			trackerKey := t.Tracker
+			if processedTrackers[trackerKey] {
+				continue
+			}
+			processedTrackers[trackerKey] = true
+			
+			// Fetch history returns
+			returns, err := a.marketData.GetHistoricalWeeklyReturns(t)
+			if err != nil {
+				log.Printf("[ASSETS] Failed to get historical weekly returns for tracker %s: %v", t.Tracker, err)
+				continue
+			}
+			
+			if len(returns) == 0 {
+				continue
+			}
+
+			// Sort weeks chronologically
+			var weeks []string
+			for wk := range returns {
+				weeks = append(weeks, wk)
+			}
+			sort.Strings(weeks)
+
+			// Construct cumulative performance series starting at 100.0
+			chartPoints := make([]*apiproto.TrackerChartPoint, 0, len(weeks)+1)
+			
+			// Base starting point
+			// Let's find the first week and determine its preceding monday to represent the start
+			var baseDate time.Time
+			hasBaseDate := false
+			if len(weeks) > 0 {
+				firstWeek := weeks[0]
+				var year, wkNum int
+				_, err := fmt.Sscanf(firstWeek, "%d-W%d", &year, &wkNum)
+				if err == nil {
+					baseDate = isoWeekToDate(year, wkNum).AddDate(0, 0, -7)
+					chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
+						Date:  baseDate.Format("2006-01-02"),
+						Value: 100.0,
+					})
+					hasBaseDate = true
+				}
+			}
+
+			currVal := 100.0
+			for _, wk := range weeks {
+				var year, wkNum int
+				_, err := fmt.Sscanf(wk, "%d-W%d", &year, &wkNum)
+				if err != nil {
+					continue
+				}
+				
+				currVal = currVal * (1.0 + returns[wk])
+				
+				chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
+					Date:  isoWeekToDate(year, wkNum).Format("2006-01-02"),
+					Value: currVal,
+				})
+			}
+
+			// Generate Monte Carlo points
+			var mcPoints []*apiproto.TrackerChartPoint
+			if len(weeks) > 0 {
+				// Populate flat returns slice
+				returnValues := make([]float64, 0, len(weeks))
+				for _, wk := range weeks {
+					returnValues = append(returnValues, returns[wk])
+				}
+
+				numSims := 1000
+				numWeeks := len(weeks)
+
+				// Initialize paths: numSims rows, numWeeks + 1 columns
+				paths := make([][]float64, numSims)
+				for i := 0; i < numSims; i++ {
+					paths[i] = make([]float64, numWeeks+1)
+					paths[i][0] = 100.0
+				}
+
+				r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 42))
+
+				for step := 1; step <= numWeeks; step++ {
+					for sim := 0; sim < numSims; sim++ {
+						randIdx := r.IntN(len(returnValues))
+						sampledReturn := returnValues[randIdx]
+						paths[sim][step] = paths[sim][step-1] * (1.0 + sampledReturn)
+					}
+				}
+
+				mcPoints = make([]*apiproto.TrackerChartPoint, 0, numWeeks+1)
+				if hasBaseDate {
+					mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
+						Date:  baseDate.Format("2006-01-02"),
+						Value: 100.0,
+					})
+				}
+
+				stepVals := make([]float64, numSims)
+				for step := 1; step <= numWeeks; step++ {
+					for sim := 0; sim < numSims; sim++ {
+						stepVals[sim] = paths[sim][step]
+					}
+					sort.Float64s(stepVals)
+					// Median (50th percentile)
+					medianVal := stepVals[numSims/2]
+
+					var dateStr string
+					var year, wkNum int
+					_, err := fmt.Sscanf(weeks[step-1], "%d-W%d", &year, &wkNum)
+					if err == nil {
+						dateStr = isoWeekToDate(year, wkNum).Format("2006-01-02")
+					}
+
+					mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
+						Date:  dateStr,
+						Value: medianVal,
+					})
+				}
+			}
+
+			resp.Charts = append(resp.Charts, &apiproto.TrackerChart{
+				Tracker:  t.Tracker,
+				Points:   chartPoints,
+				McPoints: mcPoints,
+			})
+		}
+	}
+
+	a.handler.SendResponse(s, reqID, resp, true)
+}
+// ClearCache maps to route "assets::clear_cache"
+func (a *Assets) ClearCache(s *api.WebsocketSession, reqID string, body *apiproto.Empty) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		a.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	_, err := a.repo.ClearHistoryCache()
+	if err != nil {
+		a.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	a.handler.SendResponse(s, reqID, &apiproto.Empty{}, true)
+}
+
+func isoWeekToDate(year, week int) time.Time {
+	// Start with Jan 4 of the year (which is always in ISO week 1)
+	t := time.Date(year, 1, 4, 0, 0, 0, 0, time.UTC)
+	// Find Monday of that week
+	daysToMonday := int(t.Weekday()) - 1
+	if daysToMonday < 0 {
+		daysToMonday = 6
+	}
+	monday := t.AddDate(0, 0, -daysToMonday)
+	// Add weeks
+	return monday.AddDate(0, 0, (week-1)*7)
+}
+

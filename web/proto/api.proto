@@ -10,6 +10,8 @@ message GenericID {
   string id = 1;
 }
 
+message Empty {}
+
 message Error {
   string message = 1;
   int32 code = 2;
@@ -308,6 +310,12 @@ message ScenarioList {
 
 // --- Asset Domain Payloads ---
 
+message HistoryStitchingSegment {
+  string provider = 1;
+  string lookup_ticker = 2;
+  string conversion_tracker = 3;
+}
+
 message ETFTracker {
   string tracker = 1;
   double percentage = 2;
@@ -315,7 +323,24 @@ message ETFTracker {
   string historical_tracker = 4;
   string conversion_tracker = 5;
   string history_provider = 6;
+  repeated HistoryStitchingSegment stitching_segments = 7;
 }
+
+message TrackerChartPoint {
+  string date = 1;
+  double value = 2;
+}
+
+message TrackerChart {
+  string tracker = 1;
+  repeated TrackerChartPoint points = 2;
+  repeated TrackerChartPoint mc_points = 3;
+}
+
+message TrackerChartsResponse {
+  repeated TrackerChart charts = 1;
+}
+
 
 message AssetPenalty {
   string name = 1;

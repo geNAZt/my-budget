@@ -1229,7 +1229,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 
 				saRate := sa.AmountPerMonth
-				if saRate <= 0 && sa.EndDate != nil {
+				if saRate <= 0 && sa.EndDate != nil && !sa.IsRemainderConsumer {
 					interestRateUsed := a.ActiveVersion.InterestRate
 					if a.ActiveVersion.Type == domain.AssetTypeETF {
 						interestRateUsed = state.simulatedYield * 100
@@ -1252,7 +1252,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 		}
 		log.Printf("[PROJECTION] Asset: %s, Target: %s, DumpingLoan: %v, Rate: %.2f", a.Name, a.ActiveVersion.TargetValue, a.ActiveVersion.DumpingLoanID, a.ActiveVersion.AmountPerMonth)
-		if a.ActiveVersion.AmountPerMonth <= 0 && a.ActiveVersion.EndDate != nil && len(a.ActiveVersion.SubAssets) == 0 {
+		if a.ActiveVersion.AmountPerMonth <= 0 && a.ActiveVersion.EndDate != nil && len(a.ActiveVersion.SubAssets) == 0 && a.ActiveVersion.RemainderStartDate == nil {
 			rateUsed := a.ActiveVersion.InterestRate
 			if a.ActiveVersion.Type == domain.AssetTypeETF {
 				rateUsed = state.simulatedYield * 100

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -359,9 +361,6 @@ func InitDB(dsn string) (*sql.DB, error) {
         start_date TIMESTAMP,
         end_date TIMESTAMP,
         withdrawal_penalty DOUBLE PRECISION DEFAULT 0,
-        etf_config_json TEXT,
-        penalties_json TEXT,
-        sub_assets_json TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(asset_id) REFERENCES assets(id),
         FOREIGN KEY(dumping_loan_id) REFERENCES loans(id)
@@ -481,7 +480,6 @@ func InitDB(dsn string) (*sql.DB, error) {
         name TEXT,
         description TEXT,
         projection_months INTEGER DEFAULT 360,
-        remainder_order_json TEXT,
         is_active BOOLEAN DEFAULT FALSE,
         month_start_day INTEGER DEFAULT 1,
         start_date TIMESTAMP,
@@ -490,7 +488,6 @@ func InitDB(dsn string) (*sql.DB, error) {
         simulations INTEGER DEFAULT 50000,
         sim_years INTEGER DEFAULT 10,
         sim_percent DOUBLE PRECISION DEFAULT 50,
-        etf_params_json TEXT,
         lookback_years INTEGER DEFAULT 0,
         passive_income_percentage DOUBLE PRECISION DEFAULT 3.5,
         mc_implementation TEXT DEFAULT 'STANDARD',
@@ -590,6 +587,73 @@ func InitDB(dsn string) (*sql.DB, error) {
         end_date TIMESTAMP,
         description TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_etf_configs (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        tracker TEXT DEFAULT '',
+        historical_tracker TEXT DEFAULT '',
+        conversion_tracker TEXT DEFAULT '',
+        history_provider TEXT DEFAULT '',
+        percentage DOUBLE PRECISION DEFAULT 0.0,
+        ter DOUBLE PRECISION DEFAULT 0.0,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_etf_stitching_segments (
+        id TEXT PRIMARY KEY,
+        etf_config_id TEXT NOT NULL,
+        provider TEXT DEFAULT '',
+        lookup_ticker TEXT DEFAULT '',
+        conversion_tracker TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY(etf_config_id) REFERENCES asset_version_etf_configs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_penalties (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        trigger_type TEXT DEFAULT '',
+        percentage DOUBLE PRECISION DEFAULT 0.0,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_sub_assets (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        sub_asset_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        target_value TEXT DEFAULT '',
+        amount_per_month DOUBLE PRECISION DEFAULT 0.0,
+        is_remainder_consumer BOOLEAN DEFAULT FALSE,
+        remainder_start_date TIMESTAMP,
+        dumping_loan_id TEXT,
+        start_date TIMESTAMP NOT NULL,
+        end_date TIMESTAMP,
+        earliest_dump_date TIMESTAMP,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE,
+        FOREIGN KEY(dumping_loan_id) REFERENCES loans(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scenario_remainder_orders (
+        scenario_id TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        PRIMARY KEY(scenario_id, position),
+        FOREIGN KEY(scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS scenario_etf_params (
+        scenario_id TEXT NOT NULL,
+        ticker TEXT NOT NULL DEFAULT '',
+        simulations INTEGER DEFAULT 0,
+        sim_years INTEGER DEFAULT 0,
+        sim_percent DOUBLE PRECISION DEFAULT 0.0,
+        lookback_years INTEGER DEFAULT 0,
+        PRIMARY KEY(scenario_id, ticker),
+        FOREIGN KEY(scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
     );
 	`
 
@@ -723,14 +787,80 @@ func migrate(db *sql.DB) {
 	if !hasColumn(db, "asset_versions", "withdrawal_penalty") {
 		db.Exec("ALTER TABLE asset_versions ADD COLUMN withdrawal_penalty DOUBLE PRECISION DEFAULT 0")
 	}
-	if !hasColumn(db, "asset_versions", "penalties_json") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN penalties_json TEXT")
-	}
 	if !hasColumn(db, "asset_versions", "remainder_start_date") {
 		db.Exec("ALTER TABLE asset_versions ADD COLUMN remainder_start_date TIMESTAMP")
 	}
-	if !hasColumn(db, "asset_versions", "sub_assets_json") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN sub_assets_json TEXT")
+
+	// Asset version ETF configs - stitching segments
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS asset_version_etf_stitching_segments (
+			id TEXT PRIMARY KEY,
+			etf_config_id TEXT NOT NULL,
+			provider TEXT DEFAULT '',
+			lookup_ticker TEXT DEFAULT '',
+			conversion_tracker TEXT DEFAULT '',
+			sort_order INTEGER DEFAULT 0,
+			FOREIGN KEY(etf_config_id) REFERENCES asset_version_etf_configs(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		log.Printf("[DB Warning] Failed to create asset_version_etf_stitching_segments: %v", err)
+	}
+
+	if !hasColumn(db, "asset_version_etf_stitching_segments", "conversion_tracker") {
+		_, _ = db.Exec("ALTER TABLE asset_version_etf_stitching_segments ADD COLUMN conversion_tracker TEXT DEFAULT ''")
+	}
+
+	// Migrate data from stitching_segments_json if it exists
+	if hasColumn(db, "asset_version_etf_configs", "stitching_segments_json") {
+		log.Printf("[DB] Found old stitching_segments_json column. Migrating stitching segments...")
+		type dbSegment struct {
+			Provider     string `json:"provider"`
+			LookupTicker string `json:"lookup_ticker"`
+		}
+		rows, err := db.Query("SELECT id, stitching_segments_json FROM asset_version_etf_configs WHERE stitching_segments_json IS NOT NULL AND stitching_segments_json != ''")
+		if err == nil {
+			var updates []struct {
+				ConfigID string
+				Segments []dbSegment
+			}
+			for rows.Next() {
+				var configID string
+				var jsonStr string
+				if err := rows.Scan(&configID, &jsonStr); err == nil {
+					var segs []dbSegment
+					if err := json.Unmarshal([]byte(jsonStr), &segs); err == nil && len(segs) > 0 {
+						updates = append(updates, struct {
+							ConfigID string
+							Segments []dbSegment
+						}{configID, segs})
+					}
+				}
+			}
+			rows.Close()
+
+			for _, update := range updates {
+				// Avoid duplicate migration
+				var count int
+				_ = db.QueryRow("SELECT COUNT(*) FROM asset_version_etf_stitching_segments WHERE etf_config_id = ?", update.ConfigID).Scan(&count)
+				if count == 0 {
+					for i, seg := range update.Segments {
+						_, _ = db.Exec(`
+							INSERT INTO asset_version_etf_stitching_segments (id, etf_config_id, provider, lookup_ticker, sort_order)
+							VALUES (?, ?, ?, ?, ?)`,
+							uuid.New().String(), update.ConfigID, seg.Provider, seg.LookupTicker, i)
+					}
+				}
+			}
+			log.Printf("[DB] Migrated stitching segments for %d ETF configurations.", len(updates))
+		}
+		// Now drop the column so it's clean
+		_, err = db.Exec("ALTER TABLE asset_version_etf_configs DROP COLUMN stitching_segments_json")
+		if err != nil {
+			log.Printf("[DB Warning] Failed to drop stitching_segments_json column: %v", err)
+		} else {
+			log.Printf("[DB] Dropped stitching_segments_json column.")
+		}
 	}
 
 	// Authenticators
@@ -752,9 +882,6 @@ func migrate(db *sql.DB) {
 		db.Exec("ALTER TABLE scenarios ADD COLUMN simulations INTEGER DEFAULT 50000")
 		db.Exec("ALTER TABLE scenarios ADD COLUMN sim_years INTEGER DEFAULT 10")
 		db.Exec("ALTER TABLE scenarios ADD COLUMN sim_percent DOUBLE PRECISION DEFAULT 50")
-	}
-	if !hasColumn(db, "scenarios", "etf_params_json") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN etf_params_json TEXT")
 	}
 	if !hasColumn(db, "scenarios", "lookback_years") {
 		db.Exec("ALTER TABLE scenarios ADD COLUMN lookback_years INTEGER DEFAULT 0")
@@ -923,6 +1050,7 @@ func migrate(db *sql.DB) {
 
 	MigrateRulesToGlobal(db)
 	MigrateVirtualAccountsToMulti(db)
+	NormalizeJSONColumns(db)
 }
 
 func MigrateRulesToGlobal(db *sql.DB) {
@@ -1126,5 +1254,328 @@ func MigrateVirtualAccountsToMulti(db *sql.DB) {
 		_, _ = db.Exec("INSERT INTO entity_virtual_accounts (entity_id, entity_type, virtual_account_id) SELECT id, 'LOAN', account_id FROM loans WHERE account_id IS NOT NULL AND account_id != ''")
 
 		log.Printf("[DB] Single-column virtual account migrations complete.")
+	}
+}
+
+type migETFTracker struct {
+	Tracker           string  `json:"tracker"`
+	HistoricalTracker string  `json:"historical_tracker"`
+	ConversionTracker string  `json:"conversion_tracker"`
+	HistoryProvider   string  `json:"history_provider"`
+	Percentage        float64 `json:"percentage"`
+	TER               float64 `json:"ter"`
+}
+
+type migAssetPenalty struct {
+	Name        string  `json:"name"`
+	TriggerType string  `json:"trigger_type"`
+	Percentage  float64 `json:"percentage"`
+}
+
+type migSubAsset struct {
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	TargetValue         string     `json:"target_value"`
+	AmountPerMonth      float64    `json:"amount_per_month"`
+	IsRemainderConsumer bool       `json:"is_remainder_consumer"`
+	RemainderStartDate  *time.Time `json:"remainder_start_date"`
+	DumpingLoanID       *string    `json:"dumping_loan_id"`
+	StartDate           time.Time  `json:"start_date"`
+	EndDate             *time.Time `json:"end_date"`
+	EarliestDumpDate    *time.Time `json:"earliest_dump_date"`
+}
+
+type migETFScenarioParams struct {
+	Simulations   int     `json:"simulations"`
+	SimYears      int     `json:"sim_years"`
+	SimPercent    float64 `json:"sim_percent"`
+	LookbackYears int     `json:"lookback_years"`
+}
+
+func NormalizeJSONColumns(db *sql.DB) {
+	log.Printf("[DB] Running JSON columns normalization migration...")
+
+	// Drop old table schema if it's using the old format without sub_asset_id column
+	if !hasColumn(db, "asset_version_sub_assets", "sub_asset_id") {
+		db.Exec("DROP TABLE IF EXISTS asset_version_sub_assets CASCADE")
+	}
+
+	// 1. Create the new relational tables if they don't exist yet (this ensures they exist during migration)
+	newTablesSchema := `
+    CREATE TABLE IF NOT EXISTS asset_version_etf_configs (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        tracker TEXT DEFAULT '',
+        historical_tracker TEXT DEFAULT '',
+        conversion_tracker TEXT DEFAULT '',
+        history_provider TEXT DEFAULT '',
+        percentage DOUBLE PRECISION DEFAULT 0.0,
+        ter DOUBLE PRECISION DEFAULT 0.0,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_etf_stitching_segments (
+        id TEXT PRIMARY KEY,
+        etf_config_id TEXT NOT NULL,
+        provider TEXT DEFAULT '',
+        lookup_ticker TEXT DEFAULT '',
+        conversion_tracker TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY(etf_config_id) REFERENCES asset_version_etf_configs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_penalties (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        trigger_type TEXT DEFAULT '',
+        percentage DOUBLE PRECISION DEFAULT 0.0,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_version_sub_assets (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        sub_asset_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        target_value TEXT DEFAULT '',
+        amount_per_month DOUBLE PRECISION DEFAULT 0.0,
+        is_remainder_consumer BOOLEAN DEFAULT FALSE,
+        remainder_start_date TIMESTAMP,
+        dumping_loan_id TEXT,
+        start_date TIMESTAMP NOT NULL,
+        end_date TIMESTAMP,
+        earliest_dump_date TIMESTAMP,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE,
+        FOREIGN KEY(dumping_loan_id) REFERENCES loans(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scenario_remainder_orders (
+        scenario_id TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        PRIMARY KEY(scenario_id, position),
+        FOREIGN KEY(scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS scenario_etf_params (
+        scenario_id TEXT NOT NULL,
+        ticker TEXT NOT NULL DEFAULT '',
+        simulations INTEGER DEFAULT 0,
+        sim_years INTEGER DEFAULT 0,
+        sim_percent DOUBLE PRECISION DEFAULT 0.0,
+        lookback_years INTEGER DEFAULT 0,
+        PRIMARY KEY(scenario_id, ticker),
+        FOREIGN KEY(scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+    );`
+
+	if _, err := db.Exec(newTablesSchema); err != nil {
+		log.Printf("[DB Warning] Failed to create new tables: %v", err)
+		return
+	}
+
+	// Helper to unmarshal base64 JSON string (mimics db.Unmarshal)
+	unmarshalHelper := func(data string, v interface{}) error {
+		if data == "" || data == "null" || data == "NULL" {
+			return nil
+		}
+		b, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			b = []byte(data)
+		}
+		return json.Unmarshal(b, v)
+	}
+
+	// 2. Migrate asset_versions JSON columns
+	if hasColumn(db, "asset_versions", "etf_config_json") || hasColumn(db, "asset_versions", "penalties_json") || hasColumn(db, "asset_versions", "sub_assets_json") {
+		log.Printf("[DB] Migrating asset_versions JSON columns...")
+		rows, err := db.Query("SELECT id, etf_config_json, penalties_json, sub_assets_json FROM asset_versions")
+		if err != nil {
+			log.Printf("[DB Warning] Failed to query asset_versions: %v", err)
+		} else {
+			defer rows.Close()
+			tx, err := db.Begin()
+			if err != nil {
+				log.Printf("[DB Warning] Failed to begin transaction: %v", err)
+				return
+			}
+			defer tx.Rollback()
+
+			for rows.Next() {
+				var id string
+				var etfJSON, penaltiesJSON, subAssetsJSON sql.NullString
+				if err := rows.Scan(&id, &etfJSON, &penaltiesJSON, &subAssetsJSON); err != nil {
+					log.Printf("[DB Warning] Scan failed: %v", err)
+					continue
+				}
+
+				if etfJSON.Valid && etfJSON.String != "" {
+					var etfs []migETFTracker
+					if err := unmarshalHelper(etfJSON.String, &etfs); err == nil {
+						for _, etf := range etfs {
+							_, err = tx.Exec(`
+								INSERT INTO asset_version_etf_configs (id, asset_version_id, tracker, historical_tracker, conversion_tracker, history_provider, percentage, ter)
+								VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+								uuid.New().String(), id, etf.Tracker, etf.HistoricalTracker, etf.ConversionTracker, etf.HistoryProvider, etf.Percentage, etf.TER)
+							if err != nil {
+								log.Printf("[DB Warning] Failed to insert etf config: %v", err)
+							}
+						}
+					} else {
+						log.Printf("[DB Warning] Failed to unmarshal etf config for %s: %v", id, err)
+					}
+				}
+
+				if penaltiesJSON.Valid && penaltiesJSON.String != "" {
+					var penalties []migAssetPenalty
+					if err := unmarshalHelper(penaltiesJSON.String, &penalties); err == nil {
+						for _, penalty := range penalties {
+							_, err = tx.Exec(`
+								INSERT INTO asset_version_penalties (id, asset_version_id, name, trigger_type, percentage)
+								VALUES (?, ?, ?, ?, ?)`,
+								uuid.New().String(), id, penalty.Name, penalty.TriggerType, penalty.Percentage)
+							if err != nil {
+								log.Printf("[DB Warning] Failed to insert penalty: %v", err)
+							}
+						}
+					} else {
+						log.Printf("[DB Warning] Failed to unmarshal penalties for %s: %v", id, err)
+					}
+				}
+
+				if subAssetsJSON.Valid && subAssetsJSON.String != "" {
+					var subAssets []migSubAsset
+					if err := unmarshalHelper(subAssetsJSON.String, &subAssets); err == nil {
+						for _, sa := range subAssets {
+							saID := sa.ID
+							if saID == "" {
+								saID = uuid.New().String()
+							}
+							var dLoanID *string = sa.DumpingLoanID
+							if dLoanID != nil && *dLoanID != "" {
+								// Check if loan exists
+								var exists bool
+								err := tx.QueryRow("SELECT 1 FROM loans WHERE id = ?", *dLoanID).Scan(&exists)
+								if err != nil || !exists {
+									dLoanID = nil
+								}
+							} else {
+								dLoanID = nil
+							}
+							_, err = tx.Exec(`
+								INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date)
+								VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+								uuid.New().String(), id, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate)
+							if err != nil {
+								log.Printf("[DB Warning] Failed to insert sub asset: %v", err)
+							}
+						}
+					} else {
+						log.Printf("[DB Warning] Failed to unmarshal sub assets for %s: %v", id, err)
+					}
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				log.Printf("[DB Warning] Commit failed: %v", err)
+				return
+			}
+
+			// Drop columns
+			if hasColumn(db, "asset_versions", "etf_config_json") {
+				if _, err := db.Exec("ALTER TABLE asset_versions DROP COLUMN etf_config_json"); err != nil {
+					log.Printf("[DB Warning] Failed to drop etf_config_json: %v", err)
+				}
+			}
+			if hasColumn(db, "asset_versions", "penalties_json") {
+				if _, err := db.Exec("ALTER TABLE asset_versions DROP COLUMN penalties_json"); err != nil {
+					log.Printf("[DB Warning] Failed to drop penalties_json: %v", err)
+				}
+			}
+			if hasColumn(db, "asset_versions", "sub_assets_json") {
+				if _, err := db.Exec("ALTER TABLE asset_versions DROP COLUMN sub_assets_json"); err != nil {
+					log.Printf("[DB Warning] Failed to drop sub_assets_json: %v", err)
+				}
+			}
+			log.Printf("[DB] asset_versions JSON columns migration complete.")
+		}
+	}
+
+	// 3. Migrate scenarios JSON columns
+	if hasColumn(db, "scenarios", "remainder_order_json") || hasColumn(db, "scenarios", "etf_params_json") {
+		log.Printf("[DB] Migrating scenarios JSON columns...")
+		rows, err := db.Query("SELECT id, remainder_order_json, etf_params_json FROM scenarios")
+		if err != nil {
+			log.Printf("[DB Warning] Failed to query scenarios: %v", err)
+		} else {
+			defer rows.Close()
+			tx, err := db.Begin()
+			if err != nil {
+				log.Printf("[DB Warning] Failed to begin transaction: %v", err)
+				return
+			}
+			defer tx.Rollback()
+
+			for rows.Next() {
+				var id string
+				var remainderJSON, etfParamsJSON sql.NullString
+				if err := rows.Scan(&id, &remainderJSON, &etfParamsJSON); err != nil {
+					log.Printf("[DB Warning] Scan failed: %v", err)
+					continue
+				}
+
+				if remainderJSON.Valid && remainderJSON.String != "" {
+					var remainderOrder []string
+					if err := unmarshalHelper(remainderJSON.String, &remainderOrder); err == nil {
+						for pos, entityID := range remainderOrder {
+							_, err = tx.Exec(`
+								INSERT INTO scenario_remainder_orders (scenario_id, entity_id, position)
+								VALUES (?, ?, ?)`,
+								id, entityID, pos)
+							if err != nil {
+								log.Printf("[DB Warning] Failed to insert scenario remainder order: %v", err)
+							}
+						}
+					} else {
+						log.Printf("[DB Warning] Failed to unmarshal remainder order for %s: %v", id, err)
+					}
+				}
+
+				if etfParamsJSON.Valid && etfParamsJSON.String != "" {
+					var etfParams map[string]migETFScenarioParams
+					if err := unmarshalHelper(etfParamsJSON.String, &etfParams); err == nil {
+						for ticker, params := range etfParams {
+							_, err = tx.Exec(`
+								INSERT INTO scenario_etf_params (scenario_id, ticker, simulations, sim_years, sim_percent, lookback_years)
+								VALUES (?, ?, ?, ?, ?, ?)`,
+								id, ticker, params.Simulations, params.SimYears, params.SimPercent, params.LookbackYears)
+							if err != nil {
+								log.Printf("[DB Warning] Failed to insert scenario etf params: %v", err)
+							}
+						}
+					} else {
+						log.Printf("[DB Warning] Failed to unmarshal etf params for %s: %v", id, err)
+					}
+				}
+			}
+
+			if err := tx.Commit(); err != nil {
+				log.Printf("[DB Warning] Commit failed: %v", err)
+				return
+			}
+
+			// Drop columns
+			if hasColumn(db, "scenarios", "remainder_order_json") {
+				if _, err := db.Exec("ALTER TABLE scenarios DROP COLUMN remainder_order_json"); err != nil {
+					log.Printf("[DB Warning] Failed to drop remainder_order_json: %v", err)
+				}
+			}
+			if hasColumn(db, "scenarios", "etf_params_json") {
+				if _, err := db.Exec("ALTER TABLE scenarios DROP COLUMN etf_params_json"); err != nil {
+					log.Printf("[DB Warning] Failed to drop etf_params_json: %v", err)
+				}
+			}
+			log.Printf("[DB] scenarios JSON columns migration complete.")
+		}
 	}
 }

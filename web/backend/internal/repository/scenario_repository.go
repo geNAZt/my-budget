@@ -2,8 +2,9 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 
-	"github.com/genazt/my-budget-script/web/backend/internal/db"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/google/uuid"
 )
@@ -26,7 +27,7 @@ func NewScenarioRepository(db *sql.DB, ir *IncomeRepository, br *BillRepository,
 
 func (r *ScenarioRepository) List(userID string) ([]domain.Scenario, error) {
 	rows, err := r.db.Query(`
-		SELECT id, name, description, projection_months, is_active, created_at, remainder_order_json AS remainder_order_msgpack, simulations, sim_years, sim_percent, start_date, etf_params_json AS etf_params_msgpack, lookback_years, passive_income_percentage, mc_implementation, month_start_day
+		SELECT id, name, description, projection_months, is_active, created_at, simulations, sim_years, sim_percent, start_date, lookback_years, passive_income_percentage, mc_implementation, month_start_day
 		FROM scenarios
 		WHERE user_id = ? AND is_deleted = FALSE`, userID)
 	if err != nil {
@@ -37,26 +38,75 @@ func (r *ScenarioRepository) List(userID string) ([]domain.Scenario, error) {
 	var scenarios []domain.Scenario
 	for rows.Next() {
 		var s domain.Scenario
-		var remainderOrderMsgPack sql.NullString
-		var etfParamsMsgPack sql.NullString
 		var startDate sql.NullTime
 
-		err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ProjectionMonths, &s.IsActive, &s.CreatedAt, &remainderOrderMsgPack, &s.Simulations, &s.SimYears, &s.SimPercent, &startDate, &etfParamsMsgPack, &s.LookbackYears, &s.PassiveIncomePercentage, &s.MonteCarloImplementation, &s.MonthStartDay)
+		err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ProjectionMonths, &s.IsActive, &s.CreatedAt, &s.Simulations, &s.SimYears, &s.SimPercent, &startDate, &s.LookbackYears, &s.PassiveIncomePercentage, &s.MonteCarloImplementation, &s.MonthStartDay)
 		if err != nil {
 			return nil, err
 		}
 
-		if remainderOrderMsgPack.Valid && remainderOrderMsgPack.String != "" {
-			db.Unmarshal(remainderOrderMsgPack.String, &s.RemainderOrder)
-		}
-		if etfParamsMsgPack.Valid && etfParamsMsgPack.String != "" {
-			db.Unmarshal(etfParamsMsgPack.String, &s.ETFParams)
-		}
+		s.RemainderOrder = []string{}
+		s.ETFParams = make(map[string]domain.ETFScenarioParams)
 		if startDate.Valid {
 			s.StartDate = &startDate.Time
 		}
 		s.UserID = userID
 		scenarios = append(scenarios, s)
+	}
+
+	// Load sub-tables (RemainderOrder, ETFParams) for scenarios
+	if len(scenarios) > 0 {
+		scenarioIDs := make([]string, 0, len(scenarios))
+		scenarioIndexMap := make(map[string]*domain.Scenario)
+		for i := range scenarios {
+			scenarioIDs = append(scenarioIDs, scenarios[i].ID)
+			scenarioIndexMap[scenarios[i].ID] = &scenarios[i]
+		}
+
+		placeholders := make([]string, len(scenarioIDs))
+		args := make([]interface{}, len(scenarioIDs))
+		for i, id := range scenarioIDs {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+
+		// 1. Load remainder orders
+		remQuery := fmt.Sprintf(`
+			SELECT scenario_id, entity_id
+			FROM scenario_remainder_orders
+			WHERE scenario_id IN (%s)
+			ORDER BY scenario_id ASC, position ASC`, strings.Join(placeholders, ","))
+		remRows, err := r.db.Query(remQuery, args...)
+		if err == nil {
+			defer remRows.Close()
+			for remRows.Next() {
+				var sID, entID string
+				if err := remRows.Scan(&sID, &entID); err == nil {
+					if sc, ok := scenarioIndexMap[sID]; ok {
+						sc.RemainderOrder = append(sc.RemainderOrder, entID)
+					}
+				}
+			}
+		}
+
+		// 2. Load ETF params
+		etfParamsQuery := fmt.Sprintf(`
+			SELECT scenario_id, ticker, simulations, sim_years, sim_percent, lookback_years
+			FROM scenario_etf_params
+			WHERE scenario_id IN (%s)`, strings.Join(placeholders, ","))
+		etfRows, err := r.db.Query(etfParamsQuery, args...)
+		if err == nil {
+			defer etfRows.Close()
+			for etfRows.Next() {
+				var sID, ticker string
+				var params domain.ETFScenarioParams
+				if err := etfRows.Scan(&sID, &ticker, &params.Simulations, &params.SimYears, &params.SimPercent, &params.LookbackYears); err == nil {
+					if sc, ok := scenarioIndexMap[sID]; ok {
+						sc.ETFParams[ticker] = params
+					}
+				}
+			}
+		}
 	}
 
 	// Load all entities for these scenarios
@@ -102,9 +152,6 @@ func (r *ScenarioRepository) Save(userID string, s *domain.Scenario) error {
 	}
 	defer tx.Rollback()
 
-	remainderOrderStr, _ := db.Marshal(s.RemainderOrder)
-	etfParamsStr, _ := db.Marshal(s.ETFParams)
-
 	var exists bool
 	if s.ID != "" {
 		err = tx.QueryRow("SELECT 1 FROM scenarios WHERE id = ? AND user_id = ?", s.ID, userID).Scan(&exists)
@@ -118,17 +165,47 @@ func (r *ScenarioRepository) Save(userID string, s *domain.Scenario) error {
 			s.ID = uuid.New().String()
 		}
 		_, err = tx.Exec(`
-			INSERT INTO scenarios (id, user_id, name, description, projection_months, is_active, remainder_order_json, simulations, sim_years, sim_percent, start_date, etf_params_json, lookback_years, passive_income_percentage, mc_implementation, month_start_day)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			s.ID, userID, s.Name, s.Description, s.ProjectionMonths, s.IsActive, remainderOrderStr, s.Simulations, s.SimYears, s.SimPercent, s.StartDate, etfParamsStr, s.LookbackYears, s.PassiveIncomePercentage, s.MonteCarloImplementation, s.MonthStartDay)
+			INSERT INTO scenarios (id, user_id, name, description, projection_months, is_active, simulations, sim_years, sim_percent, start_date, lookback_years, passive_income_percentage, mc_implementation, month_start_day)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			s.ID, userID, s.Name, s.Description, s.ProjectionMonths, s.IsActive, s.Simulations, s.SimYears, s.SimPercent, s.StartDate, s.LookbackYears, s.PassiveIncomePercentage, s.MonteCarloImplementation, s.MonthStartDay)
 	} else {
 		_, err = tx.Exec(`
-			UPDATE scenarios SET name = ?, description = ?, projection_months = ?, is_active = ?, remainder_order_json = ?, simulations = ?, sim_years = ?, sim_percent = ?, start_date = ?, etf_params_json = ?, lookback_years = ?, passive_income_percentage = ?, mc_implementation = ?, month_start_day = ?
+			UPDATE scenarios SET name = ?, description = ?, projection_months = ?, is_active = ?, simulations = ?, sim_years = ?, sim_percent = ?, start_date = ?, lookback_years = ?, passive_income_percentage = ?, mc_implementation = ?, month_start_day = ?
 			WHERE id = ? AND user_id = ?`,
-			s.Name, s.Description, s.ProjectionMonths, s.IsActive, remainderOrderStr, s.Simulations, s.SimYears, s.SimPercent, s.StartDate, etfParamsStr, s.LookbackYears, s.PassiveIncomePercentage, s.MonteCarloImplementation, s.MonthStartDay, s.ID, userID)
+			s.Name, s.Description, s.ProjectionMonths, s.IsActive, s.Simulations, s.SimYears, s.SimPercent, s.StartDate, s.LookbackYears, s.PassiveIncomePercentage, s.MonteCarloImplementation, s.MonthStartDay, s.ID, userID)
 	}
 	if err != nil {
 		return err
+	}
+
+	// Sync RemainderOrder
+	_, err = tx.Exec("DELETE FROM scenario_remainder_orders WHERE scenario_id = ?", s.ID)
+	if err != nil {
+		return err
+	}
+	for pos, entityID := range s.RemainderOrder {
+		_, err = tx.Exec(`
+			INSERT INTO scenario_remainder_orders (scenario_id, entity_id, position)
+			VALUES (?, ?, ?)`,
+			s.ID, entityID, pos)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Sync ETFParams
+	_, err = tx.Exec("DELETE FROM scenario_etf_params WHERE scenario_id = ?", s.ID)
+	if err != nil {
+		return err
+	}
+	for ticker, params := range s.ETFParams {
+		_, err = tx.Exec(`
+			INSERT INTO scenario_etf_params (scenario_id, ticker, simulations, sim_years, sim_percent, lookback_years)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			s.ID, ticker, params.Simulations, params.SimYears, params.SimPercent, params.LookbackYears)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Update entities (Sync)
@@ -189,15 +266,35 @@ func (r *ScenarioRepository) Fork(userID string, sourceID string, newName string
 
 	// 1. Copy Scenario metadata
 	_, err = tx.Exec(`
-		INSERT INTO scenarios (id, user_id, name, description, projection_months, is_active, remainder_order_json, simulations, sim_years, sim_percent, start_date, etf_params_json, lookback_years, passive_income_percentage, mc_implementation, month_start_day)
-		SELECT ?, user_id, ?, description, projection_months, FALSE, remainder_order_json, simulations, sim_years, sim_percent, start_date, etf_params_json, lookback_years, passive_income_percentage, mc_implementation, month_start_day
+		INSERT INTO scenarios (id, user_id, name, description, projection_months, is_active, simulations, sim_years, sim_percent, start_date, lookback_years, passive_income_percentage, mc_implementation, month_start_day)
+		SELECT ?, user_id, ?, description, projection_months, FALSE, simulations, sim_years, sim_percent, start_date, lookback_years, passive_income_percentage, mc_implementation, month_start_day
 		FROM scenarios WHERE id = ? AND user_id = ?`,
 		newID, newName, sourceID, userID)
 	if err != nil {
 		return "", err
 	}
 
-	// 2. Copy Entity Links
+	// 2. Copy Remainder Order
+	_, err = tx.Exec(`
+		INSERT INTO scenario_remainder_orders (scenario_id, entity_id, position)
+		SELECT ?, entity_id, position
+		FROM scenario_remainder_orders WHERE scenario_id = ?`,
+		newID, sourceID)
+	if err != nil {
+		return "", err
+	}
+
+	// 3. Copy ETF Params
+	_, err = tx.Exec(`
+		INSERT INTO scenario_etf_params (scenario_id, ticker, simulations, sim_years, sim_percent, lookback_years)
+		SELECT ?, ticker, simulations, sim_years, sim_percent, lookback_years
+		FROM scenario_etf_params WHERE scenario_id = ?`,
+		newID, sourceID)
+	if err != nil {
+		return "", err
+	}
+
+	// 4. Copy Entity Links
 	_, err = tx.Exec(`
 		INSERT INTO scenario_entities (scenario_id, entity_id, entity_type, version_id)
 		SELECT ?, entity_id, entity_type, version_id
@@ -217,24 +314,51 @@ func (r *ScenarioRepository) Archive(userID string, id string) error {
 
 func (r *ScenarioRepository) GetFull(userID string, id string) (*domain.Scenario, error) {
 	s := &domain.Scenario{ID: id, UserID: userID}
-	var remainderOrderMsgPack sql.NullString
-	var etfParamsMsgPack sql.NullString
 	var startDate sql.NullTime
 	err := r.db.QueryRow(`
-		SELECT name, description, projection_months, is_active, created_at, remainder_order_json AS remainder_order_msgpack, simulations, sim_years, sim_percent, start_date, etf_params_json AS etf_params_msgpack, lookback_years, passive_income_percentage, mc_implementation, month_start_day
+		SELECT name, description, projection_months, is_active, created_at, simulations, sim_years, sim_percent, start_date, lookback_years, passive_income_percentage, mc_implementation, month_start_day
 		FROM scenarios WHERE id = ? AND user_id = ? AND is_deleted = FALSE`,
-		id, userID).Scan(&s.Name, &s.Description, &s.ProjectionMonths, &s.IsActive, &s.CreatedAt, &remainderOrderMsgPack, &s.Simulations, &s.SimYears, &s.SimPercent, &startDate, &etfParamsMsgPack, &s.LookbackYears, &s.PassiveIncomePercentage, &s.MonteCarloImplementation, &s.MonthStartDay)
+		id, userID).Scan(&s.Name, &s.Description, &s.ProjectionMonths, &s.IsActive, &s.CreatedAt, &s.Simulations, &s.SimYears, &s.SimPercent, &startDate, &s.LookbackYears, &s.PassiveIncomePercentage, &s.MonteCarloImplementation, &s.MonthStartDay)
 	if err != nil {
 		return nil, err
 	}
-	if remainderOrderMsgPack.Valid && remainderOrderMsgPack.String != "" {
-		db.Unmarshal(remainderOrderMsgPack.String, &s.RemainderOrder)
-	}
-	if etfParamsMsgPack.Valid && etfParamsMsgPack.String != "" {
-		db.Unmarshal(etfParamsMsgPack.String, &s.ETFParams)
-	}
 	if startDate.Valid {
 		s.StartDate = &startDate.Time
+	}
+
+	s.RemainderOrder = []string{}
+	s.ETFParams = make(map[string]domain.ETFScenarioParams)
+
+	// Load RemainderOrder
+	remRows, err := r.db.Query(`
+		SELECT entity_id
+		FROM scenario_remainder_orders
+		WHERE scenario_id = ?
+		ORDER BY position ASC`, s.ID)
+	if err == nil {
+		defer remRows.Close()
+		for remRows.Next() {
+			var entID string
+			if err := remRows.Scan(&entID); err == nil {
+				s.RemainderOrder = append(s.RemainderOrder, entID)
+			}
+		}
+	}
+
+	// Load ETFParams
+	etfRows, err := r.db.Query(`
+		SELECT ticker, simulations, sim_years, sim_percent, lookback_years
+		FROM scenario_etf_params
+		WHERE scenario_id = ?`, s.ID)
+	if err == nil {
+		defer etfRows.Close()
+		for etfRows.Next() {
+			var ticker string
+			var params domain.ETFScenarioParams
+			if err := etfRows.Scan(&ticker, &params.Simulations, &params.SimYears, &params.SimPercent, &params.LookbackYears); err == nil {
+				s.ETFParams[ticker] = params
+			}
+		}
 	}
 
 	rows, err := r.db.Query(`

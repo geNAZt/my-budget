@@ -40,3 +40,46 @@ To ensure that ETF assets correctly accumulate interest/growth and that virtual 
 ### Month-over-Month State Propagation
 *   **Virtual Account Carry-Over**: At the start of each projection month, virtual account starting balances are initialized to their latest running balance (`vaRunningBalances`). At the end of each projection month, the ending balance (`StartingBalance + Inflow - Outflow`) is computed and saved back to `vaRunningBalances` to cleanly propagate the state to the next month.
 *   **ETF Compound Growth**: Since initial ETF lots are seeded correctly, the compounding interest/growth loop iterates over all lots, multiplying their values by the simulated monthly rate. The resulting growth is credited to the asset balance and distributed across any active sub-assets.
+
+## 5. Database Schema Normalization & Migration
+
+To eliminate JSON fields from the database, we decompose them into normalized relational tables.
+
+### Normalized Tables
+1. **`asset_version_etf_configs`**: Represents ETF tracker allocations.
+   * `id`: `TEXT PRIMARY KEY` (UUID)
+   * `asset_version_id`: `TEXT NOT NULL` (Foreign Key referencing `asset_versions(id)`)
+   * `tracker`, `historical_tracker`, `conversion_tracker`, `history_provider`: `TEXT DEFAULT ''`
+   * `percentage`, `ter`: `DOUBLE PRECISION DEFAULT 0.0`
+2. **`asset_version_penalties`**: Represents withdrawal and interest penalties.
+   * `id`: `TEXT PRIMARY KEY` (UUID)
+   * `asset_version_id`: `TEXT NOT NULL` (Foreign Key referencing `asset_versions(id)`)
+   * `name`, `trigger_type`: `TEXT DEFAULT ''`
+   * `percentage`: `DOUBLE PRECISION DEFAULT 0.0`
+3. **`asset_version_sub_assets`**: Represents sub-assets under an asset version.
+   * `id`: `TEXT PRIMARY KEY` (Sub-Asset ID)
+   * `asset_version_id`: `TEXT NOT NULL` (Foreign Key referencing `asset_versions(id)`)
+   * `name`, `target_value`: `TEXT DEFAULT ''`
+   * `amount_per_month`: `DOUBLE PRECISION DEFAULT 0.0`
+   * `is_remainder_consumer`: `BOOLEAN DEFAULT FALSE`
+   * `remainder_start_date`: `TIMESTAMP`
+   * `dumping_loan_id`: `TEXT` (Foreign Key referencing `loans(id)`)
+   * `start_date`: `TIMESTAMP NOT NULL`
+   * `end_date`, `earliest_dump_date`: `TIMESTAMP`
+4. **`scenario_remainder_orders`**: Represents the ordered list of EntityIDs for the scenario remainder flow.
+   * `scenario_id`: `TEXT NOT NULL` (Foreign Key referencing `scenarios(id)`)
+   * `entity_id`: `TEXT NOT NULL`
+   * `position`: `INTEGER NOT NULL`
+   * `PRIMARY KEY(scenario_id, position)`
+5. **`scenario_etf_params`**: Represents scenario-specific ETF parameter overrides.
+   * `scenario_id`: `TEXT NOT NULL` (Foreign Key referencing `scenarios(id)`)
+   * `ticker`: `TEXT NOT NULL DEFAULT ''`
+   * `simulations`, `sim_years`, `lookback_years`: `INTEGER DEFAULT 0`
+   * `sim_percent`: `DOUBLE PRECISION DEFAULT 0.0`
+   * `PRIMARY KEY(scenario_id, ticker)`
+
+### Migration & Cleanup Strategy
+1. **Idempotent Setup & Migration**: On database initialization (`InitDB` / `migrate`), we verify the presence of the original JSON columns using `information_schema`.
+2. **Data Extraction**: If the JSON column exists, we read all records containing non-empty JSON data, deserialize them in Go, and insert them into the new relational tables.
+3. **Column Dropping**: Once the data is successfully migrated, we drop the JSON columns. This ensures zero data loss and leaves the schema completely clean.
+

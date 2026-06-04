@@ -37,12 +37,26 @@
     let editPasskeyId = $state<string | null>(null);
     let editPasskeyName = $state("");
 
-    const timezones = Intl.supportedValuesOf("timeZone").map((tz) => ({
-        id: tz,
-        name: tz,
-    }));
+    let timezones = $state<{id: string, label: string}[]>([]);
 
     onMount(async () => {
+        try {
+            // @ts-ignore - Intl.supportedValuesOf is relatively new
+            const tzs = Intl.supportedValuesOf("timeZone");
+            timezones = tzs.sort().map((tz: string) => ({
+                id: tz,
+                label: tz.replace(/_/g, " "),
+            }));
+        } catch (e) {
+            console.error("Failed to load timezones:", e);
+            timezones = [
+                "UTC",
+                "Europe/Berlin",
+                "Europe/London",
+                "America/New_York",
+                "Asia/Tokyo"
+            ].map(tz => ({ id: tz, label: tz }));
+        }
         await fetchProfile();
     });
 
@@ -65,6 +79,7 @@
     }
 
     async function updateTimezone(tz: string) {
+        if (!tz) return;
         isUpdatingTimezone = true;
         try {
             const [, err] = await wsCall(
@@ -193,10 +208,10 @@
                         <div class="space-y-3">
                             <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Current Timezone</label>
                             <SearchableDropdown
-                                items={timezones}
-                                selectedId={profile.timezone}
+                                options={timezones}
+                                value={profile.timezone}
                                 placeholder="Search timezone..."
-                                onChange={(tz) => updateTimezone(tz)}
+                                onchange={(tz) => updateTimezone(tz)}
                             />
                         </div>
                         <div class="flex items-center gap-3 text-xs text-slate-400 font-medium bg-slate-50 p-4 rounded-2xl border border-slate-100">

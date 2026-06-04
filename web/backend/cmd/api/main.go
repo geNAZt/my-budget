@@ -161,7 +161,7 @@ func main() {
 	webSocketHandler.Register(
 		authAPI,
 		handler.NewUser(webSocketHandler, userRepo, syncService),
-		handler.NewAssets(webSocketHandler, assetRepo, scenarioRepo),
+		handler.NewAssets(webSocketHandler, assetRepo, scenarioRepo, marketDataService),
 		handler.NewBills(webSocketHandler, billRepo, scenarioRepo),
 		handler.NewExpenses(webSocketHandler, expenseRepo, scenarioRepo),
 		handler.NewLoans(webSocketHandler, loanRepo, scenarioRepo),

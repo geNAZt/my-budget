@@ -66,11 +66,18 @@ type AssetVersion struct {
 	CreatedAt          time.Time
 }
 
+type HistoryStitchingSegment struct {
+	Provider          string `json:"provider"`
+	LookupTicker      string `json:"lookup_ticker"`
+	ConversionTracker string `json:"conversion_tracker"`
+}
+
 type ETFTracker struct {
-	Tracker           string  `json:"tracker"`
-	HistoricalTracker string  `json:"historical_tracker"`
-	ConversionTracker string  `json:"conversion_tracker"`
-	HistoryProvider   string  `json:"history_provider"`
-	Percentage        float64 `json:"percentage"`
-	TER               float64 `json:"ter"`
+	Tracker           string                    `json:"tracker"`
+	HistoricalTracker string                    `json:"historical_tracker"`
+	ConversionTracker string                    `json:"conversion_tracker"`
+	HistoryProvider   string                    `json:"history_provider"`
+	Percentage        float64                   `json:"percentage"`
+	TER               float64                   `json:"ter"`
+	StitchingSegments []HistoryStitchingSegment `json:"stitching_segments"`
 }

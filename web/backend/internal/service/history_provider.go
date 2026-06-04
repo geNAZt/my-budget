@@ -57,9 +57,12 @@ func fetchDailyFX(symbol string) (map[string]float64, error) {
 		return make(map[string]float64), nil
 	}
 
+	startDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Now()
 	params1d := models.HistoryParams{
 		Interval: "1d",
-		Period:   "max",
+		Start:    &startDate,
+		End:      &endDate,
 	}
 
 	ct, err := ticker.New(symbol)
@@ -109,9 +112,12 @@ func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, er
 	log.Printf("[YAHOO_PROVIDER] Cache miss for %s", cacheKey)
 
 	// Fetch daily data because yfinance '1wk' over 'max' period often drops weeks entirely.
+	startDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Now()
 	params := models.HistoryParams{
 		Interval: "1d",
-		Period:   "max",
+		Start:    &startDate,
+		End:      &endDate,
 	}
 
 	tTicker, err := ticker.New(historicalTicker)
@@ -350,7 +356,13 @@ func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar
 	// Anchoring Logic
 	scaleMultiplier := 1.0
 	if t.Tracker != "" && t.Tracker != historicalTicker {
-		params := models.HistoryParams{Interval: "1wk", Period: "max"}
+		startDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+		endDate := time.Now()
+		params := models.HistoryParams{
+			Interval: "1wk",
+			Start:    &startDate,
+			End:      &endDate,
+		}
 		at, _ := ticker.New(t.Tracker)
 		if at != nil {
 			defer at.Close()
@@ -604,3 +616,205 @@ func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, err
 
 	return history, nil
 }
+
+type JustETFHistoryProvider struct {
+	cacheRepo *repository.CacheRepository
+}
+
+func NewJustETFHistoryProvider(cache *repository.CacheRepository) *JustETFHistoryProvider {
+	return &JustETFHistoryProvider{cacheRepo: cache}
+}
+
+type justETFSeriesItem struct {
+	Date  string `json:"date"`
+	Value struct {
+		Raw float64 `json:"raw"`
+	} `json:"value"`
+}
+
+type justETFResponse struct {
+	Series []justETFSeriesItem `json:"series"`
+}
+
+func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, error) {
+	historicalTicker := t.HistoricalTracker
+	if historicalTicker == "" {
+		historicalTicker = t.Tracker
+	}
+
+	cacheKey := getHistoryCacheKey("justetf_history", historicalTicker, t.ConversionTracker)
+	
+	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
+		var cached cachedHistory
+		if err := json.Unmarshal([]byte(data), &cached); err == nil {
+			if time.Since(cached.UpdatedAt) < 7*24*time.Hour {
+				log.Printf("[JUSTETF_PROVIDER] Cache hit for %s", cacheKey)
+				return cached.Bars, nil
+			}
+		}
+	}
+
+	log.Printf("[JUSTETF_PROVIDER] Cache miss for %s", cacheKey)
+
+	url := fmt.Sprintf("https://www.justetf.com/api/etfs/%s/performance-chart?locale=en&currency=EUR&valuesType=RELATIVE_CHANGE&reduceData=false&includeDividends=true&features=DIVIDENDS&dateFrom=2000-01-01&dateTo=%s", historicalTicker, time.Now().Format("2006-01-02"))
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9,de;q=0.8")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", fmt.Sprintf("https://www.justetf.com/en-be/etf-profile.html?isin=%s", historicalTicker))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("justETF API returned status %d", resp.StatusCode)
+	}
+
+	var justETFResp justETFResponse
+	if err := json.NewDecoder(resp.Body).Decode(&justETFResp); err != nil {
+		return nil, err
+	}
+
+	if len(justETFResp.Series) == 0 {
+		return nil, fmt.Errorf("no data returned from justETF for %s", historicalTicker)
+	}
+
+	dailyValues := make(map[string]float64)
+	var dates []time.Time
+	var lastDate time.Time
+
+	for _, item := range justETFResp.Series {
+		date, err := time.Parse("2006-01-02", item.Date)
+		if err != nil {
+			continue
+		}
+		dateStr := date.Format("2006-01-02")
+		
+		if _, exists := dailyValues[dateStr]; !exists {
+			dailyValues[dateStr] = 100.0 + item.Value.Raw
+			dates = append(dates, date)
+		}
+		
+		if date.After(lastDate) {
+			lastDate = date
+		}
+	}
+
+	if len(dailyValues) == 0 {
+		return nil, fmt.Errorf("no valid data parsed from justETF for %s", historicalTicker)
+	}
+
+	fxMap, _ := fetchDailyFX(t.ConversionTracker)
+
+	// Anchoring Logic
+	scaleMultiplier := 1.0
+	if t.Tracker != "" && t.Tracker != historicalTicker {
+		startDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+		endDate := time.Now()
+		params := models.HistoryParams{
+			Interval: "1wk",
+			Start:    &startDate,
+			End:      &endDate,
+		}
+		at, _ := ticker.New(t.Tracker)
+		if at != nil {
+			defer at.Close()
+			aBars, err := at.History(params)
+			if err == nil && len(aBars) > 0 {
+				anchorFound := false
+				for i := len(aBars) - 1; i >= 0; i-- {
+					etfClose := aBars[i].AdjClose
+					if etfClose <= 0 {
+						continue
+					}
+
+					if indexClose, ok := findInWindow(dailyValues, aBars[i].Date, 7); ok && indexClose > 0 {
+						fxRate := 1.0
+						if t.ConversionTracker != "" {
+							if rate, ok := findInWindow(fxMap, aBars[i].Date, 7); ok {
+								fxRate = rate
+							} else {
+								continue
+							}
+						}
+
+						indexInEUR := indexClose / fxRate
+						scaleMultiplier = etfClose / indexInEUR
+						log.Printf("[JUSTETF_PROVIDER] Anchored scale for %s: %e (ETF: %.4f, IndexInEUR: %.4f)", t.Tracker, scaleMultiplier, etfClose, indexInEUR)
+						anchorFound = true
+						break
+					}
+				}
+				if !anchorFound {
+					log.Printf("[JUSTETF_PROVIDER] WARNING: No anchor point found for %s", t.Tracker)
+				}
+			}
+		}
+	}
+
+	// Build Weekly History Slice
+	var history []models.Bar
+	log.Printf("[JUSTETF_PROVIDER] Building weekly history slice from %d daily values. Scale: %e", len(dailyValues), scaleMultiplier)
+
+	if len(dates) == 0 {
+		return history, nil
+	}
+
+	sort.Slice(dates, func(i, j int) bool {
+		return dates[i].Before(dates[j])
+	})
+
+	minDate := dates[0]
+	maxDate := dates[len(dates)-1]
+
+	curr := minDate
+	lastPrice := 0.0
+
+	for !curr.After(maxDate) {
+		isoYear, isoWeek := curr.ISOWeek()
+		weekStart := isoWeekToDate(isoYear, isoWeek)
+		
+		for i := 6; i >= 0; i-- {
+			checkDate := weekStart.AddDate(0, 0, i)
+			if val, ok := dailyValues[checkDate.Format("2006-01-02")]; ok {
+				fxRate := 1.0
+				if t.ConversionTracker != "" {
+					if rate, ok := findInWindow(fxMap, checkDate, 7); ok {
+						fxRate = rate
+					} else {
+						continue // If no FX rate, we don't update lastPrice, keep previous
+					}
+				}
+				lastPrice = (val / fxRate) * scaleMultiplier
+				break
+			}
+		}
+
+		if lastPrice > 0 {
+			history = append(history, models.Bar{
+				Date:     weekStart,
+				AdjClose: lastPrice,
+			})
+		}
+
+		curr = curr.AddDate(0, 0, 7)
+	}
+
+	cached := cachedHistory{
+		Bars:      history,
+		UpdatedAt: time.Now(),
+	}
+	cacheBytes, _ := json.Marshal(cached)
+	p.cacheRepo.Set(cacheKey, string(cacheBytes))
+
+	return history, nil
+}
+

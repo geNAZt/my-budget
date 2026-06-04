@@ -28,6 +28,7 @@
         PieChart,
         ChevronRight,
         Download,
+        RefreshCw,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
@@ -41,6 +42,8 @@
         PerformanceMetricsSchema,
         PenaltyAnalysisSchema,
         ErrorSchema,
+        TrackerChartsResponseSchema,
+        EmptySchema,
     } from "$lib/gen/api_pb.js";
 
     interface PenaltyEvent {
@@ -105,6 +108,7 @@
     );
     let timeHorizonYears = $state<number>(30);
     let allAssets = $state<any[]>([]);
+    let trackerCharts = $state<any[]>([]);
 
     let projections = $state<Record<string, any>>({});
     let loadingProjections = $state<Record<string, boolean>>({});
@@ -147,6 +151,128 @@
             console.error(err);
         }
     }
+
+    async function fetchTrackerCharts() {
+        try {
+            const [resp, err] = await wsCall("assets::gettrackercharts", null, null, [
+                TrackerChartsResponseSchema,
+            ]).one();
+            if (err) throw err;
+            trackerCharts = resp && resp.charts ? resp.charts : [];
+        } catch (err: any) {
+            console.error("Failed to fetch tracker charts:", err);
+        }
+    }
+
+    let isClearingCache = $state(false);
+
+    async function clearCache() {
+        if (isClearingCache) return;
+        isClearingCache = true;
+        try {
+            const [, err] = await wsCall("assets::clear_cache", null, null, [
+                EmptySchema,
+            ]).one();
+            if (err) throw err;
+
+            // Clear projections for all selected scenarios to trigger reactive reload
+            for (const id of selectedScenarioIds) {
+                delete projections[id];
+                delete loadingProjections[id];
+            }
+
+            // Reload tracker charts
+            await fetchTrackerCharts();
+        } catch (err: any) {
+            console.error("Failed to clear cache:", err);
+            alert("Failed to clear cache: " + err.message);
+        } finally {
+            isClearingCache = false;
+        }
+    }
+
+    function getTrackerChartData(trackerName: string) {
+        const chart = trackerCharts.find(c => c.tracker === trackerName);
+        if (!chart || !chart.points || chart.points.length === 0) return null;
+
+        const labels = chart.points.map((p: any) => {
+            const d = new Date(p.date);
+            return d.toLocaleDateString("de-DE", {
+                year: "2-digit",
+                month: "2-digit",
+            });
+        });
+        const values = chart.points.map((p: any) => p.value);
+
+        const datasets: any[] = [
+            {
+                label: "Real History",
+                data: values,
+                borderColor: "#10b981",
+                backgroundColor: "rgba(16, 185, 129, 0.05)",
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                tension: 0.2,
+                fill: true,
+            }
+        ];
+
+        if (chart.mcPoints && chart.mcPoints.length > 0) {
+            const mcValues = chart.mcPoints.map((p: any) => p.value);
+            datasets.push({
+                label: "Monte Carlo (Median)",
+                data: mcValues,
+                borderColor: "#6366f1",
+                backgroundColor: "rgba(99, 102, 241, 0.05)",
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                tension: 0.2,
+                fill: true,
+            });
+        }
+
+        return {
+            labels,
+            datasets
+        };
+    }
+
+    const trackerChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false as const,
+        plugins: {
+            legend: {
+                display: false,
+            },
+            tooltip: {
+                mode: "index" as const,
+                intersect: false,
+                backgroundColor: "rgba(15, 23, 42, 0.95)",
+                titleFont: { size: 10, weight: "bold" as const },
+                bodyFont: { size: 10 },
+                padding: 8,
+                cornerRadius: 8,
+            }
+        },
+        scales: {
+            x: {
+                display: false,
+            },
+            y: {
+                display: true,
+                grid: {
+                    display: false,
+                },
+                ticks: {
+                    color: "#94a3b8",
+                    font: { size: 8 },
+                }
+            }
+        }
+    };
 
     async function fetchProjection(id: string) {
         if (loadingProjections[id]) return;
@@ -270,6 +396,7 @@
         );
         await fetchScenarios();
         await fetchAssets();
+        await fetchTrackerCharts();
     });
 
     // Reactive choosing of scenario and asset for detailed explorer
@@ -1705,6 +1832,14 @@
                 visually.
             </p>
         </div>
+        <button
+            onclick={clearCache}
+            disabled={isClearingCache}
+            class="bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-300 text-slate-700 hover:text-indigo-600 px-5 py-3 rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-sm transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+        >
+            <RefreshCw class="w-4 h-4 {isClearingCache ? 'animate-spin' : ''}" />
+            <span>{isClearingCache ? "Clearing..." : "Clear Cache"}</span>
+        </button>
     </header>
 
     {#if isInitialLoading}
@@ -2833,6 +2968,7 @@
                                             ?.simulated_yields?.[
                                             `${selectedAssetInfo.id}_${tracker.tracker}`
                                         ]}
+                                    {@const trackerData = getTrackerChartData(tracker.tracker)}
                                     <div
                                         class="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4 hover:border-emerald-200/50 hover:shadow-md transition-all duration-300 relative overflow-hidden group"
                                     >
@@ -2937,6 +3073,26 @@
                                                 >
                                             </div>
                                         </div>
+
+                                        <!-- Chart Section -->
+                                        {#if trackerData}
+                                            <div class="pt-3 border-t border-slate-50 space-y-1.5">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-slate-400 font-bold block text-[9px] uppercase tracking-wider text-left">Historical Performance (Base 100)</span>
+                                                    <div class="flex items-center space-x-2.5 text-[8px] font-bold uppercase tracking-wider">
+                                                        <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>History</span>
+                                                        <span class="flex items-center text-indigo-600"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1"></span>Monte Carlo</span>
+                                                    </div>
+                                                </div>
+                                                <div class="h-28 relative">
+                                                    <Line data={trackerData} options={trackerChartOptions} />
+                                                </div>
+                                            </div>
+                                        {:else}
+                                            <div class="pt-3 border-t border-slate-50 text-center py-4 text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em]">
+                                                Loading Chart Data...
+                                            </div>
+                                        {/if}
                                     </div>
                                 {/each}
                             </div>

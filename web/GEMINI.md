@@ -143,7 +143,7 @@ Every task iteration MUST cycle through these exact states in order:
    * Assert numerical parity between old JS engines and new Go mathematical operations.
 
 ### 8.1 Agentic Safeguards (Bug Prevention)
-*   **Database Evolution:** NEVER depend on the state of the database to verify schema changes. All database changes MUST be implemented as idempotent migrations in `web/backend/internal/db/postgres.go` using `information_schema` checks. The local database is not used on the server; code is the only source of truth for the schema.
+*   **Database Evolution:** NEVER depend on the state of the database to verify schema changes. All database changes MUST be implemented as idempotent migrations in `web/backend/internal/db/postgres.go` using `information_schema` checks. The local database is not used on the server; code is the only source of truth for the schema. Do NOT use JSON/JSONB columns (e.g. TEXT columns storing marshalled JSON arrays) for nesting structured sub-entities or configurations; always use proper relational tables with foreign keys and correct order/sort fields.
 *   **External APIs:** All external API access must be made using OpenAPI-generated clients. Manual struct definitions and HTTP call logic for external providers are prohibited. Use the definitions in `web/backend/apis/` to generate clients.
 *   **Pathing Integrity:** NEVER use hardcoded absolute system paths (e.g. `/Users/fabian/...`) in source code or configurations. Always use relative paths (e.g. relative to the project root, app data directory, or working directory) or compute them dynamically at runtime (e.g., using `os.Executable`, `filepath.Dir`, or environment variables) to ensure portability across different host environments.
 *   **Integration Providers Decoupling (Strict Encapsulation):** All integration-specific logic, data parsing, ticker symbol mappings, pending/active order calculations, and arithmetic side-matching (e.g., BUY orders mapped to negative amounts) MUST be strictly encapsulated within their respective provider packages (e.g., `web/backend/internal/integration/trading212/`). The core integration engine, database syncing systems, and core API layers (e.g., `web/backend/internal/api/integration.go`) MUST be completely agnostic of provider-specific exception handling. Every provider MUST map both completed and pending/active transaction payloads to the unified `domain.GenericTransaction` structure before encrypting and persisting them in `bank_transactions.encrypted_data`.
@@ -157,6 +157,7 @@ Every task iteration MUST cycle through these exact states in order:
 * **DO NOT** drop native `<select>` dropdowns for critical architectural units. Use `SearchableDropdown.svelte`.
 * **DO NOT** write `db.Exec("ALTER TABLE ...")` without checking `pragma_table_info` in Go first. 
 * **DO NOT** leave a Go string field scanning into a nullable database column without providing a `DEFAULT ''` constraint.
+* **DO NOT** use JSON/JSONB columns or TEXT columns containing JSON string representations to store relational data or list configurations. Always create proper relational tables.
 
 ## 9. Token-Saving Guidelines (Agentic Context Optimization)
 To ensure maximum speed, lower latency, and highly efficient token consumption, all AI agents MUST strictly adhere to the following memory optimization constraints:

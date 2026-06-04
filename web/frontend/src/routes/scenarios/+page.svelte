@@ -67,6 +67,7 @@
         lookbackYears: number;
         mcImplementation: string;
         passiveIncomePercentage: number;
+        etfParams?: Record<string, any>;
     }
 
     let scenarios = $state<Scenario[]>([]);
@@ -77,7 +78,7 @@
     let isProjecting = $state(false);
     let showConfig = $state(false);
     let showScopeModal = $state(false);
-    let scopeTab = $state<"INCOME" | "BILL" | "ASSET" | "LOAN" | "WATERFALL">("INCOME");
+    let scopeTab = $state<"INCOME" | "BILL" | "EXPENSE" | "ASSET" | "LOAN" | "WATERFALL">("INCOME");
 
     function getAllEntities() {
         const entities = [
@@ -99,6 +100,11 @@
             ...allLoans.map((i) => ({
                 entityId: getID(i),
                 entityType: "LOAN",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
+            })),
+            ...allExpenses.map((i) => ({
+                entityId: getID(i),
+                entityType: "EXPENSE",
                 versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
         ];
@@ -193,7 +199,12 @@
         if (!activeScenario) return;
         
         const entitiesToAdd: any[] = [];
-        const items = type === 'INCOME' ? allIncomes : type === 'BILL' ? allBills : type === 'ASSET' ? allAssets : allLoans;
+        let items: any[] = [];
+        if (type === 'INCOME') items = allIncomes;
+        else if (type === 'BILL') items = allBills;
+        else if (type === 'EXPENSE') items = allExpenses;
+        else if (type === 'ASSET') items = allAssets;
+        else if (type === 'LOAN') items = allLoans;
         
         items.forEach(i => {
             entitiesToAdd.push({
@@ -1313,6 +1324,7 @@
                     {#each [
                         { id: 'INCOME', label: 'Incomes', icon: Euro, items: allIncomes },
                         { id: 'BILL', label: 'Bills', icon: Shield, items: allBills },
+                        { id: 'EXPENSE', label: 'Expenses', icon: Zap, items: allExpenses },
                         { id: 'ASSET', label: 'Assets', icon: Boxes, items: allAssets },
                         { id: 'LOAN', label: 'Loans', icon: History, items: allLoans },
                         { id: 'WATERFALL', label: 'Waterfall', icon: Waves, items: activeScenario.remainderOrder }
@@ -1425,6 +1437,25 @@
                                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
                                 >
                                     <span class="text-xs font-bold truncate pr-4">{bill.name}</span>
+                                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                        {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                        {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                    </div>
+                                </button>
+                            {/each}
+                        </div>
+                    {:else if scopeTab === 'EXPENSE'}
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {#each allExpenses as exp}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === exp.id && e.entityType === 'EXPENSE')}
+                                <button
+                                    onclick={() => toggleEntity(exp.id, 'EXPENSE', getActiveVersion(exp)?.id || "")}
+                                    class="flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                        {isIncluded 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
+                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
+                                >
+                                    <span class="text-xs font-bold truncate pr-4">{exp.name}</span>
                                     <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
                                         {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
                                         {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
