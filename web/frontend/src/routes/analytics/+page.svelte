@@ -421,7 +421,7 @@
             "Net Impact",
         ];
 
-        const rows = events.map((e) => [
+        const rows = events.map((e: any) => [
             new Date(e.date).toLocaleDateString("de-DE", {
                 month: "2-digit",
                 year: "numeric",
@@ -443,7 +443,7 @@
 
         const csvContent = [
             headers.join(";"),
-            ...rows.map((r) => r.join(";")),
+            ...rows.map((r: any) => r.join(";")),
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -640,7 +640,7 @@
         };
     });
 
-    const assetChartOptions = {
+    const assetChartOptions: any = {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
@@ -1124,16 +1124,16 @@
                 borderColor: color.border,
                 backgroundColor: color.fill,
                 borderWidth: 3,
-                pointRadius: dataPoints.map((_, idx) =>
+                pointRadius: dataPoints.map((_: any, idx: number) =>
                     milestoneIndices.has(idx) ? 7 : 0,
                 ),
-                pointHoverRadius: dataPoints.map((_, idx) =>
+                pointHoverRadius: dataPoints.map((_: any, idx: number) =>
                     milestoneIndices.has(idx) ? 9 : 6,
                 ),
-                pointBackgroundColor: dataPoints.map((_, idx) =>
+                pointBackgroundColor: dataPoints.map((_: any, idx: number) =>
                     milestoneIndices.has(idx) ? "#ffffff" : color.border,
                 ),
-                pointBorderWidth: dataPoints.map((_, idx) =>
+                pointBorderWidth: dataPoints.map((_: any, idx: number) =>
                     milestoneIndices.has(idx) ? 3 : 0,
                 ),
                 pointBorderColor: color.border,
@@ -1260,7 +1260,7 @@
         });
     });
 
-    const chartOptions = {
+    const chartOptions: any = {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
@@ -1559,7 +1559,7 @@
         };
     });
 
-    const realChartOptions = {
+    const realChartOptions: any = {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,

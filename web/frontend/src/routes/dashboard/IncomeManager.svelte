@@ -71,7 +71,7 @@
         linkToScenarios?: string[]; // Selection for new entities
     }
 
-    let incomes = $state<Income[]>([]);
+    let incomes = $state<(Income & { activeVersion: IncomeVersion })[]>([]);
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -108,11 +108,11 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentIncome = $state<Income>(createNewIncome());
+    let currentIncome = $state<Income & { activeVersion: IncomeVersion }>(createNewIncome() as any);
     let amountInput = $state("");
     let incomeToDelete = $state<string | null>(null);
 
-    function createNewIncome(): Income {
+    function createNewIncome(): Income & { activeVersion: IncomeVersion } {
         const now = new Date();
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
 
@@ -132,7 +132,7 @@
                 intervalIncreaseStartDate: null,
             },
             linkToScenarios: [],
-        };
+        } as any;
     }
 
     async function fetchData() {
@@ -161,7 +161,7 @@
             if (sR[1]) throw sR[1];
             if (mR[1]) throw mR[1];
 
-            incomes = iR[0].incomes;
+            incomes = iR[0].incomes as any;
             pools = pR[0].pools;
             virtualAccounts = vaR[0].virtualAccounts;
             scenarios = sR[0].scenarios;

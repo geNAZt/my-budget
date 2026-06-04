@@ -582,8 +582,8 @@
                 TransactionRuleSchema,
                 {
                     id: payload.id || "",
-                    parentId: payload.parentId || "",
-                    integrationId: payload.integrationId || "",
+                    parentId: "",
+                    integrationId: "",
                     targetPoolId: payload.targetPoolId || "",
                     operator: payload.operator,
                     field: payload.field,

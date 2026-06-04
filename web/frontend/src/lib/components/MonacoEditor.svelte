@@ -185,7 +185,7 @@ export default _default;
         if (!monaco) return;
 
         const deps = parseDepsFromCode(code);
-        const depsString = deps;
+        const depsString = JSON.stringify(deps);
         if (depsString === currentDepsString) return;
         currentDepsString = depsString;
 

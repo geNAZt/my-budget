@@ -1,2 +1,10 @@
 node_modules
 .aider*
+
+# Compiled backend binaries
+web/backend/api
+web/backend/main
+
+# ETF history prompt files
+prompts/etf-history.txt
+prompts/etf-history.txt.save

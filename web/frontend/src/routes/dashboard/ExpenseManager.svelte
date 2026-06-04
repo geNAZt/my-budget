@@ -67,11 +67,12 @@
         name: string;
         poolId?: string | null;
         accountIds?: string[];
+        linkToScenarios?: string[];
         activeVersion?: ExpenseVersion;
         import_selected?: boolean; // UI only
     }
 
-    let expenses = $state<Expense[]>([]);
+    let expenses = $state<(Expense & { activeVersion: ExpenseVersion })[]>([]);
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -104,11 +105,11 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentExpense = $state<Expense>(createNewExpense());
+    let currentExpense = $state<Expense & { activeVersion: ExpenseVersion }>(createNewExpense() as any);
     let amountInput = $state("");
     let expenseToDelete = $state<string | null>(null);
 
-    function createNewExpense(): Expense {
+    function createNewExpense(): Expense & { activeVersion: ExpenseVersion } {
         const now = new Date();
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
 
@@ -121,7 +122,7 @@
                 dueDate: monthStr,
                 slices: [],
             },
-        };
+        } as any;
     }
 
     async function fetchData() {
@@ -142,7 +143,7 @@
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
 
-            expenses = eR[0].expenses;
+            expenses = eR[0].expenses as any;
             pools = pR[0].pools;
             virtualAccounts = vaR[0].virtualAccounts;
         } catch (err: any) {
@@ -160,6 +161,7 @@
                 currentExpense.activeVersion = {
                     amount: 0,
                     dueDate: new Date().toISOString(),
+                    slices: [],
                 };
             }
             currentExpense.activeVersion.amount =

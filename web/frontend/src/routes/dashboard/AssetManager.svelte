@@ -89,6 +89,8 @@
     }
 
     interface AssetVersion {
+        id?: string;
+        assetId?: string;
         type: "STATIC" | "ETF";
         targetValue: string;
         dumpingLoanId: string | null;
@@ -109,6 +111,7 @@
         name: string;
         poolId?: string | null;
         accountIds?: string[];
+        linkToScenarios?: string[];
         activeVersion?: AssetVersion;
     }
 
@@ -117,7 +120,7 @@
         name: string;
     }
 
-    let assets = $state<Asset[]>([]);
+    let assets = $state<(Asset & { activeVersion: AssetVersion })[]>([]);
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let loans = $state<Loan[]>([]);
@@ -152,13 +155,13 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentAsset = $state<Asset>(createNewAsset());
+    let currentAsset = $state<Asset & { activeVersion: AssetVersion }>(createNewAsset() as any);
     let amountInput = $state("");
     let targetInput = $state("");
     let interestInput = $state("");
     let assetToDelete = $state<string | null>(null);
 
-    function createNewAsset(): Asset {
+    function createNewAsset(): Asset & { activeVersion: AssetVersion } {
         const now = new Date();
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
 
@@ -181,7 +184,7 @@
                 penalties: [],
                 subAssets: [],
             },
-        };
+        } as any;
     }
 
     async function fetchData() {
@@ -208,7 +211,7 @@
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
 
-            assets = aR[0].assets;
+            assets = aR[0].assets as any;
             loans = lR[0].loans;
             modifications = mR[0].modifications;
             pools = pR[0].pools;
@@ -334,14 +337,14 @@
                             currentAsset.activeVersion.stopModificationId || "",
                         interestRate:
                             parseFloat(
-                                currentAsset.activeVersion.interestRate,
+                                currentAsset.activeVersion.interestRate as any,
                             ) || 0,
                         interestInterval:
                             currentAsset.activeVersion.interestInterval ||
                             "YEARLY",
                         amountPerMonth:
                             parseFloat(
-                                currentAsset.activeVersion.amountPerMonth,
+                                currentAsset.activeVersion.amountPerMonth as any,
                             ) || 0,
                         remainderStartDate:
                             currentAsset.activeVersion.remainderStartDate || "",
@@ -815,7 +818,7 @@
                                                 >
                                                     Goal: {formatGermanAmount(
                                                         parseFloat(
-                                                            target.targetValue,
+                                                            String(target.targetValue),
                                                         ),
                                                     )} €
                                                 </span>
@@ -892,7 +895,7 @@
                                                 (sum, sa) =>
                                                     sum +
                                                     (parseFloat(
-                                                        sa.targetValue,
+                                                        String(sa.targetValue),
                                                     ) || 0),
                                                 0,
                                             ),
@@ -907,7 +910,7 @@
                                     {:else}
                                         {formatGermanAmount(
                                             parseFloat(
-                                                asset.activeVersion.targetValue,
+                                                String(asset.activeVersion.targetValue),
                                             ),
                                         )} €
                                     {/if}
@@ -1314,7 +1317,7 @@
                                                                         .endDate;
                                                                 const rate =
                                                                     calculateRequiredRate(
-                                                                        target.targetValue,
+                                                                        String(target.targetValue),
                                                                         target.startDate,
                                                                         endDate,
                                                                         currentAsset
@@ -1363,6 +1366,13 @@
                                                         class="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
                                                         required
                                                     />
+                                                    <span class="text-[9px] text-slate-400">
+                                                        Goal: {formatGermanAmount(
+                                                            parseFloat(
+                                                                String(target.targetValue),
+                                                            ),
+                                                        )} €
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
@@ -1444,7 +1454,7 @@
                                                             .endDate;
                                                     const rate =
                                                         calculateRequiredRate(
-                                                            target.targetValue,
+                                                            String(target.targetValue),
                                                             target.startDate,
                                                             endDate,
                                                             currentAsset
@@ -1705,7 +1715,7 @@
                                                     />
                                                     <button
                                                         type="button"
-                                                        onclick={() => etf.stitchingSegments.splice(segIdx, 1)}
+                                                        onclick={() => etf.stitchingSegments?.splice(segIdx, 1)}
                                                         class="col-span-1 text-rose-400 hover:text-rose-600 transition-colors text-[9px] font-bold"
                                                         >✕</button
                                                     >

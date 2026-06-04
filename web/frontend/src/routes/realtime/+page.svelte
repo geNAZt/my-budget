@@ -14,6 +14,7 @@
         TransactionDuplicateRequestSchema,
         TransactionSchema,
         ErrorSchema,
+        SyncFinishedPayloadSchema,
     } from "$lib/gen/api_pb.js";
     const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
 
@@ -841,7 +842,7 @@
     onMount(() => {
         fetchData();
         const interval = setInterval(() => fetchData(true), 30000);
-        const unsubSync = onWsEvent("sync.finished", (data) => {
+        const unsubSync = onWsEvent("sync.finished", SyncFinishedPayloadSchema, (data) => {
             console.log("[WS-EVENT] Sync finished in real time:", data);
             fetchData(true);
         });

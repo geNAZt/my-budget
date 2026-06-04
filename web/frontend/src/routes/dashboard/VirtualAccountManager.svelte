@@ -34,19 +34,22 @@
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
 
+    interface VirtualAccountVersion {
+        id?: string;
+        virtualAccountId?: string;
+        color: string;
+        startingBalance: number;
+        description: string;
+        createdAt?: string;
+    }
+
     interface VirtualAccount {
         id?: string;
         name: string;
-        activeVersion?: {
-            id?: string;
-            virtualAccountId?: string;
-            color: string;
-            startingBalance: number;
-            description: string;
-        };
+        activeVersion?: VirtualAccountVersion;
     }
 
-    let accounts = $state<VirtualAccount[]>([]);
+    let accounts = $state<(VirtualAccount & { activeVersion: VirtualAccountVersion })[]>([]);
     let isLoading = $state(true);
     let isSaving = $state(false);
     let error = $state<string | null>(null);
@@ -54,7 +57,7 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentAccount = $state<VirtualAccount>(createNewAccount());
+    let currentAccount = $state<VirtualAccount & { activeVersion: VirtualAccountVersion }>(createNewAccount() as any);
     let balanceInput = $state("");
     let accountToDelete = $state<string | null>(null);
 
@@ -69,7 +72,7 @@
         "#3b82f6", // Blue
     ];
 
-    function createNewAccount(): VirtualAccount {
+    function createNewAccount(): VirtualAccount & { activeVersion: VirtualAccountVersion } {
         return {
             name: "",
             activeVersion: {
@@ -77,7 +80,7 @@
                 startingBalance: 0,
                 description: "",
             },
-        };
+        } as any;
     }
 
     async function fetchAccounts() {
@@ -91,7 +94,7 @@
                 [VirtualAccountListSchema],
             ).one();
             if (err) throw err;
-            accounts = resp.virtualAccounts;
+            accounts = resp.virtualAccounts as any;
         } catch (err: any) {
             error = err.message;
         } finally {

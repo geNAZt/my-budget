@@ -30,17 +30,21 @@
         Percent,
         Activity,
         X,
+        AlertCircle,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
-    import { formatGermanAmount } from "$lib/utils/format";
+    import { formatGermanAmount, parseGermanAmount } from "$lib/utils/format";
 
     interface ModificationVersion {
+        id?: string;
+        modificationId?: string;
         amount: number;
         withdrawalPercentage: number;
         startDate: string;
         endDate: string | null;
         intervalMonths: number;
+        createdAt?: string;
     }
 
     interface Modification {
@@ -50,6 +54,33 @@
         targetType: "ASSET" | "LOAN";
         description: string;
         activeVersion?: ModificationVersion;
+    }
+
+    function toInputMonth(isoStr: string | null | undefined): string {
+        if (!isoStr) return "";
+        return isoStr.substring(0, 7); // "YYYY-MM"
+    }
+
+    function fromInputMonth(val: string): string {
+        if (!val) return "";
+        return val + "-01T00:00:00Z";
+    }
+
+    function formatDate(dateStr: string | null | undefined): string {
+        if (!dateStr) return "Ongoing";
+        const d = new Date(dateStr);
+        return d.toLocaleDateString("de-DE", {
+            year: "numeric",
+            month: "2-digit",
+        });
+    }
+
+    function parseNumeric(val: string | number, locale: "DE" | "US"): number {
+        if (typeof val === "number") return val;
+        if (!val) return 0;
+        if (locale === "DE") return parseGermanAmount(val);
+        let clean = val.toString().trim().replace(/,/g, "");
+        return parseFloat(clean) || 0;
     }
 
     let mods = $state<Modification[]>([]);
@@ -80,11 +111,11 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentMod = $state<Modification>(createNewMod());
+    let currentMod = $state<Modification & { activeVersion: ModificationVersion }>(createNewMod() as any);
     let amountInput = $state("");
     let modToDelete = $state<string | null>(null);
 
-    function createNewMod(): Modification {
+    function createNewMod(): Modification & { activeVersion: ModificationVersion } {
         const now = new Date();
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
 
@@ -100,7 +131,7 @@
                 endDate: null,
                 intervalMonths: 0,
             },
-        };
+        } as any;
     }
 
     async function fetchData() {
@@ -376,15 +407,14 @@
                                 Adjustment
                             </p>
                             <p
-                                class="text-3xl font-black {m.activeVersion
-                                    .amount >= 0
+                                class="text-3xl font-black {(m.activeVersion?.amount ?? 0) >= 0
                                     ? 'text-emerald-600'
                                     : 'text-rose-600'}"
                             >
-                                {m.activeVersion?.amount >= 0
+                                {(m.activeVersion?.amount ?? 0) >= 0
                                     ? "+"
                                     : ""}{formatGermanAmount(
-                                    m.activeVersion?.amount,
+                                    m.activeVersion?.amount ?? 0,
                                 )} €
                             </p>
                         </div>

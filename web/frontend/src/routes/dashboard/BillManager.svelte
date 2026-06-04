@@ -71,10 +71,11 @@
         name: string;
         poolId?: string | null;
         accountIds?: string[];
+        linkToScenarios?: string[];
         activeVersion?: BillVersion;
     }
 
-    let bills = $state<Bill[]>([]);
+    let bills = $state<(Bill & { activeVersion: BillVersion })[]>([]);
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -107,11 +108,11 @@
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
-    let currentBill = $state<Bill>(createNewBill());
+    let currentBill = $state<Bill & { activeVersion: BillVersion }>(createNewBill() as any);
     let amountInput = $state("");
     let billToDelete = $state<string | null>(null);
 
-    function createNewBill(): Bill {
+    function createNewBill(): Bill & { activeVersion: BillVersion } {
         const now = new Date();
         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00Z`;
 
@@ -126,7 +127,7 @@
                 intervalMonths: 1,
                 slices: [],
             },
-        };
+        } as any;
     }
 
     async function fetchData() {
@@ -147,7 +148,7 @@
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
 
-            bills = bR[0].bills;
+            bills = bR[0].bills as any;
             pools = pR[0].pools;
             virtualAccounts = vaR[0].virtualAccounts;
         } catch (err: any) {
