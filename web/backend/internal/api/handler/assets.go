@@ -344,7 +344,7 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 	}
 
 	resp := &apiproto.TrackerChartsResponse{}
-	
+
 	// Avoid duplicate tracker fetching
 	processedTrackers := make(map[string]bool)
 
@@ -352,21 +352,21 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 		if asset.ActiveVersion == nil || asset.ActiveVersion.Type != domain.AssetTypeETF {
 			continue
 		}
-		
+
 		for _, t := range asset.ActiveVersion.ETFConfig {
 			trackerKey := t.Tracker
 			if processedTrackers[trackerKey] {
 				continue
 			}
 			processedTrackers[trackerKey] = true
-			
+
 			// Fetch history returns
 			returns, err := a.marketData.GetHistoricalWeeklyReturns(t)
 			if err != nil {
 				log.Printf("[ASSETS] Failed to get historical weekly returns for tracker %s: %v", t.Tracker, err)
 				continue
 			}
-			
+
 			if len(returns) == 0 {
 				continue
 			}
@@ -380,7 +380,7 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 
 			// Construct cumulative performance series starting at 100.0
 			chartPoints := make([]*apiproto.TrackerChartPoint, 0, len(weeks)+1)
-			
+
 			// Base starting point
 			// Let's find the first week and determine its preceding monday to represent the start
 			var baseDate time.Time
@@ -406,9 +406,9 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 				if err != nil {
 					continue
 				}
-				
+
 				currVal = currVal * (1.0 + returns[wk])
-				
+
 				chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
 					Date:  isoWeekToDate(year, wkNum).Format("2006-01-02"),
 					Value: currVal,
@@ -485,6 +485,7 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 
 	a.handler.SendResponse(s, reqID, resp, true)
 }
+
 // ClearCache maps to route "assets::clear_cache"
 func (a *Assets) ClearCache(s *api.WebsocketSession, reqID string, body *apiproto.Empty) {
 	userID, _ := s.GetAuth()
@@ -514,4 +515,3 @@ func isoWeekToDate(year, week int) time.Time {
 	// Add weeks
 	return monday.AddDate(0, 0, (week-1)*7)
 }
-

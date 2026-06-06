@@ -100,7 +100,7 @@
                 id: planId,
             }, [ExecutionLogListSchema]).one();
             if (err) throw err;
-            logs = resp ? resp.logs : [];
+            logs = resp?.logs ?? [];
             if (logs.length > 0) {
                 selectedLogId = logs[0].id;
             }

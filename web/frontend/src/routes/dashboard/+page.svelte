@@ -108,7 +108,7 @@
                 ScenarioListSchema,
             ]).one();
             if (err) throw err;
-            scenarios = resp ? resp.scenarios : [];
+            scenarios = resp?.scenarios ?? [];
 
             if (scenarios.length > 0 && !selectedScenarioId) {
                 const preferredId =

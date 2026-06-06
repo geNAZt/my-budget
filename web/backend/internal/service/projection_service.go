@@ -688,9 +688,9 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-				Type:          "SELL",
-				Date:          as.currentMonth,
-				AssetName:     as.asset.Name,
+				Type:              "SELL",
+				Date:              as.currentMonth,
+				AssetName:         as.asset.Name,
 				LotID:             "STATIC",
 				LotCreatedAt:      as.currentMonth,
 				Amount:            grossSold,
@@ -863,9 +863,9 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-				Type:          "SELL",
-				Date:          as.currentMonth,
-				AssetName:     as.asset.Name,
+				Type:              "SELL",
+				Date:              as.currentMonth,
+				AssetName:         as.asset.Name,
 				LotID:             "STATIC",
 				LotCreatedAt:      as.currentMonth,
 				Amount:            grossSold,
@@ -1141,7 +1141,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						weekCounts[week]++
 					}
 				}
-				
+
 				// Keep only weeks that exist in ALL trackers
 				numTrackers := len(state.etfHistory)
 				for week, count := range weekCounts {
@@ -1149,11 +1149,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						commonWeeks = append(commonWeeks, week)
 					}
 				}
-				
+
 				// Sort to ensure consistent ordering, mostly for lookback truncating (newest first like before)
 				// We can just sort descending as ISO string e.g. 2023-W42 sorts correctly
 				sort.Sort(sort.Reverse(sort.StringSlice(commonWeeks)))
-				
+
 				log.Printf("[PROJECTION] Found %d common weeks across %d trackers for %s", len(commonWeeks), numTrackers, a.Name)
 			}
 
@@ -1307,6 +1307,35 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		for _, as := range assetStates {
 			as.currentMonth = curr
 		}
+
+		// Pre-evaluate SWR modification triggers
+		for _, m := range mods {
+			if m.TargetType == "ASSET" && m.ActiveVersion.WithdrawalPercentage > 0 {
+				if s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, curr, 1) {
+					totalBalance := 0.0
+					for _, as := range assetStates {
+						if as.isClosed {
+							continue
+						}
+						isTarget := m.TargetID == as.asset.ID
+						if !isTarget {
+							for _, tid := range m.TargetIDs {
+								if tid == as.asset.ID {
+									isTarget = true
+									break
+								}
+							}
+						}
+						if isTarget {
+							totalBalance += as.currentBalance
+						}
+					}
+					if totalBalance >= m.ActiveVersion.Amount {
+						triggeredMods[m.ID] = true
+					}
+				}
+			}
+		}
 		// 1. Process Asset Interest/Returns
 		for _, as := range assetStates {
 			if as.isClosed {
@@ -1344,7 +1373,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 		// 1.2 Process Asset Modifications (Aggregate Aware)
 		for _, m := range mods {
-			if !s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, curr, m.ActiveVersion.IntervalMonths) {
+			interval := m.ActiveVersion.IntervalMonths
+			if m.TargetType == "ASSET" && m.ActiveVersion.WithdrawalPercentage > 0 {
+				interval = 1
+			}
+			if !s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, curr, interval) {
 				continue
 			}
 
@@ -1377,12 +1410,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if m.ActiveVersion.WithdrawalPercentage > 0 {
 					// Dynamic aggregate withdrawal
 					swrAmt := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
-					if swrAmt >= m.ActiveVersion.Amount {
+					if triggeredMods[m.ID] || totalBalance >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
-						toWithdrawTotal := m.ActiveVersion.Amount
-						if toWithdrawTotal <= 0 {
-							toWithdrawTotal = swrAmt
-						}
+						toWithdrawTotal := swrAmt
 
 						// Distribute proportionally across targets
 						remainingToWithdraw := toWithdrawTotal
@@ -1717,6 +1747,35 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		for _, as := range assetStates {
 			as.currentMonth = currentDate
 		}
+
+		// Pre-evaluate SWR modification triggers
+		for _, m := range mods {
+			if m.TargetType == "ASSET" && m.ActiveVersion.WithdrawalPercentage > 0 {
+				if s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, currentDate, 1) {
+					totalBalance := 0.0
+					for _, as := range assetStates {
+						if as.isClosed {
+							continue
+						}
+						isTarget := m.TargetID == as.asset.ID
+						if !isTarget {
+							for _, tid := range m.TargetIDs {
+								if tid == as.asset.ID {
+									isTarget = true
+									break
+								}
+							}
+						}
+						if isTarget {
+							totalBalance += as.currentBalance
+						}
+					}
+					if totalBalance >= m.ActiveVersion.Amount {
+						triggeredMods[m.ID] = true
+					}
+				}
+			}
+		}
 		periodStart, periodEnd := projectionPeriodBounds(currentDate, monthStartDay, loc)
 		log.Printf("[PROJECTION] --- MONTH: %s ---", currentDate.Format("01/2006"))
 		month := domain.ProjectionMonth{
@@ -1897,7 +1956,11 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 		// 3.2 APPLY MODIFICATIONS (Aggregate Aware)
 		for _, m := range mods {
-			if !s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, currentDate, m.ActiveVersion.IntervalMonths) {
+			interval := m.ActiveVersion.IntervalMonths
+			if m.TargetType == "ASSET" && m.ActiveVersion.WithdrawalPercentage > 0 {
+				interval = 1
+			}
+			if !s.isActiveAt(m.ActiveVersion.StartDate, m.ActiveVersion.EndDate, currentDate, interval) {
 				continue
 			}
 
@@ -1930,12 +1993,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if m.ActiveVersion.WithdrawalPercentage > 0 {
 					// Dynamic aggregate withdrawal
 					swrAmt := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
-					if swrAmt >= m.ActiveVersion.Amount {
+					if triggeredMods[m.ID] || totalBalance >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
-						toWithdrawTotal := m.ActiveVersion.Amount
-						if toWithdrawTotal <= 0 {
-							toWithdrawTotal = swrAmt
-						}
+						toWithdrawTotal := swrAmt
 
 						// Distribute proportionally across targets
 						remainingToWithdraw := toWithdrawTotal
@@ -2922,9 +2982,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 				if as.penaltyAnalysis != nil {
 					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-						Type:          "SELL",
-						Date:          as.currentMonth,
-						AssetName:     as.asset.Name,
+						Type:              "SELL",
+						Date:              as.currentMonth,
+						AssetName:         as.asset.Name,
 						LotID:             "DIVIDEND",
 						LotCreatedAt:      as.currentMonth,
 						Amount:            totalGrossGrowth,
@@ -2932,7 +2992,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						PenaltyPaid:       interestPenaltyPaid,
 						MonthsHeld:        0,
 						InterestGenerated: totalGrossGrowth,
-						})
+					})
 
 				}
 

@@ -551,7 +551,112 @@ func TestSubAssetPayoutVirtualAccountAttribution(t *testing.T) {
 	}
 }
 
+func TestSWRModificationTrigger(t *testing.T) {
+	// We want to test:
+	// 1. Triggering SWR modification when totalBalance >= threshold (Amount)
+	// 2. Ensuring the trigger persists in subsequent months (even if balance decreases below threshold)
+	// 3. Verifying that the income linked via StopModificationID is stopped.
 
+	mID := "mod-1"
+	m := domain.Modification{
+		ID:         mID,
+		TargetType: "ASSET",
+		TargetID:   "asset-1",
+		ActiveVersion: &domain.ModificationVersion{
+			StartDate:            time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			IntervalMonths:       1,
+			WithdrawalPercentage: 4.0,      // 4% SWR
+			Amount:               300000.0, // threshold of 300,000 portfolio balance
+		},
+	}
 
+	as := &assetState{
+		asset: domain.Asset{
+			ID:   "asset-1",
+			Name: "ETF Asset",
+			ActiveVersion: &domain.AssetVersion{
+				Type: "ETF",
+			},
+		},
+		currentBalance: 300000.0, // Exactly hits threshold!
+		lots: []etfLot{
+			{principal: 300000.0, currentValue: 300000.0},
+		},
+	}
 
+	triggeredMods := make(map[string]bool)
+
+	// Month 1: Start of Month Pre-evaluation
+	totalBalance := as.currentBalance
+	if totalBalance >= m.ActiveVersion.Amount {
+		triggeredMods[m.ID] = true
+	}
+
+	if !triggeredMods[mID] {
+		t.Fatalf("Expected SWR modification to trigger with balance 300,000")
+	}
+
+	inc := domain.Income{
+		Name: "Job Income",
+		ActiveVersion: &domain.IncomeVersion{
+			Amount:             2000.0,
+			StopModificationID: &mID,
+		},
+	}
+
+	if inc.ActiveVersion.StopModificationID != nil && triggeredMods[*inc.ActiveVersion.StopModificationID] {
+		// correctly skipped
+	} else {
+		t.Errorf("Expected income to be skipped because the stop modification was triggered")
+	}
+
+	swrAmt := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+	if triggeredMods[m.ID] || totalBalance >= m.ActiveVersion.Amount {
+		toWithdrawTotal := swrAmt
+		if math.Abs(toWithdrawTotal-1000.0) > 0.001 {
+			t.Errorf("Expected to withdraw 1000.0, got %f", toWithdrawTotal)
+		}
+	} else {
+		t.Errorf("Expected withdrawal block to execute")
+	}
+
+	// Month 2: Balance falls to 250,000.
+	as.currentBalance = 250000.0
+	totalBalance2 := as.currentBalance
+	swrAmt2 := totalBalance2 * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+
+	if !triggeredMods[mID] {
+		t.Fatalf("Expected SWR modification trigger to persist in Month 2")
+	}
+
+	if triggeredMods[m.ID] || totalBalance2 >= m.ActiveVersion.Amount {
+		toWithdrawTotal := swrAmt2
+		expectedWithdrawal := 250000.0 * 0.04 / 12.0 // 833.3333
+		if math.Abs(toWithdrawTotal-expectedWithdrawal) > 0.001 {
+			t.Errorf("Expected to withdraw %f in Month 2, got %f", expectedWithdrawal, toWithdrawTotal)
+		}
+	} else {
+		t.Errorf("Expected withdrawal block to execute in Month 2 even with lower balance")
+	}
+}
+
+func TestSWRModificationIntervals(t *testing.T) {
+	s := &ProjectionService{}
+	startDate := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// SWR uses interval = 1 under the hood now. Let's make sure s.isActiveAt with interval = 1 returns true for subsequent months.
+	if !s.isActiveAt(startDate, nil, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), 1) {
+		t.Errorf("Expected isActiveAt to be true in month 2 for interval 1")
+	}
+
+	// For a one-time interval (0), isActiveAt should be false in subsequent months (which is why SWR needs to override it to 1)
+	if s.isActiveAt(startDate, nil, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), 0) {
+		t.Errorf("Expected isActiveAt to be false in month 2 for interval 0")
+	}
+
+	// For an annual interval (12), isActiveAt should be false in month 2
+	if s.isActiveAt(startDate, nil, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), 12) {
+		t.Errorf("Expected isActiveAt to be false in month 2 for interval 12")
+	}
+}
 

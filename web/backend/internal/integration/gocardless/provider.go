@@ -551,7 +551,6 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 		meta.Description = *gt.RemittanceInformationUnstructured
 	}
 
-
 	if gt.TransactionId != nil && *gt.TransactionId != "" {
 		meta.ExternalID = *gt.TransactionId
 	} else if gt.InternalTransactionId != nil && *gt.InternalTransactionId != "" {

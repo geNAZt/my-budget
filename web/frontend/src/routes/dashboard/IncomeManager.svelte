@@ -161,11 +161,11 @@
             if (sR[1]) throw sR[1];
             if (mR[1]) throw mR[1];
 
-            incomes = iR[0].incomes as any;
-            pools = pR[0].pools;
-            virtualAccounts = vaR[0].virtualAccounts;
-            scenarios = sR[0].scenarios;
-            modifications = mR[0].modifications;
+            incomes = (iR[0]?.incomes ?? []) as any;
+            pools = pR[0]?.pools ?? [];
+            virtualAccounts = vaR[0]?.virtualAccounts ?? [];
+            scenarios = sR[0]?.scenarios ?? [];
+            modifications = mR[0]?.modifications ?? [];
         } catch (err: any) {
             error = err.message;
         } finally {

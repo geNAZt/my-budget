@@ -337,7 +337,7 @@
                 ScenarioListSchema,
             ]).one();
             if (err) throw err;
-            scenarios = resp ? resp.scenarios : [];
+            scenarios = resp?.scenarios ?? [];
             if (scenarios.length > 0 && !activeScenario) {
                 activeScenario = scenarios[0];
                 runProjection(activeScenario!);

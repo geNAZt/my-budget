@@ -51,7 +51,7 @@
                 [IntegrationAccountListSchema],
             ).one();
             if (err) throw err;
-            accounts = (resp ? resp.accounts : []).map((acc: any) => {
+            accounts = (resp?.accounts ?? []).map((acc: any) => {
                 if (!acc.iban) {
                     acc.iban = acc.id;
                 }

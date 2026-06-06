@@ -27,7 +27,7 @@ func main() {
 
 	fmt.Printf("Fetched %d bars\n", len(bars))
 	if len(bars) > 0 {
-		for i := len(bars)-1; i >= len(bars)-10; i-- {
+		for i := len(bars) - 1; i >= len(bars)-10; i-- {
 			y, w := bars[i].Date.ISOWeek()
 			fmt.Printf("Date: %s, Week %d/%d: %f\n", bars[i].Date.Format("2006-01-02"), w, y, bars[i].AdjClose)
 		}

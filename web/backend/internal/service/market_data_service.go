@@ -52,7 +52,7 @@ func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map
 		historicalTicker = t.Tracker
 	}
 
-	log.Printf("[MARKET_DATA] Fetching historical weekly returns for %s (provider: %s, conv: %s, anchor: %s)", 
+	log.Printf("[MARKET_DATA] Fetching historical weekly returns for %s (provider: %s, conv: %s, anchor: %s)",
 		historicalTicker, t.HistoryProvider, t.ConversionTracker, t.Tracker)
 
 	// 2. Select Provider
@@ -261,34 +261,34 @@ func calculateReturnsFromBars(historyBars []models.Bar, trackerName string) map[
 	for i := len(historyBars) - 1; i > 0; i-- {
 		newerBar := historyBars[i]
 		olderBar := historyBars[i-1]
-		
+
 		newerYear, newerWeek := newerBar.Date.ISOWeek()
 		olderYear, olderWeek := olderBar.Date.ISOWeek()
 
 		newerISOStr := fmt.Sprintf("%04d-W%02d", newerYear, newerWeek)
-		
+
 		if olderBar.AdjClose <= 0 {
 			continue
 		}
 
 		// Calculate total return over the period
 		totalReturn := (newerBar.AdjClose - olderBar.AdjClose) / olderBar.AdjClose
-		
+
 		// Gap detection: Calculate how many weeks passed
 		// A simple way is to divide duration by 7 days.
 		// Since we standardized dates to Monday in the providers, we can use exact duration.
 		duration := newerBar.Date.Sub(olderBar.Date)
 		weeksPassed := int(math.Round(duration.Hours() / 24.0 / 7.0))
-		
+
 		if weeksPassed > 1 {
-			log.Printf("[MARKET_DATA] Data gap detected for %s. %d weeks between %d/%d and %d/%d", 
+			log.Printf("[MARKET_DATA] Data gap detected for %s. %d weeks between %d/%d and %d/%d",
 				trackerName, weeksPassed, olderWeek, olderYear, newerWeek, newerYear)
-			
+
 			// Geometric interpolation
 			// (1 + r)^weeksPassed = 1 + totalReturn
 			// r = (1 + totalReturn)^(1/weeksPassed) - 1
 			weeklyReturn := math.Pow(1.0+totalReturn, 1.0/float64(weeksPassed)) - 1.0
-			
+
 			// Fill the gap
 			currDate := newerBar.Date
 			for w := 0; w < weeksPassed; w++ {

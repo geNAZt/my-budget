@@ -342,8 +342,8 @@ func (s *ExecutionService) handleRpcRequest(req *executionpb.RpcRequest) {
 									}
 
 									var config struct {
-										AccountIDs       []string                       `json:"account_ids"`
-										LegacyAccountIDs []string                       `json:"accounts"`
+										AccountIDs       []string `json:"account_ids"`
+										LegacyAccountIDs []string `json:"accounts"`
 										AccountsMetadata map[string]struct {
 											Alias             string     `json:"alias"`
 											Enabled           bool       `json:"enabled"`
@@ -660,8 +660,8 @@ func (s *ExecutionService) ExecutePlan(userID string, planID string, triggerPayl
 				}
 
 				var config struct {
-					AccountIDs       []string                       `json:"account_ids"`
-					LegacyAccountIDs []string                       `json:"accounts"`
+					AccountIDs       []string `json:"account_ids"`
+					LegacyAccountIDs []string `json:"accounts"`
 					AccountsMetadata map[string]struct {
 						Alias             string     `json:"alias"`
 						Enabled           bool       `json:"enabled"`

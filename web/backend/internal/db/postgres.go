@@ -156,9 +156,9 @@ func BackupDB(dsn string, dataDir string) {
 	backupFile := filepath.Join(backupDir, fmt.Sprintf("backup-%s.sql", timestamp))
 
 	cmd := exec.Command("pg_dump", "-d", dsn, "-f", backupFile)
-	// pg_dump might need PGPASSWORD if it's not in the DSN, 
+	// pg_dump might need PGPASSWORD if it's not in the DSN,
 	// but DATABASE_URL usually contains it.
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[DB] Backup failed: %v\nOutput: %s", err, string(output))

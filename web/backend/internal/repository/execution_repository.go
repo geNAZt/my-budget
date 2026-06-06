@@ -59,7 +59,7 @@ func (r *ExecutionRepository) GetByID(userID string, id string) (*domain.Executi
 
 func (r *ExecutionRepository) Save(userID string, p *domain.ExecutionPlan) error {
 	p.UpdatedAt = time.Now()
-	
+
 	var exists bool
 	if p.ID != "" {
 		err := r.db.QueryRow("SELECT EXISTS(SELECT 1 FROM execution_plans WHERE user_id = ? AND id = ?)", userID, p.ID).Scan(&exists)

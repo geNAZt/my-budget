@@ -143,9 +143,9 @@
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
 
-            expenses = eR[0].expenses as any;
-            pools = pR[0].pools;
-            virtualAccounts = vaR[0].virtualAccounts;
+            expenses = (eR[0]?.expenses ?? []) as any;
+            pools = pR[0]?.pools ?? [];
+            virtualAccounts = vaR[0]?.virtualAccounts ?? [];
         } catch (err: any) {
             error = err.message;
         } finally {

@@ -211,11 +211,11 @@
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
 
-            assets = aR[0].assets as any;
-            loans = lR[0].loans;
-            modifications = mR[0].modifications;
-            pools = pR[0].pools;
-            virtualAccounts = vaR[0].virtualAccounts;
+            assets = (aR[0]?.assets ?? []) as any;
+            loans = lR[0]?.loans ?? [];
+            modifications = mR[0]?.modifications ?? [];
+            pools = pR[0]?.pools ?? [];
+            virtualAccounts = vaR[0]?.virtualAccounts ?? [];
         } catch (err: any) {
             error = err.message;
         } finally {

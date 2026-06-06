@@ -98,7 +98,7 @@ func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, er
 	}
 
 	cacheKey := getHistoryCacheKey("yahoo_history", historicalTicker, t.ConversionTracker)
-	
+
 	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
 		var cached cachedHistory
 		if err := json.Unmarshal([]byte(data), &cached); err == nil {
@@ -211,7 +211,7 @@ func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, er
 
 	for !curr.After(maxDate) {
 		isoYear, isoWeek := curr.ISOWeek()
-		
+
 		// Look for a price in the current week. Since we want the *latest* price of the week,
 		// we check dates from Sunday back to Monday.
 		weekStart := isoWeekToDate(isoYear, isoWeek)
@@ -264,7 +264,7 @@ func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar
 	}
 
 	cacheKey := getHistoryCacheKey("solactive_history", historicalTicker, t.ConversionTracker)
-	
+
 	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
 		var cached cachedHistory
 		if err := json.Unmarshal([]byte(data), &cached); err == nil {
@@ -334,13 +334,13 @@ func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar
 			val, _ := strconv.ParseFloat(valStr, 64)
 			date := time.UnixMilli(ts).UTC()
 			dateStr := date.Format("2006-01-02")
-			
+
 			// Only keep the first value for each day if there are multiples
 			if _, exists := dailyValues[dateStr]; !exists {
 				dailyValues[dateStr] = val
 				dates = append(dates, date)
 			}
-			
+
 			if date.After(lastDate) {
 				lastDate = date
 			}
@@ -420,7 +420,7 @@ func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar
 	for !curr.After(maxDate) {
 		isoYear, isoWeek := curr.ISOWeek()
 		weekStart := isoWeekToDate(isoYear, isoWeek)
-		
+
 		for i := 6; i >= 0; i-- {
 			checkDate := weekStart.AddDate(0, 0, i)
 			if val, ok := dailyValues[checkDate.Format("2006-01-02")]; ok {
@@ -490,7 +490,7 @@ func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, err
 	}
 
 	cacheKey := getHistoryCacheKey("msci_history", historicalTicker, t.ConversionTracker)
-	
+
 	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
 		var cached cachedHistory
 		if err := json.Unmarshal([]byte(data), &cached); err == nil {
@@ -504,7 +504,7 @@ func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, err
 	log.Printf("[MSCI_PROVIDER] Cache miss for %s", cacheKey)
 
 	url := fmt.Sprintf("https://www.msci.com/indexes/api/index/performance?indexCode=%s&currency=USD&variant=NETR&frequency=daily&baseValue100=false&startDate=1998-12-31&endDate=%s", historicalTicker, time.Now().Format("2006-01-02"))
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -542,12 +542,12 @@ func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, err
 			continue
 		}
 		dateStr := date.Format("2006-01-02")
-		
+
 		if _, exists := dailyValues[dateStr]; !exists {
 			dailyValues[dateStr] = item.Value
 			dates = append(dates, date)
 		}
-		
+
 		if date.After(lastDate) {
 			lastDate = date
 		}
@@ -580,7 +580,7 @@ func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, err
 	for !curr.After(maxDate) {
 		isoYear, isoWeek := curr.ISOWeek()
 		weekStart := isoWeekToDate(isoYear, isoWeek)
-		
+
 		for i := 6; i >= 0; i-- {
 			checkDate := weekStart.AddDate(0, 0, i)
 			if val, ok := dailyValues[checkDate.Format("2006-01-02")]; ok {
@@ -643,7 +643,7 @@ func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, 
 	}
 
 	cacheKey := getHistoryCacheKey("justetf_history", historicalTicker, t.ConversionTracker)
-	
+
 	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
 		var cached cachedHistory
 		if err := json.Unmarshal([]byte(data), &cached); err == nil {
@@ -657,7 +657,7 @@ func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, 
 	log.Printf("[JUSTETF_PROVIDER] Cache miss for %s", cacheKey)
 
 	url := fmt.Sprintf("https://www.justetf.com/api/etfs/%s/performance-chart?locale=en&currency=EUR&valuesType=RELATIVE_CHANGE&reduceData=false&includeDividends=true&features=DIVIDENDS&dateFrom=2000-01-01&dateTo=%s", historicalTicker, time.Now().Format("2006-01-02"))
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -697,12 +697,12 @@ func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, 
 			continue
 		}
 		dateStr := date.Format("2006-01-02")
-		
+
 		if _, exists := dailyValues[dateStr]; !exists {
 			dailyValues[dateStr] = 100.0 + item.Value.Raw
 			dates = append(dates, date)
 		}
-		
+
 		if date.After(lastDate) {
 			lastDate = date
 		}
@@ -781,7 +781,7 @@ func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, 
 	for !curr.After(maxDate) {
 		isoYear, isoWeek := curr.ISOWeek()
 		weekStart := isoWeekToDate(isoYear, isoWeek)
-		
+
 		for i := 6; i >= 0; i-- {
 			checkDate := weekStart.AddDate(0, 0, i)
 			if val, ok := dailyValues[checkDate.Format("2006-01-02")]; ok {
@@ -817,4 +817,3 @@ func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, 
 
 	return history, nil
 }
-

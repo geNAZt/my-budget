@@ -150,9 +150,9 @@
             if (aR[1]) throw aR[1];
             if (lR[1]) throw lR[1];
 
-            mods = mR[0].modifications;
-            allAssets = aR[0].assets;
-            allLoans = lR[0].loans;
+            mods = mR[0]?.modifications ?? [];
+            allAssets = aR[0]?.assets ?? [];
+            allLoans = lR[0]?.loans ?? [];
         } catch (err: any) {
             error = err.message;
         } finally {

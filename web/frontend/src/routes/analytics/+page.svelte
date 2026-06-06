@@ -124,7 +124,7 @@
                 ScenarioListSchema,
             ]).one();
             if (err) throw err;
-            scenarios = resp ? resp.scenarios : [];
+            scenarios = resp?.scenarios ?? [];
 
             // Default: Select first two scenarios if available for instant comparison
             if (scenarios.length > 0) {
@@ -146,7 +146,7 @@
                 AssetListSchema,
             ]).one();
             if (err) throw err;
-            allAssets = resp ? resp.assets : [];
+            allAssets = resp?.assets ?? [];
         } catch (err: any) {
             console.error(err);
         }

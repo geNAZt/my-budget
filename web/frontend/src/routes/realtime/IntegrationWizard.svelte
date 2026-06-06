@@ -169,7 +169,7 @@
                 [EBAspspsListSchema],
             ).one();
             if (err) throw err;
-            institutions = resp ? resp.aspsps : [];
+            institutions = resp?.aspsps ?? [];
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -221,7 +221,7 @@
                 [GCInstitutionsListSchema],
             ).one();
             if (err) throw err;
-            institutions = resp ? resp.institutions : [];
+            institutions = resp?.institutions ?? [];
         } catch (e: any) {
             error = e.message;
         } finally {
