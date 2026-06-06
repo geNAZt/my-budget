@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/genazt/my-budget-script/web/backend/internal/db"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
+	"github.com/genazt/my-budget-script/web/backend/internal/repository"
 )
 
 func TestProjectionMonthBoundaryDay(t *testing.T) {
@@ -565,8 +567,8 @@ func TestSWRModificationTrigger(t *testing.T) {
 		ActiveVersion: &domain.ModificationVersion{
 			StartDate:            time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			IntervalMonths:       1,
-			WithdrawalPercentage: 4.0,      // 4% SWR
-			Amount:               300000.0, // threshold of 300,000 portfolio balance
+			WithdrawalPercentage: 4.0,     // 4% SWR
+			Amount:               12000.0, // threshold of 12,000 annual SWR withdrawal (4% SWR of 300,000 portfolio balance)
 		},
 	}
 
@@ -588,12 +590,13 @@ func TestSWRModificationTrigger(t *testing.T) {
 
 	// Month 1: Start of Month Pre-evaluation
 	totalBalance := as.currentBalance
-	if totalBalance >= m.ActiveVersion.Amount {
+	annualWithdrawal := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+	if annualWithdrawal >= m.ActiveVersion.Amount {
 		triggeredMods[m.ID] = true
 	}
 
 	if !triggeredMods[mID] {
-		t.Fatalf("Expected SWR modification to trigger with balance 300,000")
+		t.Fatalf("Expected SWR modification to trigger with balance 300,000 (annual SWR withdrawal = 12,000)")
 	}
 
 	inc := domain.Income{
@@ -629,7 +632,8 @@ func TestSWRModificationTrigger(t *testing.T) {
 		t.Fatalf("Expected SWR modification trigger to persist in Month 2")
 	}
 
-	if triggeredMods[m.ID] || totalBalance2 >= m.ActiveVersion.Amount {
+	annualWithdrawal2 := totalBalance2 * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+	if triggeredMods[m.ID] || annualWithdrawal2 >= m.ActiveVersion.Amount {
 		toWithdrawTotal := swrAmt2
 		expectedWithdrawal := 250000.0 * 0.04 / 12.0 // 833.3333
 		if math.Abs(toWithdrawTotal-expectedWithdrawal) > 0.001 {
@@ -659,4 +663,221 @@ func TestSWRModificationIntervals(t *testing.T) {
 		t.Errorf("Expected isActiveAt to be false in month 2 for interval 12")
 	}
 }
+
+func TestResolveModifications(t *testing.T) {
+	dbURL := "postgres://budget:budgetpass@localhost:5432/budget?sslmode=disable"
+	database, err := db.InitDB(dbURL)
+	if err != nil {
+		t.Skip("Skipping resolve modifications test because database is not available:", err)
+	}
+	defer database.Close()
+
+	userID := "test-user-resolve-mods"
+	mr := repository.NewModificationRepository(database)
+
+	// Ensure test user exists to satisfy foreign keys
+	_, err = database.Exec("INSERT INTO users (id, username) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", userID, userID)
+	if err != nil {
+		t.Fatalf("Failed to create test user: %v", err)
+	}
+	defer func() {
+		_, _ = database.Exec("DELETE FROM modification_assets WHERE modification_id IN (SELECT id FROM modifications WHERE user_id = ?)", userID)
+		_, _ = database.Exec("DELETE FROM modification_versions WHERE modification_id IN (SELECT id FROM modifications WHERE user_id = ?)", userID)
+		_, _ = database.Exec("DELETE FROM modifications WHERE user_id = ?", userID)
+		_, _ = database.Exec("DELETE FROM assets WHERE user_id = ?", userID)
+		_, _ = database.Exec("DELETE FROM loans WHERE user_id = ?", userID)
+		_, _ = database.Exec("DELETE FROM users WHERE id = ?", userID)
+	}()
+
+	// Insert test assets and loans to satisfy foreign keys
+	_, _ = database.Exec("INSERT INTO assets (id, user_id, name) VALUES ('asset-1', ?, 'Asset 1') ON CONFLICT (id) DO NOTHING", userID)
+	_, _ = database.Exec("INSERT INTO assets (id, user_id, name) VALUES ('asset-2', ?, 'Asset 2') ON CONFLICT (id) DO NOTHING", userID)
+	_, _ = database.Exec("INSERT INTO assets (id, user_id, name) VALUES ('asset-3', ?, 'Asset 3') ON CONFLICT (id) DO NOTHING", userID)
+	_, _ = database.Exec("INSERT INTO loans (id, user_id, name) VALUES ('loan-1', ?, 'Loan 1') ON CONFLICT (id) DO NOTHING", userID)
+
+	// Clean up any left-overs from previous runs
+	_, _ = database.Exec("DELETE FROM modification_assets WHERE modification_id IN (SELECT id FROM modifications WHERE user_id = ?)", userID)
+	_, _ = database.Exec("DELETE FROM modification_versions WHERE modification_id IN (SELECT id FROM modifications WHERE user_id = ?)", userID)
+	_, _ = database.Exec("DELETE FROM modifications WHERE user_id = ?", userID)
+
+	// Create test modifications
+	m1 := &domain.Modification{
+		TargetType:  "ASSET",
+		TargetID:    "asset-1",
+		Description: "Single Asset Mod",
+		ActiveVersion: &domain.ModificationVersion{
+			Amount:    100.0,
+			StartDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	err = mr.Save(userID, m1)
+	if err != nil {
+		t.Fatalf("Failed to save m1: %v", err)
+	}
+	defer func() {
+		_, _ = database.Exec("DELETE FROM modification_versions WHERE modification_id = ?", m1.ID)
+		_, _ = database.Exec("DELETE FROM modifications WHERE id = ?", m1.ID)
+	}()
+
+	m2 := &domain.Modification{
+		TargetType:  "ASSET",
+		Description: "Multi Asset Mod",
+		TargetIDs:   []string{"asset-2", "asset-3"},
+		ActiveVersion: &domain.ModificationVersion{
+			Amount:    200.0,
+			StartDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	err = mr.Save(userID, m2)
+	if err != nil {
+		t.Fatalf("Failed to save m2: %v", err)
+	}
+	defer func() {
+		_, _ = database.Exec("DELETE FROM modification_assets WHERE modification_id = ?", m2.ID)
+		_, _ = database.Exec("DELETE FROM modification_versions WHERE modification_id = ?", m2.ID)
+		_, _ = database.Exec("DELETE FROM modifications WHERE id = ?", m2.ID)
+	}()
+
+	m3 := &domain.Modification{
+		TargetType:  "LOAN",
+		TargetID:    "loan-1",
+		Description: "Loan Mod",
+		ActiveVersion: &domain.ModificationVersion{
+			Amount:    50.0,
+			StartDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	err = mr.Save(userID, m3)
+	if err != nil {
+		t.Fatalf("Failed to save m3: %v", err)
+	}
+	defer func() {
+		_, _ = database.Exec("DELETE FROM modification_versions WHERE modification_id = ?", m3.ID)
+		_, _ = database.Exec("DELETE FROM modifications WHERE id = ?", m3.ID)
+	}()
+
+	ps := &ProjectionService{}
+	ps.SetAdditionalRepos(nil, mr)
+
+	// Case 1: Unscoped scenario (len(Entities) == 0) -> should return all modifications
+	sc1 := &domain.Scenario{}
+	resolved, err := ps.resolveModifications(userID, sc1)
+	if err != nil {
+		t.Fatalf("resolveModifications failed: %v", err)
+	}
+	if len(resolved) < 3 {
+		t.Errorf("Expected at least 3 resolved modifications, got %d", len(resolved))
+	}
+
+	// Case 2: Scoped scenario with asset-1 -> should include m1, exclude m2 and m3
+	sc2 := &domain.Scenario{
+		Entities: []domain.ScenarioEntity{
+			{EntityType: "ASSET", EntityID: "asset-1"},
+		},
+	}
+	resolved2, err := ps.resolveModifications(userID, sc2)
+	if err != nil {
+		t.Fatalf("resolveModifications failed: %v", err)
+	}
+	hasM1, hasM2, hasM3 := false, false, false
+	for _, m := range resolved2 {
+		if m.ID == m1.ID {
+			hasM1 = true
+		}
+		if m.ID == m2.ID {
+			hasM2 = true
+		}
+		if m.ID == m3.ID {
+			hasM3 = true
+		}
+	}
+	if !hasM1 || hasM2 || hasM3 {
+		t.Errorf("Case 2 expected only m1. Got hasM1=%t, hasM2=%t, hasM3=%t", hasM1, hasM2, hasM3)
+	}
+
+	// Case 3: Scoped scenario with asset-2 -> should include m2 (via TargetIDs), exclude m1 and m3
+	sc3 := &domain.Scenario{
+		Entities: []domain.ScenarioEntity{
+			{EntityType: "ASSET", EntityID: "asset-2"},
+		},
+	}
+	resolved3, err := ps.resolveModifications(userID, sc3)
+	if err != nil {
+		t.Fatalf("resolveModifications failed: %v", err)
+	}
+	hasM1, hasM2, hasM3 = false, false, false
+	for _, m := range resolved3 {
+		if m.ID == m1.ID {
+			hasM1 = true
+		}
+		if m.ID == m2.ID {
+			hasM2 = true
+		}
+		if m.ID == m3.ID {
+			hasM3 = true
+		}
+	}
+	if hasM1 || !hasM2 || hasM3 {
+		t.Errorf("Case 3 expected only m2. Got hasM1=%t, hasM2=%t, hasM3=%t", hasM1, hasM2, hasM3)
+	}
+
+	// Case 4: Scoped scenario with loan-1 -> should include m3, exclude m1 and m2
+	sc4 := &domain.Scenario{
+		Entities: []domain.ScenarioEntity{
+			{EntityType: "LOAN", EntityID: "loan-1"},
+		},
+	}
+	resolved4, err := ps.resolveModifications(userID, sc4)
+	if err != nil {
+		t.Fatalf("resolveModifications failed: %v", err)
+	}
+	hasM1, hasM2, hasM3 = false, false, false
+	for _, m := range resolved4 {
+		if m.ID == m1.ID {
+			hasM1 = true
+		}
+		if m.ID == m2.ID {
+			hasM2 = true
+		}
+		if m.ID == m3.ID {
+			hasM3 = true
+		}
+	}
+	if hasM1 || hasM2 || !hasM3 {
+		t.Errorf("Case 4 expected only m3. Got hasM1=%t, hasM2=%t, hasM3=%t", hasM1, hasM2, hasM3)
+	}
+}
+
+func TestSWRModificationMonthlyTrigger(t *testing.T) {
+	// 1. Scenario: Monthly interval (IntervalMonths = 1), SWR = 3.5%, threshold Amount = 10,000 (meaning 10k/month).
+	// Under 300,000 balance, monthly SWR withdrawal is 300,000 * 0.035 / 12 = 875. This is less than 10,000. It should NOT trigger.
+	m := domain.Modification{
+		ID:         "mod-monthly-swr",
+		TargetType: "ASSET",
+		TargetID:   "asset-1",
+		ActiveVersion: &domain.ModificationVersion{
+			StartDate:            time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			IntervalMonths:       1,
+			WithdrawalPercentage: 3.5,
+			Amount:               10000.0, // 10,000€/month threshold
+		},
+	}
+
+	// Case A: Balance is 300,000.
+	balanceA := 300000.0
+	targetWithdrawalA := balanceA * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+	if targetWithdrawalA >= m.ActiveVersion.Amount {
+		t.Errorf("Expected monthly SWR not to trigger at 300k balance (withdrawal = %f, threshold = 10,000)", targetWithdrawalA)
+	}
+
+	// Case B: Balance is 3,500,000.
+	// Monthly SWR withdrawal is 3,500,000 * 0.035 / 12 = 10,208.33. This is >= 10,000. It SHOULD trigger.
+	balanceB := 3500000.0
+	targetWithdrawalB := balanceB * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+	if targetWithdrawalB < m.ActiveVersion.Amount {
+		t.Errorf("Expected monthly SWR to trigger at 3.5M balance (withdrawal = %f, threshold = 10,000)", targetWithdrawalB)
+	}
+}
+
+
 

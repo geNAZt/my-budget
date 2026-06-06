@@ -1330,7 +1330,13 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							totalBalance += as.currentBalance
 						}
 					}
-					if totalBalance >= m.ActiveVersion.Amount {
+					var targetWithdrawal float64
+					if m.ActiveVersion.IntervalMonths == 1 {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+					} else {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+					}
+					if targetWithdrawal >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
 					}
 				}
@@ -1410,7 +1416,13 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if m.ActiveVersion.WithdrawalPercentage > 0 {
 					// Dynamic aggregate withdrawal
 					swrAmt := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
-					if triggeredMods[m.ID] || totalBalance >= m.ActiveVersion.Amount {
+					var targetWithdrawal float64
+					if m.ActiveVersion.IntervalMonths == 1 {
+						targetWithdrawal = swrAmt
+					} else {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+					}
+					if triggeredMods[m.ID] || targetWithdrawal >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
 						toWithdrawTotal := swrAmt
 
@@ -1770,7 +1782,13 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							totalBalance += as.currentBalance
 						}
 					}
-					if totalBalance >= m.ActiveVersion.Amount {
+					var targetWithdrawal float64
+					if m.ActiveVersion.IntervalMonths == 1 {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
+					} else {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+					}
+					if targetWithdrawal >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
 					}
 				}
@@ -1993,7 +2011,13 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if m.ActiveVersion.WithdrawalPercentage > 0 {
 					// Dynamic aggregate withdrawal
 					swrAmt := totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0 / 12.0)
-					if triggeredMods[m.ID] || totalBalance >= m.ActiveVersion.Amount {
+					var targetWithdrawal float64
+					if m.ActiveVersion.IntervalMonths == 1 {
+						targetWithdrawal = swrAmt
+					} else {
+						targetWithdrawal = totalBalance * (m.ActiveVersion.WithdrawalPercentage / 100.0)
+					}
+					if triggeredMods[m.ID] || targetWithdrawal >= m.ActiveVersion.Amount {
 						triggeredMods[m.ID] = true
 						toWithdrawTotal := swrAmt
 
@@ -3684,12 +3708,44 @@ func (s *ProjectionService) resolveModifications(userID string, scenario *domain
 	if len(scenario.Entities) == 0 {
 		return all, nil
 	}
+
+	// Create a fast lookup map of active entity IDs by type
+	activeEntities := make(map[string]map[string]bool)
+	for _, e := range scenario.Entities {
+		if _, ok := activeEntities[e.EntityType]; !ok {
+			activeEntities[e.EntityType] = make(map[string]bool)
+		}
+		activeEntities[e.EntityType][e.EntityID] = true
+	}
+
 	var filtered []domain.Modification
 	for _, item := range all {
-		for _, e := range scenario.Entities {
-			if e.EntityType == "MODIFICATION" && e.EntityID == item.ID {
+		// If explicitly linked to the scenario
+		if activeEntities["MODIFICATION"] != nil && activeEntities["MODIFICATION"][item.ID] {
+			filtered = append(filtered, item)
+			continue
+		}
+
+		// Or if the target is active in the scenario
+		if item.TargetType == "ASSET" {
+			targetActive := false
+			if item.TargetID != "" && activeEntities["ASSET"] != nil && activeEntities["ASSET"][item.TargetID] {
+				targetActive = true
+			}
+			if !targetActive && activeEntities["ASSET"] != nil {
+				for _, tid := range item.TargetIDs {
+					if activeEntities["ASSET"][tid] {
+						targetActive = true
+						break
+					}
+				}
+			}
+			if targetActive {
 				filtered = append(filtered, item)
-				break
+			}
+		} else if item.TargetType == "LOAN" {
+			if item.TargetID != "" && activeEntities["LOAN"] != nil && activeEntities["LOAN"][item.TargetID] {
+				filtered = append(filtered, item)
 			}
 		}
 	}

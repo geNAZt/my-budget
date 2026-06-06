@@ -56,12 +56,13 @@ func (m *Modifications) Save(s *api.WebsocketSession, reqID string, reqObj *apip
 	}
 
 	domainObj := domain.Modification{
-		ID:          reqObj.Id,
-		UserID:      userID,
-		TargetID:    reqObj.TargetId,
-		TargetIDs:   reqObj.TargetIds,
-		TargetType:  reqObj.TargetType,
-		Description: reqObj.Description,
+		ID:            reqObj.Id,
+		UserID:        userID,
+		TargetID:      reqObj.TargetId,
+		TargetIDs:     reqObj.TargetIds,
+		TargetType:    reqObj.TargetType,
+		Description:   reqObj.Description,
+		ActiveVersion: mapProtoToModificationVersion(reqObj.ActiveVersion),
 	}
 
 	if err := m.modifications.Save(userID, &domainObj); err != nil {
@@ -115,3 +116,28 @@ func mapModificationToProto(m domain.Modification) *apiproto.Modification {
 	}
 	return pm
 }
+
+func mapProtoToModificationVersion(pm *apiproto.ModificationVersion) *domain.ModificationVersion {
+	if pm == nil {
+		return nil
+	}
+	dmv := &domain.ModificationVersion{
+		ID:                   pm.Id,
+		ModificationID:       pm.ModificationId,
+		Amount:               pm.Amount,
+		WithdrawalPercentage: pm.WithdrawalPercentage,
+		IntervalMonths:       int(pm.IntervalMonths),
+	}
+	if pm.StartDate != "" {
+		if t, err := time.Parse(time.RFC3339, pm.StartDate); err == nil {
+			dmv.StartDate = t
+		}
+	}
+	if pm.EndDate != "" {
+		if t, err := time.Parse(time.RFC3339, pm.EndDate); err == nil {
+			dmv.EndDate = &t
+		}
+	}
+	return dmv
+}
+

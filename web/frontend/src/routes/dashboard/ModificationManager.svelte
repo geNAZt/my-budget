@@ -129,7 +129,7 @@
                 withdrawalPercentage: 0,
                 startDate: monthStr,
                 endDate: null,
-                intervalMonths: 0,
+                intervalMonths: "0" as any,
             },
         } as any;
     }
@@ -192,7 +192,7 @@
                         startDate: currentMod.activeVersion.startDate || "",
                         endDate: currentMod.activeVersion.endDate || "",
                         intervalMonths:
-                            currentMod.activeVersion.intervalMonths || 0,
+                            Number(currentMod.activeVersion.intervalMonths) || 0,
                         createdAt: currentMod.activeVersion.createdAt || "",
                     },
                 },
@@ -216,8 +216,10 @@
                 withdrawalPercentage: 0,
                 startDate: new Date().toISOString(),
                 endDate: null,
-                intervalMonths: 0,
+                intervalMonths: "0" as any,
             };
+        } else {
+            currentMod.activeVersion.intervalMonths = String(currentMod.activeVersion.intervalMonths) as any;
         }
         if (!currentMod.targetIds) currentMod.targetIds = [];
         amountInput = formatGermanAmount(currentMod.activeVersion.amount);

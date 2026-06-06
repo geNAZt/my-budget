@@ -83,3 +83,27 @@ To eliminate JSON fields from the database, we decompose them into normalized re
 2. **Data Extraction**: If the JSON column exists, we read all records containing non-empty JSON data, deserialize them in Go, and insert them into the new relational tables.
 3. **Column Dropping**: Once the data is successfully migrated, we drop the JSON columns. This ensures zero data loss and leaves the schema completely clean.
 
+## 6. Scenario Modification Resolution
+
+To ensure that modifications (such as SWR/passive income withdrawals or debt repayment automations) are correctly processed when a scenario is scoped/filtered, the `ProjectionService` resolves modifications dynamically:
+*   **Agnostic Frontend Configuration**: Since the frontend does not explicitly link or display modifications in the scenario scoping view, we determine active modifications based on their target entities.
+*   **Target Activation Rule**: A modification is resolved and included in the simulation if:
+    1.  The scenario is unscoped (`len(scenario.Entities) == 0`), OR
+    2.  The modification is explicitly linked to the scenario as an entity (for backward/future compatibility), OR
+    3.  The modification's target asset (single `TargetID` or any `TargetIDs`) is active in the scenario's scoped entities, OR
+    4.  The modification's target loan (`TargetID`) is active in the scenario's scoped entities.
+
+### Frontend Scoping Integration
+To allow users to explicitly enable or disable modifications for a given scenario:
+- **Modifications Tab**: Add a "Modifications" tab to the Logic Scope Editor Modal.
+- **State Loading**: Fetch the modifications list (`modifications::list`) on mount and store them in `allModifications`.
+- **Scoping Operations**: Integrate modification selections into `getAllEntities()`, `selectAllOfType()`, and `toggleEntity()`.
+
+### Interval-Aware SWR Threshold Comparison
+For SWR/passive income modifications (`WithdrawalPercentage > 0`), the threshold target check evaluates against:
+- **Monthly SWR Withdrawal**: If `IntervalMonths == 1` (Monthly), the threshold `Amount` is compared to the monthly SWR withdrawal (`totalBalance * (WithdrawalPercentage / 100.0 / 12.0)`).
+- **Annual SWR Withdrawal**: If `IntervalMonths` is any other value (e.g., `12` or `0`), the threshold `Amount` is compared to the annual SWR withdrawal (`totalBalance * (WithdrawalPercentage / 100.0)`).
+
+
+
+

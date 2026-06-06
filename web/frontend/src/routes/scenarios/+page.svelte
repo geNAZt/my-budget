@@ -13,6 +13,7 @@
         ProjectionMonthSchema,
         YieldMapSchema,
         PerformanceMetricsSchema,
+        ModificationListSchema,
     } from "$lib/gen/api_pb.js";
     import { onMount } from "svelte";
     import { fade, slide } from "svelte/transition";
@@ -78,7 +79,7 @@
     let isProjecting = $state(false);
     let showConfig = $state(false);
     let showScopeModal = $state(false);
-    let scopeTab = $state<"INCOME" | "BILL" | "EXPENSE" | "ASSET" | "LOAN" | "WATERFALL">("INCOME");
+    let scopeTab = $state<"INCOME" | "BILL" | "EXPENSE" | "ASSET" | "LOAN" | "MODIFICATION" | "WATERFALL">("INCOME");
 
     function getAllEntities() {
         const entities = [
@@ -105,6 +106,11 @@
             ...allExpenses.map((i) => ({
                 entityId: getID(i),
                 entityType: "EXPENSE",
+                versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
+            })),
+            ...allModifications.map((i) => ({
+                entityId: getID(i),
+                entityType: "MODIFICATION",
                 versionId: getActiveVersion(i)?.id || getActiveVersion(i)?.Id || "",
             })),
         ];
@@ -205,6 +211,7 @@
         else if (type === 'EXPENSE') items = allExpenses;
         else if (type === 'ASSET') items = allAssets;
         else if (type === 'LOAN') items = allLoans;
+        else if (type === 'MODIFICATION') items = allModifications;
         
         items.forEach(i => {
             entitiesToAdd.push({
@@ -289,6 +296,7 @@
     let allIncomes = $state<any[]>([]);
     let allBills = $state<any[]>([]);
     let allExpenses = $state<any[]>([]);
+    let allModifications = $state<any[]>([]);
 
     function formatCurrency(val: number) {
         if (val === undefined || val === null) return "0,00";
@@ -351,7 +359,7 @@
 
     async function fetchEntities() {
         try {
-            const [assetsRes, loansRes, incomesRes, billsRes, expensesRes] =
+            const [assetsRes, loansRes, incomesRes, billsRes, expensesRes, modificationsRes] =
                 await Promise.all([
                     wsCall("assets::list", null, null, [AssetListSchema]).one(),
                     wsCall("loans::list", null, null, [LoanListSchema]).one(),
@@ -362,12 +370,16 @@
                     wsCall("expenses::list", null, null, [
                         ExpenseListSchema,
                     ]).one(),
+                    wsCall("modifications::list", null, null, [
+                        ModificationListSchema,
+                    ]).one(),
                 ]);
             allAssets = assetsRes[0] ? assetsRes[0].assets : [];
             allLoans = loansRes[0] ? loansRes[0].loans : [];
             allIncomes = incomesRes[0] ? incomesRes[0].incomes : [];
             allBills = billsRes[0] ? billsRes[0].bills : [];
             allExpenses = expensesRes[0] ? expensesRes[0].expenses : [];
+            allModifications = modificationsRes[0] ? modificationsRes[0].modifications : [];
         } catch (e) {
             console.error("Failed to load entities:", e);
         }
@@ -1328,6 +1340,7 @@
                         { id: 'EXPENSE', label: 'Expenses', icon: Zap, items: allExpenses },
                         { id: 'ASSET', label: 'Assets', icon: Boxes, items: allAssets },
                         { id: 'LOAN', label: 'Loans', icon: History, items: allLoans },
+                        { id: 'MODIFICATION', label: 'Modifications', icon: Settings2, items: allModifications },
                         { id: 'WATERFALL', label: 'Waterfall', icon: Waves, items: activeScenario.remainderOrder }
                     ] as tab}
                         <button
@@ -1526,6 +1539,25 @@
                                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
                                 >
                                     <span class="text-xs font-bold truncate pr-4">{loan.name}</span>
+                                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                                        {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
+                                        {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
+                                    </div>
+                                </button>
+                            {/each}
+                        </div>
+                    {:else if scopeTab === 'MODIFICATION'}
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {#each allModifications as mod}
+                                {@const isIncluded = activeScenario.entities.length === 0 || activeScenario.entities.some(e => e.entityId === mod.id && e.entityType === 'MODIFICATION')}
+                                <button
+                                    onclick={() => toggleEntity(mod.id, 'MODIFICATION', mod.activeVersion?.id || "")}
+                                    class="flex items-center justify-between p-4 rounded-2xl border transition-all text-left group
+                                        {isIncluded 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
+                                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-500'}"
+                                >
+                                    <span class="text-xs font-bold truncate pr-4">{mod.description}</span>
                                     <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
                                         {isIncluded ? 'bg-white border-white text-indigo-600' : 'border-slate-200 dark:border-slate-700 group-hover:border-indigo-300'}">
                                         {#if isIncluded}<CheckCircle2 class="w-3 h-3" />{/if}
