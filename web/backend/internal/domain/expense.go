@@ -19,10 +19,18 @@ type Expense struct {
 }
 
 type ExpenseVersion struct {
-	ID        string
-	ExpenseID string
-	Amount    float64
-	DueDate   time.Time
-	CreatedAt time.Time
-	Slices    []TimeSlice
+	ID          string
+	ExpenseID   string
+	Amount      float64
+	DueDate     time.Time
+	CreatedAt   time.Time
+	Slices      []TimeSlice
+	SubExpenses []SubExpense
+}
+
+type SubExpense struct {
+	ID          string
+	Description string
+	Amount      float64
+	Metadata    map[string]string
 }

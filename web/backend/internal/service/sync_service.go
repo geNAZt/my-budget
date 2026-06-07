@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"os"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/bus"
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
+	"github.com/genazt/my-budget-script/web/backend/internal/db"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/integration"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
@@ -661,7 +664,7 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 			continue
 		}
 
-		meta, err := provider.ParseTransaction(data)
+		meta, err := provider.ParseTransaction(data, t.AccountID)
 		if err != nil {
 			log.Printf("[SYNC] Failed to parse transaction %s: %v", t.ID, err)
 			continue
@@ -746,7 +749,7 @@ func (s *SyncService) CheckAndCorrectTransactionTimestamps(userID string) {
 			continue
 		}
 
-		meta, err := provider.ParseTransaction(data)
+		meta, err := provider.ParseTransaction(data, t.AccountID)
 		if err != nil {
 			log.Printf("[SYNC] Failed to parse transaction %s for correction: %v", t.ID, err)
 			continue
@@ -878,7 +881,7 @@ func (s *SyncService) RetroactivelyFixGoCardlessSigns() {
 				// Raw GoCardless data
 				// Use the provider's ParseTransaction logic (which we just fixed)
 				provider := s.integrationRegistry.Get("GOCARDLESS")
-				meta, err := provider.ParseTransaction(decrypted)
+				meta, err := provider.ParseTransaction(decrypted, tx.AccountID)
 				if err != nil {
 					continue
 				}
@@ -938,4 +941,214 @@ func getMapKeys(m map[string]interface{}) []string {
 
 func Ptr[T any](v T) *T {
 	return &v
+}
+
+func (s *SyncService) DeduplicateAndCorrectExternalIDs() {
+	log.Printf("[DEDUPLICATE] Starting database deduplication and external ID correction...")
+
+	// 1. Run database backup first
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://budget:budgetpass@db:5432/budget?sslmode=disable"
+	}
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/app/data"
+	}
+	db.BackupDB(dbURL, dataDir)
+
+	users, err := s.userRepo.ListAll()
+	if err != nil {
+		log.Printf("[DEDUPLICATE] Failed to list users: %v", err)
+		return
+	}
+
+	for _, user := range users {
+		log.Printf("[DEDUPLICATE] Processing user %s...", user.Username)
+
+		mikCache := make(map[string][]byte)
+		integrations, err := s.integrationRepo.List(user.ID)
+		if err != nil {
+			log.Printf("[DEDUPLICATE] Failed to list integrations for user %s: %v", user.Username, err)
+			continue
+		}
+
+		for _, i := range integrations {
+			mk, err := s.GetMasterKey(user.ID, i.ID)
+			if err == nil {
+				mikCache[i.ID] = mk
+			}
+		}
+
+		// List ALL transactions (including soft-deleted ones)
+		txs, err := s.transactionRepo.ListAll(user.ID)
+		if err != nil {
+			log.Printf("[DEDUPLICATE] Failed to list transactions for user %s: %v", user.Username, err)
+			continue
+		}
+
+		log.Printf("[DEDUPLICATE] User %s: Found %d total transactions in DB.", user.Username, len(txs))
+
+		// Map to keep track of processed external IDs to detect duplicates.
+		// Key: correct_external_id -> transaction ID in DB
+		seenExternalIDs := make(map[string]string)
+
+		correctedCount := 0
+		deletedCount := 0
+
+		// Sort: active (IsDeleted=false) comes first, then sorted by CreatedAt DESC (newest first).
+		// That way, we process/keep the active, newest transaction as the primary one.
+		sort.Slice(txs, func(i, j int) bool {
+			if txs[i].IsDeleted != txs[j].IsDeleted {
+				return !txs[i].IsDeleted
+			}
+			return txs[i].CreatedAt.After(txs[j].CreatedAt)
+		})
+
+		// 1. First pass: Correct ExternalIDs and group by composite key
+		// Key: compositeKey -> map[correlationID] -> list of transactions
+		groups := make(map[string]map[string][]domain.BankTransaction)
+		seenExternalIDs := make(map[string]string)
+
+		correctedCount := 0
+		deletedCount := 0
+
+		for _, tx := range txs {
+			// Find integration type
+			var integrationObj *domain.Integration
+			for _, i := range integrations {
+				if i.ID == tx.IntegrationID {
+					integrationObj = &i
+					break
+				}
+			}
+			if integrationObj == nil {
+				continue
+			}
+
+			// Only deduplicate/correct GoCardless and Enable Banking
+			if integrationObj.ServiceType != "GOCARDLESS" && integrationObj.ServiceType != "ENABLEBANKING" {
+				continue
+			}
+
+			// Decrypt transaction
+			data, err := s.DecryptTransaction(user.ID, &tx, mikCache, nil)
+			if err != nil {
+				log.Printf("[DEDUPLICATE] Warning: Failed to decrypt transaction %s: %v", tx.ID, err)
+				continue
+			}
+
+			// Get provider
+			provider := s.GetProvider(integrationObj.ServiceType)
+			if provider == nil {
+				continue
+			}
+
+			// Parse transaction to extract correct external ID and metadata
+			meta, err := provider.ParseTransaction(data, tx.AccountID)
+			if err != nil {
+				log.Printf("[DEDUPLICATE] Warning: Failed to parse transaction %s: %v", tx.ID, err)
+				continue
+			}
+
+			correctExternalID := meta.ExternalID
+			if correctExternalID != "" && tx.ExternalID != correctExternalID {
+				log.Printf("[DEDUPLICATE] Correcting external_id for transaction %s: '%s' -> '%s'", tx.ID, tx.ExternalID, correctExternalID)
+				if err := s.transactionRepo.UpdateExternalID(user.ID, tx.ID, correctExternalID); err != nil {
+					log.Printf("[DEDUPLICATE] Failed to update external_id for transaction %s: %v", tx.ID, err)
+				} else {
+					tx.ExternalID = correctExternalID
+					correctedCount++
+				}
+			}
+
+			// Create composite key for occurrence-based check
+			// Signature: date | amount | receiver | description
+			dk := fmt.Sprintf("%s|%.2f|%s|%s",
+				tx.CreatedAt.Format("2006-01-02"),
+				math.Abs(meta.Amount),
+				strings.ToUpper(strings.TrimSpace(meta.Receiver)),
+				strings.TrimSpace(meta.Description),
+			)
+
+			if groups[dk] == nil {
+				groups[dk] = make(map[string][]domain.BankTransaction)
+			}
+			cID := tx.CorrelationID
+			if cID == "" {
+				cID = "MANUAL_" + tx.ID // Treat manual/missing CID as unique
+			}
+			groups[dk][cID] = append(groups[dk][cID], tx)
+		}
+
+		// 2. Second pass: Deduplicate based on max occurrences per sync run
+		for dk, syncRuns := range groups {
+			// Find the maximum number of times this transaction appeared in any SINGLE sync run
+			maxPerRun := 0
+			allInGroup := []domain.BankTransaction{}
+			for _, txsInRun := range syncRuns {
+				if len(txsInRun) > maxPerRun {
+					maxPerRun = len(txsInRun)
+				}
+				allInGroup = append(allInGroup, txsInRun...)
+			}
+
+			if len(allInGroup) <= maxPerRun {
+				continue // No duplicates
+			}
+
+			// We have duplicates!
+			// Sort the whole group: active first, then newest, then those with external IDs
+			sort.Slice(allInGroup, func(i, j int) bool {
+				if allInGroup[i].IsDeleted != allInGroup[j].IsDeleted {
+					return !allInGroup[i].IsDeleted
+				}
+				if allInGroup[i].ExternalID != "" && allInGroup[j].ExternalID == "" {
+					return true
+				}
+				if allInGroup[i].ExternalID == "" && allInGroup[j].ExternalID != "" {
+					return false
+				}
+				return allInGroup[i].SyncedAt.After(allInGroup[j].SyncedAt)
+			})
+
+			// Also, we must respect the UNIQUE(user_id, external_id) constraint.
+			// If multiple transactions in this group have the SAME external_id, they are definitely duplicates.
+			// We'll track seen ExternalIDs within this group.
+			keptExternalIDs := make(map[string]bool)
+			keptCount := 0
+
+			for _, tx := range allInGroup {
+				isDuplicate := false
+
+				// Rule 1: Strict ExternalID uniqueness
+				if tx.ExternalID != "" {
+					if keptExternalIDs[tx.ExternalID] {
+						isDuplicate = true
+					}
+				}
+
+				// Rule 2: Occurrence limit
+				if !isDuplicate && keptCount >= maxPerRun {
+					isDuplicate = true
+				}
+
+				if isDuplicate {
+					log.Printf("[DEDUPLICATE] Deleting duplicate transaction %s (Group: %s, CID: %s)", tx.ID, dk, tx.CorrelationID)
+					if err := s.transactionRepo.HardDelete(user.ID, tx.ID); err != nil {
+						log.Printf("[DEDUPLICATE] Failed to hard delete transaction %s: %v", tx.ID, err)
+					} else {
+						deletedCount++
+					}
+				} else {
+					keptCount++
+					if tx.ExternalID != "" {
+						keptExternalIDs[tx.ExternalID] = true
+					}
+				}
+			}
+		}
+
+		log.Printf("[DEDUPLICATE] User %s: Deduplication complete. Corrected: %d, Deleted: %d.", user.Username, correctedCount, deletedCount)
+	}
 }

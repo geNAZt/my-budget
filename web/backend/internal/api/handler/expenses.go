@@ -111,12 +111,13 @@ func mapExpenseToProto(e domain.Expense) *apiproto.Expense {
 	}
 	if e.ActiveVersion != nil {
 		pe.ActiveVersion = &apiproto.ExpenseVersion{
-			Id:        e.ActiveVersion.ID,
-			ExpenseId: e.ActiveVersion.ExpenseID,
-			Amount:    e.ActiveVersion.Amount,
-			DueDate:   e.ActiveVersion.DueDate.Format(time.RFC3339),
-			CreatedAt: e.ActiveVersion.CreatedAt.Format(time.RFC3339),
-			Slices:    mapTimeSlicesToProto(e.ActiveVersion.Slices),
+			Id:          e.ActiveVersion.ID,
+			ExpenseId:   e.ActiveVersion.ExpenseID,
+			Amount:      e.ActiveVersion.Amount,
+			DueDate:     e.ActiveVersion.DueDate.Format(time.RFC3339),
+			CreatedAt:   e.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Slices:      mapTimeSlicesToProto(e.ActiveVersion.Slices),
+			SubExpenses: mapSubExpensesToProto(e.ActiveVersion.SubExpenses),
 		}
 	}
 	return pe
@@ -127,10 +128,11 @@ func mapProtoToExpenseVersion(pe *apiproto.ExpenseVersion) *domain.ExpenseVersio
 		return nil
 	}
 	dev := &domain.ExpenseVersion{
-		ID:        pe.Id,
-		ExpenseID: pe.ExpenseId,
-		Amount:    pe.Amount,
-		Slices:    mapProtoToTimeSlices(pe.Slices),
+		ID:          pe.Id,
+		ExpenseID:   pe.ExpenseId,
+		Amount:      pe.Amount,
+		Slices:      mapProtoToTimeSlices(pe.Slices),
+		SubExpenses: mapProtoToSubExpenses(pe.SubExpenses),
 	}
 	if pe.DueDate != "" {
 		if t, err := time.Parse(time.RFC3339, pe.DueDate); err == nil {
@@ -138,4 +140,33 @@ func mapProtoToExpenseVersion(pe *apiproto.ExpenseVersion) *domain.ExpenseVersio
 		}
 	}
 	return dev
+}
+
+func mapSubExpensesToProto(subExpenses []domain.SubExpense) []*apiproto.SubExpense {
+	res := make([]*apiproto.SubExpense, len(subExpenses))
+	for i, s := range subExpenses {
+		res[i] = &apiproto.SubExpense{
+			Id:          s.ID,
+			Description: s.Description,
+			Amount:      s.Amount,
+			Metadata:    s.Metadata,
+		}
+	}
+	return res
+}
+
+func mapProtoToSubExpenses(protoSubs []*apiproto.SubExpense) []domain.SubExpense {
+	if protoSubs == nil {
+		return nil
+	}
+	res := make([]domain.SubExpense, len(protoSubs))
+	for i, s := range protoSubs {
+		res[i] = domain.SubExpense{
+			ID:          s.Id,
+			Description: s.Description,
+			Amount:      s.Amount,
+			Metadata:    s.Metadata,
+		}
+	}
+	return res
 }

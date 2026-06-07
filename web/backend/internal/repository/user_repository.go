@@ -71,6 +71,7 @@ func (r *UserRepository) GetUser(username string) (*domain.User, error) {
 			r.UpdateCredential(user.ID, &cred)
 		}
 
+		cred.ID = credID
 		user.Authenticators = append(user.Authenticators, cred)
 		idB64 := base64.StdEncoding.EncodeToString(credID)
 		user.AuthenticatorNames[idB64] = name.String
@@ -138,6 +139,7 @@ func (r *UserRepository) GetUserByID(id string) (*domain.User, error) {
 			r.UpdateCredential(user.ID, &cred)
 		}
 
+		cred.ID = credID
 		user.Authenticators = append(user.Authenticators, cred)
 		idB64 := base64.StdEncoding.EncodeToString(credID)
 		user.AuthenticatorNames[idB64] = name.String

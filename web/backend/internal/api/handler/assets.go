@@ -149,6 +149,10 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 			sa.DumpingLoanID = &subAsset.DumpingLoanId
 		}
 
+		if subAsset.ExpenseId != "" {
+			sa.ExpenseID = &subAsset.ExpenseId
+		}
+
 		if subAsset.StartDate != "" {
 			if t, err := time.Parse(time.RFC3339, subAsset.StartDate); err == nil {
 				sa.StartDate = t
@@ -315,6 +319,9 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 			}
 			if subAsset.DumpingLoanID != nil {
 				psa.DumpingLoanId = *subAsset.DumpingLoanID
+			}
+			if subAsset.ExpenseID != nil {
+				psa.ExpenseId = *subAsset.ExpenseID
 			}
 			if subAsset.EndDate != nil {
 				psa.EndDate = subAsset.EndDate.Format(time.RFC3339)

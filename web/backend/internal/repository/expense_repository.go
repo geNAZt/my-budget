@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/google/uuid"
@@ -70,6 +71,29 @@ func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 		}
 	}
 
+	// Load all sub expenses for these versions
+	subMap := make(map[string][]domain.SubExpense)
+	subRows, subErr := r.db.Query(`
+		SELECT id, expense_version_id, description, amount, metadata
+		FROM sub_expenses`)
+	if subErr == nil {
+		defer subRows.Close()
+		for subRows.Next() {
+			var s domain.SubExpense
+			var vID string
+			var metadataJSON sql.NullString
+			if err := subRows.Scan(&s.ID, &vID, &s.Description, &s.Amount, &metadataJSON); err == nil {
+				if metadataJSON.Valid && metadataJSON.String != "" {
+					_ = json.Unmarshal([]byte(metadataJSON.String), &s.Metadata)
+				}
+				if s.Metadata == nil {
+					s.Metadata = make(map[string]string)
+				}
+				subMap[vID] = append(subMap[vID], s)
+			}
+		}
+	}
+
 	var expenses []domain.Expense
 	for rows.Next() {
 		var e domain.Expense
@@ -86,6 +110,10 @@ func (r *ExpenseRepository) List(userID string) ([]domain.Expense, error) {
 		}
 		v.ExpenseID = e.ID
 		v.Slices = sliceMap[v.ID]
+		v.SubExpenses = subMap[v.ID]
+		if v.SubExpenses == nil {
+			v.SubExpenses = []domain.SubExpense{}
+		}
 		e.ActiveVersion = &v
 		e.UserID = userID
 
@@ -164,6 +192,23 @@ func (r *ExpenseRepository) Save(userID string, expense *domain.Expense) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Save sub expenses
+	for i, s := range v.SubExpenses {
+		if s.ID == "" {
+			s.ID = uuid.New().String()
+		}
+		metadataBytes, _ := json.Marshal(s.Metadata)
+		metadataStr := string(metadataBytes)
+		_, err = tx.Exec(`
+			INSERT INTO sub_expenses (id, expense_version_id, description, amount, metadata)
+			VALUES (?, ?, ?, ?, ?)`,
+			s.ID, v.ID, s.Description, s.Amount, metadataStr)
+		if err != nil {
+			return err
+		}
+		v.SubExpenses[i] = s
 	}
 
 	return tx.Commit()

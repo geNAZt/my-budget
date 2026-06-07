@@ -17,6 +17,7 @@
         Cpu,
         Sun,
         Moon,
+        Calendar,
     } from "@lucide/svelte";
     import {
         Chart as ChartJS,
@@ -110,6 +111,7 @@
 
     const navItems = [
         { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Timeline", href: "/timeline", icon: Calendar },
         { name: "Scenarios", href: "/scenarios", icon: Layers },
         { name: "Analytics", href: "/analytics", icon: TrendingUp },
         { name: "Realtime", href: "/realtime", icon: Activity },

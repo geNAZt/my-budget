@@ -45,6 +45,7 @@ type SubAsset struct {
 	StartDate           time.Time  `json:"start_date"`
 	EndDate             *time.Time `json:"end_date"`
 	EarliestDumpDate    *time.Time `json:"earliest_dump_date"`
+	ExpenseID           *string    `json:"expense_id"`
 }
 
 type AssetVersion struct {

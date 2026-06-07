@@ -359,6 +359,7 @@ message SubAsset {
   string start_date = 8;
   string end_date = 9;
   string earliest_dump_date = 10;
+  string expense_id = 11;
 }
 
 message AssetVersion {
@@ -503,6 +504,13 @@ message BillList {
 
 // --- Expense Domain Payloads ---
 
+message SubExpense {
+  string id = 1;
+  string description = 2;
+  double amount = 3;
+  map<string, string> metadata = 4;
+}
+
 message ExpenseVersion {
   string id = 1;
   string expense_id = 2;
@@ -510,6 +518,7 @@ message ExpenseVersion {
   string due_date = 4;
   string created_at = 5;
   repeated TimeSlice slices = 6;
+  repeated SubExpense sub_expenses = 7;
 }
 
 message Expense {

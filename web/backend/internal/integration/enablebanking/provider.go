@@ -243,9 +243,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		for _, t := range ebTxs {
 			externalID := ""
 			if t.TransactionId != nil && *t.TransactionId != "" {
-				externalID = *t.TransactionId
+				externalID = accID + "_" + *t.TransactionId
 			} else if t.EntryReference != nil && *t.EntryReference != "" {
-				externalID = *t.EntryReference
+				externalID = accID + "_" + *t.EntryReference
 			}
 
 			if externalID == "" {
@@ -320,15 +320,6 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				createdAt = t.BookingDate.Time
 			}
 
-			// Check if exists
-			if existingTx, found := existingMap[externalID]; found {
-				if !existingTx.CreatedAt.Equal(createdAt) {
-					p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, createdAt, externalID)
-					correctedCount++
-				}
-				continue
-			}
-
 			receiver := ""
 			receiverIBAN := ""
 
@@ -378,6 +369,15 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			desc := ""
 			if t.RemittanceInformation != nil && len(*t.RemittanceInformation) > 0 {
 				desc = strings.Join(*t.RemittanceInformation, " ")
+			}
+
+			// 1. Check by externalID first
+			if existingTx, found := existingMap[externalID]; found {
+				if !existingTx.CreatedAt.Equal(createdAt) {
+					p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, createdAt, externalID)
+					correctedCount++
+				}
+				continue
 			}
 
 			accountTags := ""
@@ -457,17 +457,22 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	return integration.SyncResult{DiscoveredCount: newCount}
 }
 
-func (p *Provider) ParseTransaction(decryptedData []byte) (integration.TransactionMetadata, error) {
+func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {
 	// Try to unmarshal as GenericTransaction first
 	var genericTx domain.GenericTransaction
 	if err := json.Unmarshal(decryptedData, &genericTx); err == nil && (genericTx.ExternalID != "" || genericTx.Peer != "") {
+		extID := genericTx.ExternalID
+		if extID != "" && accountID != "" && !strings.HasPrefix(extID, accountID+"_") {
+			extID = accountID + "_" + extID
+		}
+
 		return integration.TransactionMetadata{
 			Amount:       genericTx.Amount,
 			Receiver:     genericTx.Peer,
 			ReceiverIBAN: genericTx.PeerIBAN,
 			Description:  genericTx.Description,
 			CreatedAt:    genericTx.CreatedAt,
-			ExternalID:   genericTx.ExternalID,
+			ExternalID:   extID,
 		}, nil
 	}
 
@@ -484,11 +489,19 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 
 		// Minimal fallback for missing/different fields just in case
 		var item struct {
-			TransactionID *string `json:"transaction_id"`
+			EntryReference *string `json:"entry_reference"`
+			TransactionId  *string `json:"transaction_id"`
 		}
 		if err := json.Unmarshal(decryptedData, &item); err == nil {
-			if item.TransactionID != nil && *item.TransactionID != "" {
-				return integration.TransactionMetadata{ExternalID: *item.TransactionID}, nil
+			meta := integration.TransactionMetadata{}
+			if item.TransactionId != nil && *item.TransactionId != "" {
+				meta.ExternalID = accountID + "_" + *item.TransactionId
+			} else if item.EntryReference != nil && *item.EntryReference != "" {
+				meta.ExternalID = accountID + "_" + *item.EntryReference
+			}
+
+			if meta.ExternalID != "" {
+				return meta, nil
 			}
 		}
 		return integration.TransactionMetadata{}, err
@@ -496,9 +509,9 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 
 	meta := integration.TransactionMetadata{}
 	if et.TransactionId != nil && *et.TransactionId != "" {
-		meta.ExternalID = *et.TransactionId
+		meta.ExternalID = accountID + "_" + *et.TransactionId
 	} else if et.EntryReference != nil && *et.EntryReference != "" {
-		meta.ExternalID = *et.EntryReference
+		meta.ExternalID = accountID + "_" + *et.EntryReference
 	}
 
 	if et.BookingDate != nil {

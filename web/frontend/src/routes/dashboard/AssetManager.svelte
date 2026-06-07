@@ -6,6 +6,7 @@
         ModificationListSchema,
         TransactionPoolListSchema,
         VirtualAccountListSchema,
+        ExpenseListSchema,
         AssetSchema,
         GenericIDSchema,
         ErrorSchema,
@@ -86,6 +87,7 @@
         startDate: string;
         endDate: string | null;
         earliestDumpDate: string | null;
+        expenseId: string | null;
     }
 
     interface AssetVersion {
@@ -120,10 +122,16 @@
         name: string;
     }
 
+    interface Expense {
+        id: string;
+        name: string;
+    }
+
     let assets = $state<(Asset & { activeVersion: AssetVersion })[]>([]);
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let loans = $state<Loan[]>([]);
+    let expenses = $state<Expense[]>([]);
     let modifications = $state<any[]>([]);
     let isLoading = $state(true);
     let isSaving = $state(false);
@@ -149,6 +157,13 @@
         (virtualAccounts || []).map((va) => ({
             id: va.id,
             label: va.name,
+        })),
+    );
+
+    const expenseOptions = $derived(
+        (expenses || []).map((e) => ({
+            id: e.id,
+            label: e.name,
         })),
     );
 
@@ -191,7 +206,7 @@
         isLoading = true;
         error = null;
         try {
-            const [aR, lR, mR, pR, vaR] = await Promise.all([
+            const [aR, lR, mR, pR, vaR, eR] = await Promise.all([
                 wsCall("assets::list", null, null, [AssetListSchema]).one(),
                 wsCall("loans::list", null, null, [LoanListSchema]).one(),
                 wsCall("modifications::list", null, null, [
@@ -203,6 +218,9 @@
                 wsCall("virtualaccounts::list", null, null, [
                     VirtualAccountListSchema,
                 ]).one(),
+                wsCall("expenses::list", null, null, [
+                    ExpenseListSchema,
+                ]).one(),
             ]);
 
             if (aR[1]) throw aR[1];
@@ -210,12 +228,14 @@
             if (mR[1]) throw mR[1];
             if (pR[1]) throw pR[1];
             if (vaR[1]) throw vaR[1];
+            if (eR[1]) throw eR[1];
 
             assets = (aR[0]?.assets ?? []) as any;
             loans = lR[0]?.loans ?? [];
             modifications = mR[0]?.modifications ?? [];
             pools = pR[0]?.pools ?? [];
             virtualAccounts = vaR[0]?.virtualAccounts ?? [];
+            expenses = eR[0]?.expenses ?? [];
         } catch (err: any) {
             error = err.message;
         } finally {
@@ -301,6 +321,10 @@
                         sa.dumpingLoanId && sa.dumpingLoanId.trim() !== ""
                             ? sa.dumpingLoanId
                             : null,
+                    expenseId:
+                        sa.expenseId && sa.expenseId.trim() !== ""
+                            ? sa.expenseId
+                            : null,
                 }));
         } else {
             currentAsset.activeVersion.amountPerMonth = parseNumeric(
@@ -385,6 +409,7 @@
                             startDate: s.startDate || "",
                             endDate: s.endDate || "",
                             earliestDumpDate: s.earliestDumpDate || "",
+                            expenseId: s.expenseId || "",
                         })),
                     },
                 },
@@ -455,6 +480,7 @@
             remainderStartDate: sa.remainderStartDate && sa.remainderStartDate !== "" ? sa.remainderStartDate : null,
             endDate: sa.endDate && sa.endDate !== "" ? sa.endDate : null,
             earliestDumpDate: sa.earliestDumpDate && sa.earliestDumpDate !== "" ? sa.earliestDumpDate : null,
+            expenseId: sa.expenseId && sa.expenseId !== "" ? sa.expenseId : null,
         }));
         amountInput = formatGermanNumeric(
             currentAsset.activeVersion.amountPerMonth,
@@ -1245,6 +1271,7 @@
                                             new Date().toISOString(),
                                         endDate: null,
                                         earliestDumpDate: null,
+                                        expenseId: null,
                                     });
                                 }}
                                 class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
@@ -1532,7 +1559,42 @@
                                                         Consumption
                                                     </label>
                                                 </div>
+                                                <div
+                                                    class="flex items-center gap-2"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        id="expense_target_{target.id}"
+                                                        checked={target.expenseId !== null && target.expenseId !== ""}
+                                                        onchange={(e: any) => {
+                                                            target.expenseId =
+                                                                e.target.checked
+                                                                    ? expenses[0]?.id || ""
+                                                                    : null;
+                                                        }}
+                                                        class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                    />
+                                                    <label
+                                                        for="expense_target_{target.id}"
+                                                        class="text-[10px] font-bold text-slate-600 cursor-pointer"
+                                                    >
+                                                        Enable Expense Funding
+                                                    </label>
+                                                </div>
                                             </div>
+                                            {#if target.expenseId !== null && target.expenseId !== ""}
+                                                <div
+                                                    class="pt-1"
+                                                    transition:slide
+                                                >
+                                                    <SearchableDropdown
+                                                        label="Target Expense"
+                                                        options={expenseOptions}
+                                                        bind:value={target.expenseId}
+                                                        placeholder="Select Expense..."
+                                                    />
+                                                </div>
+                                            {/if}
                                             {#if target.dumpingLoanId !== null && target.dumpingLoanId !== ""}
                                                 <div
                                                     class="grid grid-cols-1 md:grid-cols-2 gap-3"

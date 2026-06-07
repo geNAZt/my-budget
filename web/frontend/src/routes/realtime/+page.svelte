@@ -131,6 +131,7 @@
     // Edit Transaction Modal
     let showTransactionEdit = $state(false);
     let transactionToEdit = $state<any>(null);
+    let showRawData = $state(false);
     let editTagsInput = $state("");
     let editAmountInput = $state<number>(0);
     let editReceiverInput = $state("");
@@ -614,6 +615,7 @@
         editReceiverInput = getTxPeer(tx);
         editReceiverIbanInput = getTxPeerIban(tx);
         editDescriptionInput = getTxDescription(tx);
+        showRawData = false;
         showTransactionEdit = true;
     }
 
@@ -2317,6 +2319,26 @@
                         </div>
                     </div>
                 {/if}
+
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">
+                            Database Payload
+                        </span>
+                        <button
+                            type="button"
+                            onclick={() => showRawData = !showRawData}
+                            class="text-[9px] font-black uppercase tracking-wider text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                        >
+                            {showRawData ? 'Hide Raw Data' : 'Show Raw Data'}
+                        </button>
+                    </div>
+                    {#if showRawData}
+                        <div class="p-6 bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                            <pre class="text-[10px] font-mono text-slate-700 whitespace-pre-wrap break-all select-all leading-relaxed max-h-60 overflow-y-auto custom-scrollbar">{JSON.stringify(transactionToEdit, null, 4)}</pre>
+                        </div>
+                    {/if}
+                </div>
 
                 <div class="flex gap-4">
                     <button

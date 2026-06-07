@@ -330,7 +330,7 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			continue
 		}
 
-		meta, err := provider.ParseTransaction(data)
+		meta, err := provider.ParseTransaction(data, tx.AccountID)
 		if err != nil {
 			continue
 		}
@@ -527,7 +527,7 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 			if err == nil {
 				provider := t.syncService.GetProvider(integration.ServiceType)
 				if provider != nil {
-					meta, _ := provider.ParseTransaction(decrypted)
+					meta, _ := provider.ParseTransaction(decrypted, tx.AccountID)
 
 					// Update metadata fields from request
 					meta.Amount = req.Amount

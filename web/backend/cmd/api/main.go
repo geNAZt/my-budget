@@ -144,6 +144,7 @@ func main() {
 	}
 	syncService.EnsureRecoveryTokens()
 	syncService.MigrateTransactionsBetweenChains()
+	syncService.DeduplicateAndCorrectExternalIDs()
 
 	// Reset integration errors on boot to allow them to retry
 	if err := integrationRepo.ResetAllErrors(); err != nil {

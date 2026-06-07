@@ -241,6 +241,12 @@
                     >Entity Editors:</span
                 >
                 <a
+                    href="/timeline"
+                    class="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-600 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-2 font-bold"
+                >
+                    Timeline Editor
+                </a>
+                <a
                     href="/dashboard/assets"
                     class="px-4 py-2.5 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-600 hover:text-emerald-600 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-2"
                 >

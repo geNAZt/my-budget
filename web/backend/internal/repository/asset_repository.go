@@ -185,7 +185,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 
 			// 3. Load Sub-assets
 			subQuery := fmt.Sprintf(`
-				SELECT asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date
+				SELECT asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id
 				FROM asset_version_sub_assets
 				WHERE asset_version_id IN (%s)`, strings.Join(placeholders, ","))
 			saRows, err := r.db.Query(subQuery, args...)
@@ -198,7 +198,8 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 					var dumpingLoanID sql.NullString
 					var endDate sql.NullTime
 					var earliestDumpDate sql.NullTime
-					err := saRows.Scan(&vID, &sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate)
+					var expenseID sql.NullString
+					err := saRows.Scan(&vID, &sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID)
 					if err == nil {
 						if remainderStartDate.Valid {
 							sa.RemainderStartDate = &remainderStartDate.Time
@@ -211,6 +212,9 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 						}
 						if earliestDumpDate.Valid {
 							sa.EarliestDumpDate = &earliestDumpDate.Time
+						}
+						if expenseID.Valid {
+							sa.ExpenseID = &expenseID.String
 						}
 						if ver, ok := versionIndexMap[vID]; ok {
 							ver.SubAssets = append(ver.SubAssets, sa)
@@ -333,7 +337,7 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 
 	// Load SubAssets
 	saRows, err := r.db.Query(`
-		SELECT sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date
+		SELECT sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id
 		FROM asset_version_sub_assets
 		WHERE asset_version_id = ?`, v.ID)
 	if err == nil {
@@ -344,7 +348,8 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 			var dumpingLoanID sql.NullString
 			var endDate sql.NullTime
 			var earliestDumpDate sql.NullTime
-			err := saRows.Scan(&sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate)
+			var expenseID sql.NullString
+			err := saRows.Scan(&sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID)
 			if err == nil {
 				if remainderStartDate.Valid {
 					sa.RemainderStartDate = &remainderStartDate.Time
@@ -357,6 +362,9 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 				}
 				if earliestDumpDate.Valid {
 					sa.EarliestDumpDate = &earliestDumpDate.Time
+				}
+				if expenseID.Valid {
+					sa.ExpenseID = &expenseID.String
 				}
 				v.SubAssets = append(v.SubAssets, sa)
 			}
@@ -482,10 +490,20 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 		} else {
 			dLoanID = nil
 		}
+		var expenseID *string = sa.ExpenseID
+		if expenseID != nil && *expenseID != "" {
+			var exists bool
+			err := tx.QueryRow("SELECT 1 FROM expenses WHERE id = ?", *expenseID).Scan(&exists)
+			if err != nil || !exists {
+				expenseID = nil
+			}
+		} else {
+			expenseID = nil
+		}
 		_, err = tx.Exec(`
-			INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), v.ID, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate)
+			INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.New().String(), v.ID, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate, expenseID)
 		if err != nil {
 			return err
 		}

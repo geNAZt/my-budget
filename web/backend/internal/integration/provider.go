@@ -40,6 +40,6 @@ type TransactionMetadata struct {
 type Provider interface {
 	ServiceType() string
 	Sync(ctx context.Context, integration *domain.Integration, force bool) SyncResult
-	ParseTransaction(decryptedData []byte) (TransactionMetadata, error)
+	ParseTransaction(decryptedData []byte, accountID string) (TransactionMetadata, error)
 	GetAccounts(userID string, integration *domain.Integration) ([]Account, error)
 }

@@ -104,6 +104,32 @@ For SWR/passive income modifications (`WithdrawalPercentage > 0`), the threshold
 - **Monthly SWR Withdrawal**: If `IntervalMonths == 1` (Monthly), the threshold `Amount` is compared to the monthly SWR withdrawal (`totalBalance * (WithdrawalPercentage / 100.0 / 12.0)`).
 - **Annual SWR Withdrawal**: If `IntervalMonths` is any other value (e.g., `12` or `0`), the threshold `Amount` is compared to the annual SWR withdrawal (`totalBalance * (WithdrawalPercentage / 100.0)`).
 
+## 7. Explicit Sub-Asset Target Expense Searchable Dropdown
 
+To adhere to the user interface rules defined in `web/GEMINI.md` (Section 2.1), native select elements are prohibited for major data selection, and dropdowns must support live filtering via an integrated search input with a minimum width of at least 200px.
 
+### Implementation Details
+*   **SearchableDropdown Integration**: Replace the native `<select>` element for selecting the target expense in the sub-assets section of `AssetManager.svelte` with the `<SearchableDropdown>` component.
+*   **Derived Option Mapping**: Map the reactive `expenses` array to the format `{ id: string, label: string }` via a derived `expenseOptions` state:
+    ```typescript
+    const expenseOptions = $derived([
+        ...(expenses || []).map((e) => ({
+            id: e.id,
+            label: e.name,
+        })),
+    ]);
+    ```
+*   **Value Binding**: Bind the `SearchableDropdown` component directly to `target.expenseId` to synchronize updates seamlessly with the frontend model.
 
+## 8. Occurrence-Based Transaction Deduplication for Bank Integrations
+
+To prevent duplicate transactions when banking APIs (such as the GoCardless/Nordigen sandbox or unstable real bank feeds) return changing transaction IDs or unstable external IDs across different sync runs, we implement a robust occurrence-based deduplication mechanism.
+
+### Design Details
+1. **Composite Key**: We define a unique transaction details signature: `date | amount | description | peer`.
+2. **Decrypt Existing Transactions**: During the sync process, the integration provider decrypts the payload of existing transactions to count and track how many instances of a transaction with the same signature already exist in the database.
+3. **Deduplication Check**:
+   - For each incoming transaction, we first check if the `external_id` matches an existing transaction.
+   - If not, we check the composite key. We maintain a count of how many times we've seen this composite key in the current sync loop.
+   - If the current loop count is less than the count of existing identical transactions in the database, we assume this is a matching transaction whose ID changed. We optionally update its external ID to keep it in sync and skip inserting a duplicate.
+   - If the current loop count is greater than or equal to the count of matching database transactions, we treat it as a new transaction and insert it.

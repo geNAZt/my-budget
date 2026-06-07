@@ -608,7 +608,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	return integration.SyncResult{DiscoveredCount: newCount}
 }
 
-func (p *Provider) ParseTransaction(decryptedData []byte) (integration.TransactionMetadata, error) {
+func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {
 	// Try to unmarshal as GenericTransaction first
 	var gt domain.GenericTransaction
 	if err := json.Unmarshal(decryptedData, &gt); err == nil && gt.ExternalID != "" {

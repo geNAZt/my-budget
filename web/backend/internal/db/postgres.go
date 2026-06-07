@@ -309,6 +309,15 @@ func InitDB(dsn string) (*sql.DB, error) {
         FOREIGN KEY(expense_id) REFERENCES expenses(id)
     );
 
+    CREATE TABLE IF NOT EXISTS sub_expenses (
+        id TEXT PRIMARY KEY,
+        expense_version_id TEXT,
+        description TEXT,
+        amount DOUBLE PRECISION,
+        metadata TEXT,
+        FOREIGN KEY(expense_version_id) REFERENCES expense_versions(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS loans (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -633,8 +642,10 @@ func InitDB(dsn string) (*sql.DB, error) {
         start_date TIMESTAMP NOT NULL,
         end_date TIMESTAMP,
         earliest_dump_date TIMESTAMP,
+        expense_id TEXT,
         FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE,
-        FOREIGN KEY(dumping_loan_id) REFERENCES loans(id) ON DELETE SET NULL
+        FOREIGN KEY(dumping_loan_id) REFERENCES loans(id) ON DELETE SET NULL,
+        FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS scenario_remainder_orders (
@@ -789,6 +800,11 @@ func migrate(db *sql.DB) {
 	}
 	if !hasColumn(db, "asset_versions", "remainder_start_date") {
 		db.Exec("ALTER TABLE asset_versions ADD COLUMN remainder_start_date TIMESTAMP")
+	}
+
+	// Asset version sub assets
+	if !hasColumn(db, "asset_version_sub_assets", "expense_id") {
+		db.Exec("ALTER TABLE asset_version_sub_assets ADD COLUMN expense_id TEXT")
 	}
 
 	// Asset version ETF configs - stitching segments
@@ -984,6 +1000,9 @@ func migrate(db *sql.DB) {
 	if !hasColumn(db, "bank_transactions", "denied_duplicate_ids") {
 		db.Exec("ALTER TABLE bank_transactions ADD COLUMN denied_duplicate_ids TEXT DEFAULT ''")
 	}
+
+	// Unique constraint for deduplication
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_transactions_user_external ON bank_transactions(user_id, external_id) WHERE external_id != ''")
 
 	// Modifications
 	if !hasColumn(db, "modification_versions", "withdrawal_percentage") {

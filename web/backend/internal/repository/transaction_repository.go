@@ -345,3 +345,63 @@ func (r *TransactionRepository) DeletePendingT212Transactions(userID string, int
 	_, err := r.db.Exec("DELETE FROM bank_transactions WHERE user_id = ? AND integration_id = ? AND external_id LIKE 'T212_PENDING_%'", userID, integrationID)
 	return err
 }
+
+func (r *TransactionRepository) ListAll(userID string) ([]domain.BankTransaction, error) {
+	query := `
+		SELECT t.id, t.user_id, t.integration_id, t.account_id, t.source_account_id, t.destination_account_id, 
+               array_remove(array_agg(tp.pool_id), NULL) as pool_ids,
+               t.tags, t.external_id, t.encrypted_data, t.linked_transaction_id, t.is_link_confirmed, 
+               COALESCE(t.correlation_id, ''), COALESCE(t.is_deleted, FALSE), COALESCE(t.denied_duplicate_ids, ''), 
+               t.created_at, t.synced_at
+		FROM bank_transactions t
+        LEFT JOIN bank_transaction_pools tp ON t.id = tp.transaction_id
+        WHERE t.user_id = ?
+        GROUP BY t.id 
+        ORDER BY t.created_at DESC`
+	
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	txs := []domain.BankTransaction{}
+	for rows.Next() {
+		var t domain.BankTransaction
+		var aID, saID, daID sql.NullString
+		var tags sql.NullString
+		var ltID sql.NullString
+		err := rows.Scan(&t.ID, &t.UserID, &t.IntegrationID, &aID, &saID, &daID, pq.Array(&t.PoolIDs), &tags, &t.ExternalID, &t.EncryptedData, &ltID, &t.IsLinkConfirmed, &t.CorrelationID, &t.IsDeleted, &t.DeniedDuplicateIDs, &t.CreatedAt, &t.SyncedAt)
+		if err != nil {
+			return nil, err
+		}
+		if aID.Valid {
+			t.AccountID = aID.String
+		}
+		if saID.Valid {
+			t.SourceAccountID = saID.String
+		}
+		if daID.Valid {
+			t.DestinationAccountID = daID.String
+		}
+		if tags.Valid {
+			t.Tags = tags.String
+		}
+		if ltID.Valid {
+			t.LinkedTransactionID = &ltID.String
+		}
+		txs = append(txs, t)
+	}
+
+	return txs, nil
+}
+
+func (r *TransactionRepository) HardDelete(userID string, id string) error {
+	_, err := r.db.Exec("DELETE FROM bank_transactions WHERE id = ? AND user_id = ?", id, userID)
+	return err
+}
+
+func (r *TransactionRepository) UpdateExternalID(userID string, id string, externalID string) error {
+	_, err := r.db.Exec("UPDATE bank_transactions SET external_id = ? WHERE id = ? AND user_id = ?", externalID, id, userID)
+	return err
+}

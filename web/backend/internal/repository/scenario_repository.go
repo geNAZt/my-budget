@@ -242,13 +242,22 @@ func (r *ScenarioRepository) LinkEntityToScenarios(userID string, entityID strin
 			continue
 		}
 
-		_, err = tx.Exec(`
-			INSERT INTO scenario_entities (scenario_id, entity_id, entity_type)
-			VALUES (?, ?, ?)
-			ON CONFLICT (scenario_id, entity_id) DO NOTHING`,
-			sID, entityID, entityType)
+		// Only insert into scenario_entities if the scenario has explicit scoping (i.e. contains at least one entity)
+		var hasEntities bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM scenario_entities WHERE scenario_id = ?)", sID).Scan(&hasEntities)
 		if err != nil {
 			return err
+		}
+
+		if hasEntities {
+			_, err = tx.Exec(`
+				INSERT INTO scenario_entities (scenario_id, entity_id, entity_type)
+				VALUES (?, ?, ?)
+				ON CONFLICT (scenario_id, entity_id) DO NOTHING`,
+				sID, entityID, entityType)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

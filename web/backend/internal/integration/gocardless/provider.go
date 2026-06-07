@@ -287,10 +287,12 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			now := time.Now()
 			for _, t := range result.Transactions.Booked {
 				externalID := ""
-				if t.TransactionId != nil {
-					externalID = *t.TransactionId
-				} else if t.InternalTransactionId != nil {
-					externalID = *t.InternalTransactionId
+				if t.TransactionId != nil && *t.TransactionId != "" {
+					externalID = accID + "_" + *t.TransactionId
+				}
+
+				if externalID == "" {
+					continue
 				}
 
 				createdAt := now
@@ -310,19 +312,6 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					if parsed, err := time.Parse("2006-01-02", *t.ValueDate); err == nil {
 						createdAt = parsed.Add(12 * time.Hour)
 					}
-				}
-
-				// If already stored, check if the created_at differs and correct it
-				if existingTx, found := existingMap[externalID]; found {
-					if !existingTx.CreatedAt.Equal(createdAt) {
-						if err := p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, createdAt, externalID); err == nil {
-							correctedCount++
-							// Update local map to prevent multiple correction counts
-							existingTx.CreatedAt = createdAt
-							existingMap[externalID] = existingTx
-						}
-					}
-					continue
 				}
 
 				amt := 0.0
@@ -372,6 +361,21 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				desc := ""
 				if t.RemittanceInformationUnstructured != nil {
 					desc = *t.RemittanceInformationUnstructured
+				}
+
+				// Check by externalID first
+				if externalID != "" {
+					if existingTx, found := existingMap[externalID]; found {
+						if !existingTx.CreatedAt.Equal(createdAt) {
+							if err := p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, createdAt, externalID); err == nil {
+								correctedCount++
+								// Update local map to prevent multiple correction counts
+								existingTx.CreatedAt = createdAt
+								existingMap[externalID] = existingTx
+							}
+						}
+						continue
+					}
 				}
 
 				accountTags := ""
@@ -443,17 +447,22 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	return integration.SyncResult{DiscoveredCount: newCount}
 }
 
-func (p *Provider) ParseTransaction(decryptedData []byte) (integration.TransactionMetadata, error) {
+func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {
 	// Try to unmarshal as GenericTransaction first
 	var genericTx domain.GenericTransaction
 	if err := json.Unmarshal(decryptedData, &genericTx); err == nil && (genericTx.ExternalID != "" || genericTx.Peer != "") {
+		extID := genericTx.ExternalID
+		if extID != "" && accountID != "" && !strings.HasPrefix(extID, accountID+"_") {
+			extID = accountID + "_" + extID
+		}
+
 		return integration.TransactionMetadata{
 			Amount:       genericTx.Amount,
 			Receiver:     genericTx.Peer,
 			ReceiverIBAN: genericTx.PeerIBAN,
 			Description:  genericTx.Description,
 			CreatedAt:    genericTx.CreatedAt,
-			ExternalID:   genericTx.ExternalID,
+			ExternalID:   extID,
 		}, nil
 	}
 
@@ -470,6 +479,7 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 
 		// Try minimal unmarshal for metadata
 		var item struct {
+			EntryReference        *string `json:"entryReference"`
 			TransactionId         *string `json:"transaction_id"`
 			InternalTransactionId *string `json:"internal_transaction_id"`
 			BookingDateTime       *string `json:"booking_date_time"`
@@ -480,9 +490,7 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 		if err := json.Unmarshal(decryptedData, &item); err == nil {
 			meta := integration.TransactionMetadata{}
 			if item.TransactionId != nil && *item.TransactionId != "" {
-				meta.ExternalID = *item.TransactionId
-			} else if item.InternalTransactionId != nil && *item.InternalTransactionId != "" {
-				meta.ExternalID = *item.InternalTransactionId
+				meta.ExternalID = accountID + "_" + *item.TransactionId
 			}
 
 			if item.BookingDateTime != nil && *item.BookingDateTime != "" {
@@ -552,9 +560,7 @@ func (p *Provider) ParseTransaction(decryptedData []byte) (integration.Transacti
 	}
 
 	if gt.TransactionId != nil && *gt.TransactionId != "" {
-		meta.ExternalID = *gt.TransactionId
-	} else if gt.InternalTransactionId != nil && *gt.InternalTransactionId != "" {
-		meta.ExternalID = *gt.InternalTransactionId
+		meta.ExternalID = accountID + "_" + *gt.TransactionId
 	}
 
 	if gt.BookingDateTime != nil {
