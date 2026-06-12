@@ -761,3 +761,7 @@ message RenameAuthenticatorRequest {
 message CycleRecoveryResponse {
   string new_recovery_token = 1;
 }
+
+message SystemLogChunk {
+  string line = 1;
+}

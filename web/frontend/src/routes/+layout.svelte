@@ -116,6 +116,7 @@
         { name: "Analytics", href: "/analytics", icon: TrendingUp },
         { name: "Realtime", href: "/realtime", icon: Activity },
         { name: "Automations", href: "/automations", icon: Cpu },
+        { name: "Diagnostics", href: "/sysadmin", icon: ShieldAlert },
     ];
 
     // Defensive accessors for template

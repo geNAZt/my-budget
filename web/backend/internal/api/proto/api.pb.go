@@ -7231,6 +7231,53 @@ func (x *CycleRecoveryResponse) GetNewRecoveryToken() string {
 	return ""
 }
 
+type SystemLogChunk struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Line string `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`
+}
+
+func (x *SystemLogChunk) Reset() {
+	*x = SystemLogChunk{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[95]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SystemLogChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SystemLogChunk) ProtoMessage() {}
+
+func (x *SystemLogChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[95]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SystemLogChunk.ProtoReflect.Descriptor instead.
+func (*SystemLogChunk) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *SystemLogChunk) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
+}
+
 var File_api_proto protoreflect.FileDescriptor
 
 var file_api_proto_rawDesc = []byte{
@@ -8270,11 +8317,14 @@ var file_api_proto_rawDesc = []byte{
 	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2c, 0x0a, 0x12, 0x6e, 0x65, 0x77, 0x5f, 0x72, 0x65, 0x63,
 	0x6f, 0x76, 0x65, 0x72, 0x79, 0x5f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28,
 	0x09, 0x52, 0x10, 0x6e, 0x65, 0x77, 0x52, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x79, 0x54, 0x6f,
-	0x6b, 0x65, 0x6e, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
-	0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61, 0x7a, 0x74, 0x2f, 0x6d, 0x79, 0x2d, 0x62, 0x75, 0x64, 0x67,
-	0x65, 0x74, 0x2d, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x2f, 0x62, 0x61,
-	0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6b, 0x65, 0x6e, 0x22, 0x24, 0x0a, 0x0e, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x4c, 0x6f, 0x67,
+	0x43, 0x68, 0x75, 0x6e, 0x6b, 0x12, 0x12, 0x0a, 0x04, 0x6c, 0x69, 0x6e, 0x65, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x04, 0x6c, 0x69, 0x6e, 0x65, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74,
+	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61, 0x7a, 0x74, 0x2f, 0x6d,
+	0x79, 0x2d, 0x62, 0x75, 0x64, 0x67, 0x65, 0x74, 0x2d, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x2f,
+	0x77, 0x65, 0x62, 0x2f, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f, 0x69, 0x6e, 0x74, 0x65,
+	0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -8289,7 +8339,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 101)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 102)
 var file_api_proto_goTypes = []interface{}{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Empty)(nil),                       // 1: api.Empty
@@ -8386,12 +8436,13 @@ var file_api_proto_goTypes = []interface{}{
 	(*UpdateProfileRequest)(nil),        // 92: api.UpdateProfileRequest
 	(*RenameAuthenticatorRequest)(nil),  // 93: api.RenameAuthenticatorRequest
 	(*CycleRecoveryResponse)(nil),       // 94: api.CycleRecoveryResponse
-	nil,                                 // 95: api.YieldMap.YieldsEntry
-	nil,                                 // 96: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 97: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 98: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 99: api.Scenario.EtfParamsEntry
-	nil,                                 // 100: api.SubExpense.MetadataEntry
+	(*SystemLogChunk)(nil),              // 95: api.SystemLogChunk
+	nil,                                 // 96: api.YieldMap.YieldsEntry
+	nil,                                 // 97: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 98: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 99: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 100: api.Scenario.EtfParamsEntry
+	nil,                                 // 101: api.SubExpense.MetadataEntry
 }
 var file_api_proto_depIdxs = []int32{
 	10,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -8400,10 +8451,10 @@ var file_api_proto_depIdxs = []int32{
 	21,  // 3: api.IntegrationList.integrations:type_name -> api.Integration
 	23,  // 4: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	20,  // 5: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	95,  // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	96,  // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	97,  // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	98,  // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	96,  // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	97,  // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	98,  // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	99,  // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	28,  // 10: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	28,  // 11: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	28,  // 12: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -8413,7 +8464,7 @@ var file_api_proto_depIdxs = []int32{
 	29,  // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	32,  // 17: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
 	34,  // 18: api.Scenario.entities:type_name -> api.ScenarioEntity
-	99,  // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	100, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	36,  // 20: api.ScenarioList.scenarios:type_name -> api.Scenario
 	38,  // 21: api.ETFTracker.stitching_segments:type_name -> api.HistoryStitchingSegment
 	40,  // 22: api.TrackerChart.points:type_name -> api.TrackerChartPoint
@@ -8432,7 +8483,7 @@ var file_api_proto_depIdxs = []int32{
 	51,  // 35: api.BillVersion.slices:type_name -> api.TimeSlice
 	55,  // 36: api.Bill.active_version:type_name -> api.BillVersion
 	56,  // 37: api.BillList.bills:type_name -> api.Bill
-	100, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
+	101, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
 	51,  // 39: api.ExpenseVersion.slices:type_name -> api.TimeSlice
 	58,  // 40: api.ExpenseVersion.sub_expenses:type_name -> api.SubExpense
 	59,  // 41: api.Expense.active_version:type_name -> api.ExpenseVersion
@@ -9601,6 +9652,18 @@ func file_api_proto_init() {
 				return nil
 			}
 		}
+		file_api_proto_msgTypes[95].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SystemLogChunk); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -9608,7 +9671,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_api_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   101,
+			NumMessages:   102,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

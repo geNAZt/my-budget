@@ -20,11 +20,20 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	"io"
 )
 
 func main() {
+	// Initialize LogService for sysadmin monitoring
+	logService := service.NewLogService(1000)
+	multiWriter := io.MultiWriter(os.Stdout, logService)
+
+	// Configure global standard logger
+	log.SetOutput(multiWriter)
+
 	// Initialize Echo
 	e := echo.New()
+	e.Logger.SetOutput(multiWriter)
 	e.Logger.SetLevel(log.DEBUG)
 
 	// Environment Configuration
@@ -164,10 +173,12 @@ func main() {
 
 	// 1. Initialize special cases or dependencies
 	authAPI := handler.NewAuth(webSocketHandler, userRepo, wauth, sessionRepo, syncService, []byte(jwtSecret))
+	systemAPI := handler.NewSystem(webSocketHandler, logService)
 
 	// 2. Register everything in a single, readable pass
 	webSocketHandler.Register(
 		authAPI,
+		systemAPI,
 		handler.NewUser(webSocketHandler, userRepo, syncService),
 		handler.NewAssets(webSocketHandler, assetRepo, scenarioRepo, marketDataService),
 		handler.NewBills(webSocketHandler, billRepo, scenarioRepo),
