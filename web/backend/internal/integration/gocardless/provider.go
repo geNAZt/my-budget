@@ -380,11 +380,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				}
 
 				accountTags := ""
+				accountName := ""
 				if meta, ok := config.AccountsMetadata[accID]; ok && meta != nil {
 					accountTags = meta.Tags
+					accountName = meta.Alias
 				}
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
