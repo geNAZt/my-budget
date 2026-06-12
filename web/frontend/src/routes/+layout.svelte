@@ -18,6 +18,7 @@
         Sun,
         Moon,
         Calendar,
+        ChevronDown,
     } from "@lucide/svelte";
     import {
         Chart as ChartJS,
@@ -40,6 +41,7 @@
     // High-level lifecycle state
     let mounted = $state(false);
     let isDark = $state(false);
+    let activeDropdown = $state<string | null>(null);
 
     $effect(() => {
         if (mounted && !auth.isLoading) {
@@ -82,6 +84,14 @@
         } catch (e) {
             console.error("ChartJS registration failed:", e);
         }
+
+        const handleClickOutside = (e: MouseEvent) => {
+            if (activeDropdown && !(e.target as Element).closest(".nav-dropdown-container")) {
+                activeDropdown = null;
+            }
+        };
+        window.addEventListener("click", handleClickOutside);
+        return () => window.removeEventListener("click", handleClickOutside);
     });
 
     function toggleTheme() {
@@ -111,12 +121,24 @@
 
     const navItems = [
         { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-        { name: "Timeline", href: "/timeline", icon: Calendar },
-        { name: "Scenarios", href: "/scenarios", icon: Layers },
-        { name: "Analytics", href: "/analytics", icon: TrendingUp },
+        { 
+            name: "Planning", 
+            icon: Calendar,
+            children: [
+                { name: "Timeline", href: "/timeline", icon: Calendar },
+                { name: "Scenarios", href: "/scenarios", icon: Layers },
+                { name: "Analytics", href: "/analytics", icon: TrendingUp },
+            ]
+        },
         { name: "Realtime", href: "/realtime", icon: Activity },
-        { name: "Automations", href: "/automations", icon: Cpu },
-        { name: "Diagnostics", href: "/sysadmin", icon: ShieldAlert },
+        { 
+            name: "System", 
+            icon: ShieldAlert,
+            children: [
+                { name: "Automations", href: "/automations", icon: Cpu },
+                { name: "Sysadmin", href: "/sysadmin", icon: ShieldAlert },
+            ]
+        },
     ];
 
     // Defensive accessors for template
@@ -171,20 +193,57 @@
                             >
                                 {#each navItems as item}
                                     {@const Icon = item.icon}
-                                    <a
-                                        href={item.href}
-                                        class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-black transition-all uppercase tracking-[0.2em] text-[11px]
-                                            {page.url.pathname.startsWith(
-                                            item.href,
-                                        )
-                                            ? 'border-indigo-600 text-slate-900'
-                                            : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'}"
-                                    >
-                                        <Icon
-                                            class="h-4 w-4 mr-2"
-                                        />
-                                        {item.name}
-                                    </a>
+                                    {#if item.children}
+                                        <div class="relative flex nav-dropdown-container">
+                                            <button
+                                                onclick={(e) => {
+                                                    e.stopPropagation();
+                                                    activeDropdown = activeDropdown === item.name ? null : item.name;
+                                                }}
+                                                class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-black transition-all uppercase tracking-[0.2em] text-[11px] outline-none cursor-pointer
+                                                    {item.children.some(child => page.url.pathname.startsWith(child.href))
+                                                        ? 'border-indigo-600 text-slate-900'
+                                                        : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'}"
+                                            >
+                                                <Icon class="h-4 w-4 mr-2" />
+                                                {item.name}
+                                                <ChevronDown class="h-3 w-3 ml-1 transition-transform {activeDropdown === item.name ? 'rotate-180' : ''}" />
+                                            </button>
+
+                                            {#if activeDropdown === item.name}
+                                                <div
+                                                    transition:fade={{ duration: 100 }}
+                                                    class="absolute top-full left-0 mt-1 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50"
+                                                >
+                                                    {#each item.children as child}
+                                                        {@const ChildIcon = child.icon}
+                                                        <a
+                                                            href={child.href}
+                                                            onclick={() => activeDropdown = null}
+                                                            class="flex items-center px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors
+                                                                {page.url.pathname.startsWith(child.href)
+                                                                    ? 'text-indigo-600 bg-indigo-50/50'
+                                                                    : 'text-slate-400 hover:text-slate-900 hover:bg-slate-50'}"
+                                                        >
+                                                            <ChildIcon class="h-3.5 w-3.5 mr-3" />
+                                                            {child.name}
+                                                        </a>
+                                                    {/each}
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    {:else}
+                                        <a
+                                            href={item.href}
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-black transition-all uppercase tracking-[0.2em] text-[11px]
+                                                {page.url.pathname.startsWith(item.href)
+                                                    ? 'border-indigo-600 text-slate-900'
+                                                    : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'}"
+                                        >
+                                            <Icon class="h-4 w-4 mr-2" />
+                                            {item.name}
+                                        </a>
+                                    {/if}
                                 {/each}
                             </div>
                         </div>
