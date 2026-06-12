@@ -6,8 +6,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_BACKEND: ${{ github.repository_owner }}/my-budget-script-backend
-  IMAGE_NAME_FRONTEND: ${{ github.repository_owner }}/my-budget-script-frontend
 
 jobs:
   build-and-push:
@@ -19,6 +17,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Lowercase repository owner
+        run: |
+          echo "OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -36,7 +38,7 @@ jobs:
           context: ./web
           file: ./web/backend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -46,6 +48,6 @@ jobs:
           context: ./web
           file: ./web/frontend/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
