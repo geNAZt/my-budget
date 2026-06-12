@@ -50,7 +50,6 @@ WORKDIR /app
 COPY --from=builder /app/main .
 COPY --from=builder /app/data ./data
 COPY --from=builder /app/backend/execution_engine ./execution_engine
-COPY --from=builder /app/backend/index ./index
 
 # Install production-only npm dependencies for the isolated execution engine daemon
 RUN cd /app/execution_engine && npm ci --omit=dev
