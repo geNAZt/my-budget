@@ -168,12 +168,25 @@ To ensure maximum speed, lower latency, and highly efficient token consumption, 
 *   **Strict Output Minimization:** The agent MUST bypass long conversational explanations or step-by-step summaries of what it plans to do. 
 *   **Diffs Only for Drafts:** When verifying a solution before writing it to disk, the agent should only output the modified lines or raw functions, never the surrounding untouched code blocks.
 
-## 10. Production VM Access
-The real running instance (with the live database, Docker containers, and scenario logs) runs on a local VM accessible via SSH:
+## 10. Production Environment & Deployment
+The application uses an automated **CI/CD pipeline** for all production deployments. Manual source-code syncing or building on the server via SSH is strictly prohibited.
+
+### 10.1 Deployment Workflow
+*   **Trigger:** Every push to the `main` branch triggers a GitHub Action (`.github/workflows/deploy.yml`).
+*   **Build:** Docker images for `backend` and `frontend` are built and pushed to the GitHub Container Registry (GHCR).
+*   **Rollout:** The production server runs **Watchtower**, which polls GHCR every 60 seconds. It automatically pulls new images and performs a rolling restart of the services.
+*   **Zero-Downtime:** The stack is managed via `docker-compose.prod.yml` with `pull_policy: always` to ensure immediate consistency.
+
+### 10.2 Monitoring & Logs
+*   **Primary Method:** Use the internal **Diagnostics** page (`/sysadmin`) to view live, streamed backend logs. This is the preferred way to monitor system health and debug runtime issues.
+*   **Persistent Logs:** Scenario-specific logs are stored in `logs/scenarios/*.log` on the server volume.
+
+### 10.3 SSH Access (Emergency/Debugging Only)
+SSH access is reserved strictly for environment-specific debugging that cannot be performed via the Diagnostics page or local replication.
 
 *   **Host:** `vm@vm-host.lan`
 *   **Password:** `<REDACTED_SENSITIVE_DATA>`
-*   **Project Folder:** `~/wealthengine/` (all `docker compose` commands and log inspection should be run from this directory)
-*   **Usage:** SSH into this host to inspect live logs (`logs/scenarios/*.log`), restart Docker containers (`docker compose`), or debug production issues that cannot be reproduced locally.
-*   **Database:** The production database is reachable via docker exec. It is postgres, not sqlite.
-*   **Agent Operational Rule for VM Access:** The agent should only issue SSH commands to `vm@vm-host.lan` when debugging environment-specific issues, tailing production logs (`~/wealthengine/logs/scenarios/`), or running live container tasks via `docker compose`. Do not attempt to use local database utilities on the remote server.
+*   **Project Folder:** `~/wealthengine/`
+*   **Usage:** Tailing persistent logs, inspecting the database via `docker exec`, or restarting the Docker daemon.
+*   **Agent Operational Rule:** The agent is **FORBIDDEN** from using SSH for any deployment-related tasks (e.g., `git pull`, `docker compose build`). Deployment is handled exclusively by pushing code to GitHub. SSH commands should only be issued for diagnostic purposes or database inspection.
+
