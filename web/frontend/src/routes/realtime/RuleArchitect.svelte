@@ -29,6 +29,7 @@
         pools = $bindable([]),
         rules = $bindable([]),
         transactions = [],
+        mappedAccounts = {},
         onChange,
     } = $props();
 
@@ -257,7 +258,8 @@
             const desc = getTxDescription(tx) || "";
             const peer = getTxPeer(tx) || "";
             const tags = tx.tags || "";
-            const accountTags = tx.account_tags || "";
+            const accountTags = mappedAccounts?.[`${tx.integrationId}:${tx.accountId}`]?.tags || mappedAccounts?.[tx.accountId]?.tags || "";
+            const accountName = mappedAccounts?.[`${tx.integrationId}:${tx.accountId}`]?.name || mappedAccounts?.[tx.accountId]?.name || "";
             const amount = getTxAmount(tx) || 0;
 
             switch (field) {
@@ -272,6 +274,9 @@
                     break;
                 case "ACCOUNT_TAGS":
                     target = accountTags;
+                    break;
+                case "ACCOUNT_NAME":
+                    target = accountName;
                     break;
                 case "DATA_CHAIN":
                     target = tx.integrationId || "";
@@ -680,6 +685,7 @@
                 <option value="DESCRIPTION">Description</option>
                 <option value="TAGS">Tags</option>
                 <option value="ACCOUNT_TAGS">Account Tags</option>
+                <option value="ACCOUNT_NAME">Account Name</option>
                 <option value="DATA_CHAIN">Data Chain</option>
                 <option value="AMOUNT">Amount (€)</option>
             </select>

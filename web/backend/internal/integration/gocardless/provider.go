@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -247,7 +248,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		// Fetch Transactions
 		dateFrom := thirtyDaysAgo.Format("2006-01-02")
 		if !force && meta != nil && meta.LastSyncedAt != nil {
-			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -2)
+			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -14)
 			if lastSyncDate.After(thirtyDaysAgo) {
 				dateFrom = lastSyncDate.Format("2006-01-02")
 			}

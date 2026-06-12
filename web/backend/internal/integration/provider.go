@@ -26,6 +26,7 @@ type Account struct {
 	Enabled      bool
 	IBAN         string
 	BackoffUntil *time.Time
+	Tags         string
 }
 
 type TransactionMetadata struct {
@@ -35,6 +36,7 @@ type TransactionMetadata struct {
 	Description  string
 	CreatedAt    time.Time
 	ExternalID   string
+	InternalStatus string
 }
 
 type Provider interface {

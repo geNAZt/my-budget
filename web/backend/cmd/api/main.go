@@ -144,7 +144,7 @@ func main() {
 	}
 	syncService.EnsureRecoveryTokens()
 	syncService.MigrateTransactionsBetweenChains()
-	syncService.DeduplicateAndCorrectExternalIDs()
+	syncService.WipeAndReimportBankLogs()
 
 	// Reset integration errors on boot to allow them to retry
 	if err := integrationRepo.ResetAllErrors(); err != nil {
@@ -155,8 +155,15 @@ func main() {
 
 	webSocketHandler := api.NewWebSocketHandler(eventBus, projectionService)
 
+	// JWT Secret for authentication
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "internal-secret-key"
+		log.Printf("[AUTH] Warning: JWT_SECRET not set, using default development key")
+	}
+
 	// 1. Initialize special cases or dependencies
-	authAPI := handler.NewAuth(webSocketHandler, userRepo, wauth, sessionRepo, syncService)
+	authAPI := handler.NewAuth(webSocketHandler, userRepo, wauth, sessionRepo, syncService, []byte(jwtSecret))
 
 	// 2. Register everything in a single, readable pass
 	webSocketHandler.Register(

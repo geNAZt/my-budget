@@ -35,9 +35,7 @@ type Auth struct {
 	Recovery *AuthRecovery
 }
 
-func NewAuth(handler *api.WebSocketHandler, users *repository.UserRepository, wauth *webauthn.WebAuthn, sessions *repository.SessionRepository, sync *service.SyncService) *Auth {
-	jwtKey := []byte("internal-secret-key")
-
+func NewAuth(handler *api.WebSocketHandler, users *repository.UserRepository, wauth *webauthn.WebAuthn, sessions *repository.SessionRepository, sync *service.SyncService, jwtKey []byte) *Auth {
 	return &Auth{
 		handler:  handler,
 		users:    users,

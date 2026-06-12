@@ -18,15 +18,17 @@ type BankTransaction struct {
 	CorrelationID        string
 	IsDeleted            bool
 	DeniedDuplicateIDs   string
+	InternalStatus       string    // e.g. PENDING_REJECTION, RECONCILED, EXPIRED_REJECTION
 	CreatedAt            time.Time // Timestamp at source
 	SyncedAt             time.Time // Timestamp at ingestion
 }
 
 type GenericTransaction struct {
-	Amount      float64
-	Description string
-	Peer        string
-	PeerIBAN    string
-	CreatedAt   time.Time
-	ExternalID  string
+	Amount         float64
+	Description    string
+	Peer           string
+	PeerIBAN       string
+	CreatedAt      time.Time
+	ExternalID     string
+	InternalStatus string
 }

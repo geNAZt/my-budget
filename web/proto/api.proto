@@ -153,6 +153,7 @@ message Transaction {
   string correlation_id = 19;
   bool is_deleted = 20;
   string receiver_iban = 21;
+  string internal_status = 22;
 }
 
 message Integration {
@@ -179,6 +180,7 @@ message IntegrationAccount {
   bool enabled = 5;
   string iban = 6;
   string backoff_until = 7;
+  string tags = 8;
 }
 
 message IntegrationAccountList {
@@ -713,6 +715,7 @@ message IntegrationAccountUpdate {
   string alias = 3;
   bool enabled = 4;
   string iban = 5;
+  string tags = 6;
 }
 
 message TransactionDeleteRequest {

@@ -172,7 +172,7 @@ To ensure maximum speed, lower latency, and highly efficient token consumption, 
 The real running instance (with the live database, Docker containers, and scenario logs) runs on a local VM accessible via SSH:
 
 *   **Host:** `vm@vm-host.lan`
-*   **Password:** `Merja05011993_`
+*   **Password:** `<REDACTED_SENSITIVE_DATA>`
 *   **Project Folder:** `~/wealthengine/` (all `docker compose` commands and log inspection should be run from this directory)
 *   **Usage:** SSH into this host to inspect live logs (`logs/scenarios/*.log`), restart Docker containers (`docker compose`), or debug production issues that cannot be reproduced locally.
 *   **Database:** The production database is reachable via docker exec. It is postgres, not sqlite.

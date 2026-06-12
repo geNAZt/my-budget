@@ -1,0 +1,63 @@
+version: "3.8"
+
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --config /etc/cloudflared/config.yaml run
+    volumes:
+      - ./cloudflare-tunnel.yaml:/etc/cloudflared/config.yaml:Z
+      - ./tunnel-credentials.json:/etc/cloudflared/credentials.json:Z
+    depends_on:
+      - backend
+      - frontend
+
+  backend:
+    image: ghcr.io/${DOCKER_REPO_OWNER:-genazt}/my-budget-script-backend:latest
+    expose:
+      - "8080"
+    volumes:
+      - ./web/data:/app/data:Z
+      - ./logs:/app/logs:Z
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://budget:budgetpass@db:5432/budget?sslmode=disable
+      - RP_ID=${DOMAIN:-localhost}
+      - RP_ORIGINS=https://${DOMAIN:-localhost},http://localhost:3000,http://${DOMAIN:-localhost}:3000
+      - RESET_RECOVERY=${RESET_RECOVERY:-false}
+    restart: always
+    depends_on:
+      - db
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=budget
+      - POSTGRES_PASSWORD=budgetpass
+      - POSTGRES_DB=budget
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  frontend:
+    image: ghcr.io/${DOCKER_REPO_OWNER:-genazt}/my-budget-script-frontend:latest
+    expose:
+      - "3000"
+    restart: always
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_CONFIG_PATH:-/root/.docker/config.json}:/config.json:ro
+    command: --interval 300 --cleanup --label-enable
+
+volumes:
+  db-data:

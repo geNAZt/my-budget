@@ -260,11 +260,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				desc := typ
 
 				accountTags := ""
+				accountName := ""
 				if meta, ok := config.AccountsMetadata["T212_PORTFOLIO"]; ok && meta != nil {
 					accountTags = meta.Tags
+					accountName = meta.Alias
 				}
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -372,11 +374,14 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 					desc := fmt.Sprintf("Portfolio change %s", ticker)
 
 					accountTags := ""
+					accountName := ""
 					if meta, ok := config.AccountsMetadata["T212_PORTFOLIO"]; ok && meta != nil {
 						accountTags = meta.Tags
+						accountName = meta.Alias
 					}
 
-					poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, changeAmount)
+					poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, changeAmount)
+
 
 					// Generate a stable and completely unique ExternalID for this specific change event
 					externalID := fmt.Sprintf("T212_PORT_CHG_%s_%d", ticker, now.UnixNano())
@@ -489,8 +494,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				desc := fmt.Sprintf("PENDING %s %s", side, ticker)
 
 				accountTags := ""
+				accountName := ""
 				if meta, ok := config.AccountsMetadata["T212_CASH"]; ok && meta != nil {
 					accountTags = meta.Tags
+					accountName = meta.Alias
 				}
 
 				createdAtStr := createdAt.Format(time.RFC3339)
@@ -499,7 +506,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 				h.Write([]byte(uniquePayload))
 				externalID := fmt.Sprintf("T212_PENDING_%s", hex.EncodeToString(h.Sum(nil)))
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -805,6 +812,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 		balance := 0.0
 		enabled := true
 		iban := ""
+		tags := ""
 		var backoffUntil *time.Time
 
 		if meta, ok := config.AccountsMetadata[accID]; ok && meta != nil {
@@ -814,6 +822,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 			balance = meta.Balance
 			enabled = meta.Enabled
 			iban = meta.IBAN
+			tags = meta.Tags
 			backoffUntil = meta.BackoffUntil
 		}
 
@@ -831,6 +840,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 			Enabled:      enabled,
 			IBAN:         iban,
 			BackoffUntil: backoffUntil,
+			Tags:         tags,
 		})
 	}
 

@@ -46,6 +46,8 @@
         Zap,
         Copy,
         Pencil,
+        Link,
+        Layers,
         GripVertical,
         TrendingUp,
         Waves,
@@ -589,10 +591,16 @@
     }
 
     function getTxAccountName(tx: any) {
-        const key = `${tx.integrationId}:${tx.accountId}`;
+        const targetId =
+            tx.sourceAccountId && tx.sourceAccountId !== ""
+                ? tx.sourceAccountId
+                : tx.accountId;
+
+        // Try lookup with current integration context first
+        const key = `${tx.integrationId}:${targetId}`;
         return (
             mappedAccounts[key]?.name ||
-            mappedAccounts[tx.accountId]?.name ||
+            mappedAccounts[targetId]?.name ||
             "Unknown Account"
         );
     }
@@ -2320,6 +2328,78 @@
                     </div>
                 {/if}
 
+                {#if transactions.filter(t => 
+                    (t.id !== transactionToEdit.id) && (
+                        // Case 1: Direct Link (Internal Transfer sides)
+                        (transactionToEdit.linkedTransactionId && t.id === transactionToEdit.linkedTransactionId) ||
+                        (t.linkedTransactionId && t.linkedTransactionId === transactionToEdit.id) ||
+                        
+                        // Case 2: Funding Chain (Same Account, Opposite Amount, close date)
+                        (t.accountId === transactionToEdit.accountId && 
+                         Math.abs(t.amount + transactionToEdit.amount) < 0.01 && 
+                         Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000) ||
+
+                        // Case 3: Success/Rejection Pair (Same Account, same merchant, close date)
+                        (t.accountId === transactionToEdit.accountId &&
+                         ((t.receiver && t.receiver === transactionToEdit.receiver) || (t.description && t.description === transactionToEdit.description)) &&
+                         Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000)
+                    )
+                ).length > 0}
+                    {@const associatedTransactions = transactions.filter(t => 
+                        (t.id !== transactionToEdit.id) && (
+                            (transactionToEdit.linkedTransactionId && t.id === transactionToEdit.linkedTransactionId) ||
+                            (t.linkedTransactionId && t.linkedTransactionId === transactionToEdit.id) ||
+                            
+                            (t.accountId === transactionToEdit.accountId && 
+                             Math.abs(t.amount + transactionToEdit.amount) < 0.01 && 
+                             Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000) ||
+
+                            (t.accountId === transactionToEdit.accountId &&
+                             ((t.receiver && t.receiver === transactionToEdit.receiver) || (t.description && t.description === transactionToEdit.description)) &&
+                             Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000)
+                        )
+                    )}
+                    <div class="space-y-3">
+                        <span
+                            class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
+                            >Associated Transactions (Chain)</span
+                        >
+                        <div class="space-y-2.5">
+                            {#each associatedTransactions as at (at.id)}
+                                <div
+                                    class="p-4 bg-indigo-50/30 border border-indigo-100/50 rounded-2xl flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm"
+                                >
+                                    <div class="space-y-1">
+                                        <p class="text-xs font-black text-slate-800">
+                                            {at.receiver || at.description || "Untitled Transaction"}
+                                        </p>
+                                        <div class="flex items-center gap-2 text-[10px] font-black text-slate-400 tracking-wider">
+                                            <span class="text-indigo-600/60 uppercase">{getTxAccountName(at)}</span>
+                                            <span>•</span>
+                                            <span>{new Date(at.createdAt).toLocaleDateString()}</span>
+                                            <span>•</span>
+                                            <span class={at.amount < 0 ? "text-rose-500" : "text-emerald-500"}>
+                                                {at.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} EUR
+                                            </span>
+                                            {#if at.internalStatus}
+                                                <span>•</span>
+                                                <span class="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded-md text-[8px]">{at.internalStatus}</span>
+                                            {/if}
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        {#if at.id === transactionToEdit.linkedTransactionId}
+                                            <Link class="w-3.5 h-3.5 text-indigo-500" />
+                                        {:else if at.correlationId === transactionToEdit.correlationId}
+                                            <Layers class="w-3.5 h-3.5 text-slate-400" />
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+
                 <div class="space-y-3">
                     <div class="flex items-center justify-between">
                         <span class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">
@@ -2399,6 +2479,7 @@
                 bind:pools
                 bind:rules
                 {transactions}
+                {mappedAccounts}
                 onChange={() => fetchData(true)}
             />
         </div>

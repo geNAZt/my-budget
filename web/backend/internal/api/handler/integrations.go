@@ -9,18 +9,15 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"strings"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
 	apiproto "github.com/genazt/my-budget-script/web/backend/internal/api/proto"
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
 	"github.com/genazt/my-budget-script/web/backend/internal/domain"
-	"github.com/genazt/my-budget-script/web/backend/internal/integration"
 	"github.com/genazt/my-budget-script/web/backend/internal/repository"
 	"github.com/genazt/my-budget-script/web/backend/internal/service"
+	"github.com/google/uuid"
 )
 
 // Integrations isolates everything relating to the "integrations::" namespace.
@@ -295,14 +292,7 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 
 	activeIntegrations, _ := t.syncService.GetAccountActiveIntegrations(userID, mikCache, integrations)
 
-	type parsedTx struct {
-		tx   domain.BankTransaction
-		meta integration.TransactionMetadata
-		p    *apiproto.Transaction
-	}
-
-	parsedTxs := []*parsedTx{}
-	groups := make(map[string][]*parsedTx)
+	resp := &apiproto.DiscoveredTransactionList{}
 
 	for _, tx := range txs {
 		if tx.IsDeleted {
@@ -358,63 +348,13 @@ func (t *IntegrationsTransactions) List(s *api.WebsocketSession, reqID string, b
 			DeniedDuplicateIds:   tx.DeniedDuplicateIDs,
 			ExternalId:           tx.ExternalID,
 			CorrelationId:        tx.CorrelationID,
+			InternalStatus:       tx.InternalStatus,
 		}
 
-		ptx := &parsedTx{tx: tx, meta: meta, p: p}
-		parsedTxs = append(parsedTxs, ptx)
+		// Create DuplicateKey for UI highlighting: date | abs_amount
+		p.DuplicateKey = fmt.Sprintf("%s|%.2f", tx.CreatedAt.Format("2006-01-02"), math.Abs(meta.Amount))
 
-		// Create DuplicateKey: date | abs_amount
-		dk := fmt.Sprintf("%s|%.2f", tx.CreatedAt.Format("2006-01-02"), math.Abs(meta.Amount))
-		p.DuplicateKey = dk
-		groups[dk] = append(groups[dk], ptx)
-	}
-
-	for _, group := range groups {
-		if len(group) < 2 {
-			continue
-		}
-
-		for _, txA := range group {
-			// If already confirmed linked, we don't need to look for other potential links
-			if txA.tx.IsLinkConfirmed {
-				continue
-			}
-
-			for _, txB := range group {
-				if txA.p.Id == txB.p.Id {
-					continue
-				}
-
-				// Potential link: different signs
-				if (txA.meta.Amount > 0 && txB.meta.Amount < 0) || (txA.meta.Amount < 0 && txB.meta.Amount > 0) {
-					if txA.p.PotentialLinkId == "" {
-						txA.p.PotentialLinkId = txB.p.Id
-					}
-				}
-
-				// Potential duplicate: same signs
-				if (txA.meta.Amount > 0 && txB.meta.Amount > 0) || (txA.meta.Amount < 0 && txB.meta.Amount < 0) {
-					isDenied := false
-					if txA.tx.DeniedDuplicateIDs != "" {
-						for _, dID := range strings.Split(txA.tx.DeniedDuplicateIDs, ",") {
-							if dID == txB.p.Id {
-								isDenied = true
-								break
-							}
-						}
-					}
-
-					if !isDenied {
-						txA.p.IsPotentialDuplicate = true
-					}
-				}
-			}
-		}
-	}
-
-	resp := &apiproto.DiscoveredTransactionList{}
-	for _, ptx := range parsedTxs {
-		resp.Transactions = append(resp.Transactions, ptx.p)
+		resp.Transactions = append(resp.Transactions, p)
 	}
 
 	t.handler.SendResponse(s, reqID, resp, true)
@@ -552,6 +492,7 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 
 						// 3. Trigger rule re-evaluation
 						accountTags := ""
+						accountName := ""
 						decryptedConfig, err := t.syncService.DecryptIntegrationConfig(userID, integration)
 						if err == nil {
 							var config struct {
@@ -560,10 +501,11 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 							json.Unmarshal(decryptedConfig, &config)
 							if config.AccountsMetadata != nil && config.AccountsMetadata[tx.AccountID] != nil {
 								accountTags = config.AccountsMetadata[tx.AccountID].Tags
+								accountName = config.AccountsMetadata[tx.AccountID].Alias
 							}
 						}
 
-						newPoolIDs, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, meta.Amount)
+						newPoolIDs, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, accountName, meta.Amount)
 						t.repo.UpdatePools(userID, tx.ID, newPoolIDs)
 					}
 				}
@@ -641,6 +583,7 @@ func (a *IntegrationsAccounts) List(s *api.WebsocketSession, reqID string, req *
 				Enabled:       acc.Enabled,
 				Iban:          acc.IBAN,
 				BackoffUntil:  backoff,
+				Tags:          acc.Tags,
 			})
 		}
 	}
@@ -689,6 +632,7 @@ func (a *IntegrationsAccounts) Update(s *api.WebsocketSession, reqID string, req
 	accMeta["Alias"] = req.Alias
 	accMeta["Enabled"] = req.Enabled
 	accMeta["IBAN"] = req.Iban
+	accMeta["Tags"] = req.Tags
 
 	updatedConfig, err := json.Marshal(config)
 	if err != nil {

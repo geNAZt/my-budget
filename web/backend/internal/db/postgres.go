@@ -1004,6 +1004,10 @@ func migrate(db *sql.DB) {
 	// Unique constraint for deduplication
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_transactions_user_external ON bank_transactions(user_id, external_id) WHERE external_id != ''")
 
+	if !hasColumn(db, "bank_transactions", "internal_status") {
+		db.Exec("ALTER TABLE bank_transactions ADD COLUMN internal_status TEXT DEFAULT ''")
+	}
+
 	// Modifications
 	if !hasColumn(db, "modification_versions", "withdrawal_percentage") {
 		db.Exec("ALTER TABLE modification_versions ADD COLUMN withdrawal_percentage DOUBLE PRECISION DEFAULT 0")

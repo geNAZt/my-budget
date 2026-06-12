@@ -316,6 +316,14 @@
           "entry_reference": { "type": "string" },
           "status": { "type": "string" },
           "transaction_amount": { "$ref": "#/components/schemas/Amount" },
+          "bank_transaction_code": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "description": { "type": "string" },
+              "sub_code": { "type": "string" }
+            }
+          },
           "booking_date": { "type": "string", "format": "date" },
           "value_date": { "type": "string", "format": "date" },
           "credit_debit_indicator": { "type": "string" },

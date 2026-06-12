@@ -221,10 +221,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		}
 
 		// Fetch Transactions
-		thirtyDaysAgo := time.Now().AddDate(0, 0, -7)
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
 		dateFrom := thirtyDaysAgo.Format("2006-01-02")
 		if !force && meta != nil && meta.LastSyncedAt != nil {
-			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -2)
+			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -7)
 			if lastSyncDate.After(thirtyDaysAgo) {
 				dateFrom = lastSyncDate.Format("2006-01-02")
 			}
@@ -241,165 +241,45 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		}
 
 		for _, t := range ebTxs {
-			externalID := ""
-			if t.TransactionId != nil && *t.TransactionId != "" {
-				externalID = accID + "_" + *t.TransactionId
-			} else if t.EntryReference != nil && *t.EntryReference != "" {
-				externalID = accID + "_" + *t.EntryReference
-			}
-
-			if externalID == "" {
+			// Parse using the new robust logic
+			tBytes, _ := json.Marshal(t)
+			txMeta, err := p.ParseTransaction(tBytes, accID)
+			if err != nil {
+				// We skip if parsing fails completely, but ParseTransaction now handles UPCT tagging
 				continue
 			}
 
-			// Normalize amount
-			amt := 0.0
-			if t.TransactionAmount != nil && t.TransactionAmount.Amount != nil {
-				amt, _ = strconv.ParseFloat(*t.TransactionAmount.Amount, 64)
-			}
-
-			// Enable Banking usually returns absolute values.
-			myIBAN := ""
-			if meta != nil {
-				myIBAN = strings.ReplaceAll(strings.ToUpper(meta.IBAN), " ", "")
-			}
-
-			isSet := false
-
-			// Check CreditDebitIndicator (Most reliable source)
-			if t.CreditDebitIndicator != nil {
-				if *t.CreditDebitIndicator == "DBIT" {
-					amt = -math.Abs(amt)
-					isSet = true
-				} else if *t.CreditDebitIndicator == "CRDT" {
-					amt = math.Abs(amt)
-					isSet = true
-				}
-			}
-
-			// New Simple IBAN Logic:
-			// debtor_account.iban == account.iban -> outgoing (negative amount)
-			// creditor_account.iban == account.iban -> incoming (positive amount)
-			if !isSet && myIBAN != "" {
-				if t.Debtor != nil && t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
-					debtorIBAN := strings.ReplaceAll(strings.ToUpper(*t.Debtor.Account.Iban), " ", "")
-					if debtorIBAN == myIBAN {
-						amt = -math.Abs(amt)
-						isSet = true
-					}
-				}
-
-				if !isSet && t.Creditor != nil && t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
-					creditorIBAN := strings.ReplaceAll(strings.ToUpper(*t.Creditor.Account.Iban), " ", "")
-					if creditorIBAN == myIBAN {
-						amt = math.Abs(amt)
-						isSet = true
-					}
-				}
-			}
-
-			if !isSet {
-				// Fallback to existing logic if IBAN comparison is inconclusive
-				if t.Creditor != nil && t.Creditor.Name != nil {
-					// If Creditor is present and no indicator, it's likely an outgoing payment
-					amt = -math.Abs(amt)
-				} else if t.Debtor != nil && t.Debtor.Account != nil {
-					// Fallback to Debtor presence
-					amt = -math.Abs(amt)
-				}
-			}
-
-			// Ensure the amount string in the raw data is also negative for debits
-			if amt < 0 && t.TransactionAmount != nil && t.TransactionAmount.Amount != nil {
-				amtStr := fmt.Sprintf("%.2f", amt)
-				t.TransactionAmount.Amount = &amtStr
-			}
-
-			createdAt := now
-			if t.BookingDate != nil {
-				createdAt = t.BookingDate.Time
-			}
-
-			receiver := ""
-			receiverIBAN := ""
-
-			// Pick peer based on direction:
-			// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
-			// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
-			if amt > 0 {
-				if t.Debtor != nil {
-					if t.Debtor.Name != nil {
-						receiver = *t.Debtor.Name
-					}
-					if t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
-						receiverIBAN = *t.Debtor.Account.Iban
-					}
-				}
-
-				// Fallback to Creditor if Debtor is missing or has no name
-				if receiver == "" && t.Creditor != nil {
-					if t.Creditor.Name != nil {
-						receiver = *t.Creditor.Name
-					}
-					if t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
-						receiverIBAN = *t.Creditor.Account.Iban
-					}
-				}
-			} else {
-				if t.Creditor != nil {
-					if t.Creditor.Name != nil {
-						receiver = *t.Creditor.Name
-					}
-					if t.Creditor.Account != nil && t.Creditor.Account.Iban != nil {
-						receiverIBAN = *t.Creditor.Account.Iban
-					}
-				}
-
-				// Fallback to Debtor if Creditor is missing or has no name
-				if receiver == "" && t.Debtor != nil {
-					if t.Debtor.Name != nil {
-						receiver = *t.Debtor.Name
-					}
-					if t.Debtor.Account != nil && t.Debtor.Account.Iban != nil {
-						receiverIBAN = *t.Debtor.Account.Iban
-					}
-				}
-			}
-
-			desc := ""
-			if t.RemittanceInformation != nil && len(*t.RemittanceInformation) > 0 {
-				desc = strings.Join(*t.RemittanceInformation, " ")
-			}
-
-			// 1. Check by externalID first
-			if existingTx, found := existingMap[externalID]; found {
-				if !existingTx.CreatedAt.Equal(createdAt) {
-					p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, createdAt, externalID)
+			if existingTx, found := existingMap[txMeta.ExternalID]; found {
+				if !existingTx.CreatedAt.Equal(txMeta.CreatedAt) {
+					p.transactionRepo.UpdateTimestampAndExternalID(userID, existingTx.ID, txMeta.CreatedAt, txMeta.ExternalID)
 					correctedCount++
 				}
 				continue
 			}
 
 			accountTags := ""
+			accountName := ""
 			if meta != nil {
 				accountTags = meta.Tags
+				accountName = meta.Alias
 			}
 
-			poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, amt)
+			poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, txMeta.Receiver, txMeta.Description, "", accountTags, accountName, txMeta.Amount)
 			genericTx := domain.GenericTransaction{
-				Amount:      amt,
-				Description: desc,
-				Peer:        receiver,
-				PeerIBAN:    receiverIBAN,
-				CreatedAt:   createdAt,
-				ExternalID:  externalID,
+				Amount:         txMeta.Amount,
+				Description:    txMeta.Description,
+				Peer:           txMeta.Receiver,
+				PeerIBAN:       txMeta.ReceiverIBAN,
+				CreatedAt:      txMeta.CreatedAt,
+				ExternalID:     txMeta.ExternalID,
+				InternalStatus: txMeta.InternalStatus,
 			}
 			txJSON, _ := json.Marshal(genericTx)
 			encryptedData, _ := p.cryptoService.Encrypt(masterKey, txJSON)
 
 			sourceAcc := ""
 			destAcc := accID
-			if amt < 0 {
+			if txMeta.Amount < 0 {
 				sourceAcc = accID
 				destAcc = ""
 			}
@@ -407,16 +287,17 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			newTx := domain.BankTransaction{
 				ID: uuid.New().String(), UserID: userID, IntegrationID: i.ID, AccountID: accID,
 				SourceAccountID: sourceAcc, DestinationAccountID: destAcc,
-				PoolIDs: poolIDs, ExternalID: externalID, EncryptedData: base64.StdEncoding.EncodeToString(encryptedData),
-				CorrelationID: correlationID,
-				CreatedAt:     createdAt, SyncedAt: now,
+				PoolIDs: poolIDs, ExternalID: txMeta.ExternalID, EncryptedData: base64.StdEncoding.EncodeToString(encryptedData),
+				CorrelationID: correlationID, InternalStatus: txMeta.InternalStatus,
+				CreatedAt: txMeta.CreatedAt, SyncedAt: now,
 			}
+
 			allNewTxs = append(allNewTxs, newTx)
 			newTxInfos = append(newTxInfos, integration.DecryptedTxInfo{
 				Tx:          newTx,
-				Amount:      amt,
-				Receiver:    receiver,
-				Description: desc,
+				Amount:      txMeta.Amount,
+				Receiver:    txMeta.Receiver,
+				Description: txMeta.Description,
 			})
 			newCount++
 		}
@@ -467,12 +348,13 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 		}
 
 		return integration.TransactionMetadata{
-			Amount:       genericTx.Amount,
-			Receiver:     genericTx.Peer,
-			ReceiverIBAN: genericTx.PeerIBAN,
-			Description:  genericTx.Description,
-			CreatedAt:    genericTx.CreatedAt,
-			ExternalID:   extID,
+			Amount:         genericTx.Amount,
+			Receiver:       genericTx.Peer,
+			ReceiverIBAN:   genericTx.PeerIBAN,
+			Description:    genericTx.Description,
+			CreatedAt:      genericTx.CreatedAt,
+			ExternalID:     extID,
+			InternalStatus: genericTx.InternalStatus,
 		}, nil
 	}
 
@@ -489,15 +371,77 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 
 		// Minimal fallback for missing/different fields just in case
 		var item struct {
-			EntryReference *string `json:"entry_reference"`
-			TransactionId  *string `json:"transaction_id"`
+			EntryReference      *string `json:"entry_reference"`
+			TransactionId       *string `json:"transaction_id"`
+			BankTransactionCode *struct {
+				SubCode *string `json:"sub_code"`
+			} `json:"bank_transaction_code"`
+			BookingDate       *string `json:"booking_date"`
+			ValueDate         *string `json:"value_date"`
+			TransactionAmount *struct {
+				Amount   *string `json:"amount"`
+				Currency *string `json:"currency"`
+			} `json:"transaction_amount"`
+			CreditDebitIndicator *string `json:"credit_debit_indicator"`
+			Creditor             *struct {
+				Name *string `json:"name"`
+			} `json:"creditor"`
+			Debtor *struct {
+				Name *string `json:"name"`
+			} `json:"debtor"`
+			RemittanceInformation *[]string `json:"remittance_information"`
 		}
 		if err := json.Unmarshal(decryptedData, &item); err == nil {
 			meta := integration.TransactionMetadata{}
+
+			if item.BankTransactionCode != nil && item.BankTransactionCode.SubCode != nil && *item.BankTransactionCode.SubCode == "UPCT" {
+				meta.InternalStatus = "PENDING_REJECTION"
+			}
+
 			if item.TransactionId != nil && *item.TransactionId != "" {
 				meta.ExternalID = accountID + "_" + *item.TransactionId
 			} else if item.EntryReference != nil && *item.EntryReference != "" {
 				meta.ExternalID = accountID + "_" + *item.EntryReference
+			}
+
+			if item.BookingDate != nil && *item.BookingDate != "" {
+				if t, err := time.Parse("2006-01-02", *item.BookingDate); err == nil {
+					meta.CreatedAt = t
+				}
+			}
+			if meta.CreatedAt.IsZero() && item.ValueDate != nil && *item.ValueDate != "" {
+				if t, err := time.Parse("2006-01-02", *item.ValueDate); err == nil {
+					meta.CreatedAt = t
+				}
+			}
+
+			if item.TransactionAmount != nil && item.TransactionAmount.Amount != nil {
+				meta.Amount, _ = strconv.ParseFloat(*item.TransactionAmount.Amount, 64)
+			}
+			if item.CreditDebitIndicator != nil {
+				if *item.CreditDebitIndicator == "DBIT" {
+					meta.Amount = -math.Abs(meta.Amount)
+				} else if *item.CreditDebitIndicator == "CRDT" {
+					meta.Amount = math.Abs(meta.Amount)
+				}
+			}
+
+			if meta.Amount > 0 {
+				if item.Debtor != nil && item.Debtor.Name != nil {
+					meta.Receiver = *item.Debtor.Name
+				} else if item.Creditor != nil && item.Creditor.Name != nil {
+					meta.Receiver = *item.Creditor.Name
+				}
+			} else {
+				if item.Creditor != nil && item.Creditor.Name != nil {
+					meta.Receiver = *item.Creditor.Name
+				} else if item.Debtor != nil && item.Debtor.Name != nil {
+					meta.Receiver = *item.Debtor.Name
+				}
+			}
+
+			if item.RemittanceInformation != nil && len(*item.RemittanceInformation) > 0 {
+				meta.Description = strings.Join(*item.RemittanceInformation, " ")
 			}
 
 			if meta.ExternalID != "" {
@@ -508,6 +452,11 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 	}
 
 	meta := integration.TransactionMetadata{}
+
+	if et.BankTransactionCode != nil && et.BankTransactionCode.SubCode != nil && *et.BankTransactionCode.SubCode == "UPCT" {
+		meta.InternalStatus = "PENDING_REJECTION"
+	}
+
 	if et.TransactionId != nil && *et.TransactionId != "" {
 		meta.ExternalID = accountID + "_" + *et.TransactionId
 	} else if et.EntryReference != nil && *et.EntryReference != "" {
@@ -516,6 +465,9 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 
 	if et.BookingDate != nil {
 		meta.CreatedAt = et.BookingDate.Time
+	}
+	if meta.CreatedAt.IsZero() && et.ValueDate != nil {
+		meta.CreatedAt = et.ValueDate.Time
 	}
 
 	if et.TransactionAmount != nil && et.TransactionAmount.Amount != nil {
@@ -531,9 +483,7 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 		}
 	}
 
-	// Pick peer based on direction:
-	// If amt > 0 (Income), we are the Creditor, peer is the Debtor.
-	// If amt < 0 (Expense), we are the Debtor, peer is the Creditor.
+	// Pick peer based on direction
 	if meta.Amount > 0 {
 		if et.Debtor != nil {
 			if et.Debtor.Name != nil {
@@ -543,7 +493,6 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 				meta.ReceiverIBAN = *et.Debtor.Account.Iban
 			}
 		}
-
 		// Fallback to Creditor if Debtor is missing or has no name
 		if meta.Receiver == "" && et.Creditor != nil {
 			if et.Creditor.Name != nil {
@@ -562,7 +511,6 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 				meta.ReceiverIBAN = *et.Creditor.Account.Iban
 			}
 		}
-
 		// Fallback to Debtor if Creditor is missing or has no name
 		if meta.Receiver == "" && et.Debtor != nil {
 			if et.Debtor.Name != nil {
@@ -582,7 +530,13 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 }
 
 func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration) ([]integration.Account, error) {
-	decrypted, err := p.masterKeyProvider.(*service.SyncService).DecryptIntegrationConfig(userID, integrationObj)
+	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, integrationObj.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, _ := base64.StdEncoding.DecodeString(integrationObj.EncryptedConfig)
+	decrypted, err := p.cryptoService.Decrypt(masterKey, ciphertext)
 	if err != nil {
 		return nil, err
 	}
@@ -617,6 +571,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 		balance := 0.0
 		enabled := true
 		iban := ""
+		tags := ""
 		var backoffUntil *time.Time
 
 		if meta, ok := config.AccountsMetadata[accID]; ok && meta != nil {
@@ -626,6 +581,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 			balance = meta.Balance
 			enabled = meta.Enabled
 			iban = meta.IBAN
+			tags = meta.Tags
 			backoffUntil = meta.BackoffUntil
 		}
 
@@ -636,6 +592,7 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 			Enabled:      enabled,
 			IBAN:         iban,
 			BackoffUntil: backoffUntil,
+			Tags:         tags,
 		})
 	}
 

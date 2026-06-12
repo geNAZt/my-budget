@@ -95,6 +95,11 @@ type Counterparty struct {
 
 // Transaction defines model for Transaction.
 type Transaction struct {
+	BankTransactionCode *struct {
+		Code        *string `json:"code,omitempty"`
+		Description *string `json:"description,omitempty"`
+		SubCode     *string `json:"sub_code,omitempty"`
+	} `json:"bank_transaction_code,omitempty"`
 	BookingDate           *openapi_types.Date `json:"booking_date,omitempty"`
 	CreditDebitIndicator  *string             `json:"credit_debit_indicator,omitempty"`
 	Creditor              *Counterparty       `json:"creditor,omitempty"`
@@ -1332,21 +1337,22 @@ func ParseGetSessionResponse(rsp *http.Response) (*GetSessionResponse, error) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"U2HVGYbppOiGkzNpami37b8BAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

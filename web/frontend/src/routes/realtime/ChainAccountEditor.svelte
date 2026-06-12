@@ -77,6 +77,7 @@
                     alias: acc.alias,
                     enabled: acc.enabled,
                     iban: acc.iban,
+                    tags: acc.tags,
                 },
                 [GenericIDSchema],
             ).one();
@@ -209,6 +210,13 @@
                                             onblur={() => saveSettings(acc)}
                                             placeholder="IBAN"
                                             class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-transparent border-none p-0 focus:ring-0 w-full placeholder:text-slate-200"
+                                        />
+                                        <input
+                                            type="text"
+                                            bind:value={acc.tags}
+                                            onblur={() => saveSettings(acc)}
+                                            placeholder="Add comma separated tags..."
+                                            class="text-[10px] font-bold text-indigo-400 uppercase tracking-widest bg-transparent border-none p-0 focus:ring-0 w-full placeholder:text-slate-200"
                                         />
                                     </div>
                                 </div>

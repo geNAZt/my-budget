@@ -8,9 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,9 +39,10 @@ type SyncService struct {
 	ruleService         *RuleService
 	eventBus            *bus.Bus
 
-	// Temporary cache for recovered master keys (Recovery flow)
-	recoveryCache map[string]map[string][]byte // userID -> integrationID -> MIK
-	cacheMu       sync.RWMutex
+	// Thread-safe caches to prevent N+1 query floods
+	masterKeyCache          map[string]map[string][]byte // userID -> integrationID -> MIK
+	activeIntegrationsCache map[string]map[string]string // userID -> accountID -> integrationID
+	cacheMu                 sync.RWMutex
 }
 
 func (s *SyncService) RuleService() *RuleService {
@@ -45,7 +50,6 @@ func (s *SyncService) RuleService() *RuleService {
 }
 
 func (s *SyncService) GetProvider(serviceType string) integration.Provider {
-
 	return s.integrationRegistry.Get(serviceType)
 }
 
@@ -60,18 +64,18 @@ func NewSyncService(
 	rs *RuleService,
 	eventBus *bus.Bus,
 ) *SyncService {
-
 	return &SyncService{
-		integrationRepo:     ir,
-		transactionRepo:     tr,
-		connRepo:            cr,
-		assetRepo:           ar,
-		userRepo:            ur,
-		cryptoService:       cs,
-		integrationRegistry: ir_registry,
-		ruleService:         rs,
-		recoveryCache:       make(map[string]map[string][]byte),
-		eventBus:            eventBus,
+		integrationRepo:         ir,
+		transactionRepo:         tr,
+		connRepo:                cr,
+		assetRepo:               ar,
+		userRepo:                ur,
+		cryptoService:           cs,
+		integrationRegistry:     ir_registry,
+		ruleService:             rs,
+		masterKeyCache:          make(map[string]map[string][]byte),
+		activeIntegrationsCache: make(map[string]map[string]string),
+		eventBus:                eventBus,
 	}
 }
 
@@ -79,8 +83,151 @@ func (s *SyncService) GetRegistry() *integration.Registry {
 	return s.integrationRegistry
 }
 
-func (s *SyncService) StartBackgroundWorker() {
+func (s *SyncService) ReconcileBlockedFunds() {
+	log.Printf("[RECONCILE] Starting blocked funds reconciliation...")
 
+	users, _ := s.userRepo.ListAll()
+	for _, user := range users {
+		// 1. Find all PENDING_REJECTION transactions
+		blocked, err := s.transactionRepo.ListByInternalStatus(user.ID, "PENDING_REJECTION")
+		if err != nil || len(blocked) == 0 {
+			continue
+		}
+
+		// 2. Load all transactions for matching
+		allTxs, _ := s.transactionRepo.ListAll(user.ID)
+
+		// Pre-calculate master keys
+		integrations, _ := s.integrationRepo.List(user.ID)
+		mikCache := make(map[string][]byte)
+		for _, i := range integrations {
+			if mk, err := s.GetMasterKey(user.ID, i.ID); err == nil {
+				mikCache[i.ID] = mk
+			}
+		}
+
+		// Helper to resolve a block
+		resolveBlock := func(btxID string, status string, correlationID string) {
+			s.transactionRepo.UpdateInternalStatus(user.ID, btxID, status)
+			s.transactionRepo.Delete(user.ID, btxID)
+		}
+
+		for _, btx := range blocked {
+			log.Printf("[RECONCILE] Investigating blocked fund: %s (%s, ExternalID: %s)", btx.ID, btx.CorrelationID, btx.ExternalID)
+
+			// Expiry check: 14 days
+			if btx.CreatedAt.Before(time.Now().AddDate(0, 0, -14)) {
+				log.Printf("[RECONCILE] CID %s: Expiring blocked fund %s (14 days passed)", btx.CorrelationID, btx.ID)
+				resolveBlock(btx.ID, "EXPIRED_REJECTION", btx.CorrelationID)
+				continue
+			}
+
+			bData, err := s.DecryptTransaction(user.ID, &btx, mikCache, nil)
+			if err != nil {
+				log.Printf("[RECONCILE] Failed to decrypt block %s: %v", btx.ID, err)
+				continue
+			}
+
+			provider := s.GetProvider("ENABLEBANKING")
+			bMeta, err := provider.ParseTransaction(bData, btx.AccountID)
+			if err != nil {
+				log.Printf("[RECONCILE] Failed to parse block %s: %v", btx.ID, err)
+				continue
+			}
+
+			bReceiver := strings.ToUpper(strings.TrimSpace(bMeta.Receiver))
+			bAmountAbs := math.Abs(bMeta.Amount)
+			log.Printf("[RECONCILE] Block metadata: Amount=%.2f, Receiver='%s', CreatedAt=%v", bMeta.Amount, bReceiver, btx.CreatedAt)
+
+			// 1. Try to find a SINGLE exact match (Amount + Merchant)
+			foundExact := false
+			for _, dbtx := range allTxs {
+				if dbtx.ID == btx.ID || dbtx.InternalStatus != "" || dbtx.IsDeleted {
+					continue
+				}
+				if dbtx.AccountID != btx.AccountID {
+					continue
+				}
+
+				// Check date window (-2 days to +14 days)
+				windowStart := btx.CreatedAt.AddDate(0, 0, -2)
+				windowEnd := btx.CreatedAt.AddDate(0, 0, 14)
+
+				if (dbtx.CreatedAt.Equal(windowStart) || dbtx.CreatedAt.After(windowStart)) && dbtx.CreatedAt.Before(windowEnd) {
+					dData, err := s.DecryptTransaction(user.ID, &dbtx, mikCache, nil)
+					if err != nil {
+						continue
+					}
+
+					dIntegration, _ := s.integrationRepo.GetByID(user.ID, dbtx.IntegrationID)
+					if dIntegration == nil {
+						continue
+					}
+					dProvider := s.GetProvider(dIntegration.ServiceType)
+					dMeta, _ := dProvider.ParseTransaction(dData, dbtx.AccountID)
+					dReceiver := strings.ToUpper(strings.TrimSpace(dMeta.Receiver))
+					dAmountAbs := math.Abs(dMeta.Amount)
+
+					if (bReceiver == dReceiver || strings.Contains(dReceiver, bReceiver) || strings.Contains(bReceiver, dReceiver)) && math.Abs(dAmountAbs-bAmountAbs) < 0.01 {
+						log.Printf("[RECONCILE] CID %s: Found EXACT match for blocked fund %s: success %s (%.2f)", btx.CorrelationID, btx.ID, dbtx.ID, dMeta.Amount)
+						resolveBlock(btx.ID, "RECONCILED", btx.CorrelationID)
+						foundExact = true
+						break
+					}
+				}
+			}
+
+			if foundExact {
+				continue
+			}
+
+			// 2. Fallback to Split Settlement Logic
+			var merchantSuccesses []integration.TransactionMetadata
+			for _, dbtx := range allTxs {
+				if dbtx.ID == btx.ID || dbtx.InternalStatus != "" || dbtx.IsDeleted {
+					continue
+				}
+				if dbtx.AccountID != btx.AccountID {
+					continue
+				}
+
+				windowStart := btx.CreatedAt.AddDate(0, 0, -2)
+				windowEnd := btx.CreatedAt.AddDate(0, 0, 14)
+
+				if (dbtx.CreatedAt.Equal(windowStart) || dbtx.CreatedAt.After(windowStart)) && dbtx.CreatedAt.Before(windowEnd) {
+					dData, err := s.DecryptTransaction(user.ID, &dbtx, mikCache, nil)
+					if err != nil {
+						continue
+					}
+
+					dIntegration, _ := s.integrationRepo.GetByID(user.ID, dbtx.IntegrationID)
+					if dIntegration == nil {
+						continue
+					}
+					dProvider := s.GetProvider(dIntegration.ServiceType)
+					dMeta, _ := dProvider.ParseTransaction(dData, dbtx.AccountID)
+					dReceiver := strings.ToUpper(strings.TrimSpace(dMeta.Receiver))
+
+					if bReceiver == dReceiver || strings.Contains(dReceiver, bReceiver) || strings.Contains(bReceiver, dReceiver) {
+						merchantSuccesses = append(merchantSuccesses, dMeta)
+					}
+				}
+			}
+
+			successSum := 0.0
+			for _, m := range merchantSuccesses {
+				successSum += math.Abs(m.Amount)
+			}
+
+			if successSum > 0 && math.Abs(successSum-bAmountAbs) < 0.01 {
+				log.Printf("[RECONCILE] CID %s: Matching blocked fund %s (%.2f) with %d settlements summing to %.2f", btx.CorrelationID, btx.ID, bMeta.Amount, len(merchantSuccesses), successSum)
+				resolveBlock(btx.ID, "RECONCILED", btx.CorrelationID)
+			}
+		}
+	}
+}
+
+func (s *SyncService) StartBackgroundWorker() {
 	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
 		defer func() {
@@ -97,6 +244,242 @@ func (s *SyncService) StartBackgroundWorker() {
 	}()
 }
 
+func (s *SyncService) AutoLinkInternalTransfers() {
+	log.Printf("[LINK] Starting internal transfer auto-linking...")
+
+	users, _ := s.userRepo.ListAll()
+	for _, user := range users {
+		ibanMap := make(map[string]string)
+		integrations, _ := s.integrationRepo.List(user.ID)
+		mikCache := make(map[string][]byte)
+
+		for _, i := range integrations {
+			if mk, err := s.GetMasterKey(user.ID, i.ID); err == nil {
+				mikCache[i.ID] = mk
+
+				configBytes, err := s.DecryptIntegrationConfig(user.ID, &i)
+				if err == nil {
+					var config struct {
+						AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+					}
+					if err := json.Unmarshal(configBytes, &config); err == nil {
+						for accID, meta := range config.AccountsMetadata {
+							if meta != nil && meta.IBAN != "" {
+								cleanIBAN := strings.ReplaceAll(strings.ToUpper(meta.IBAN), " ", "")
+								ibanMap[cleanIBAN] = accID
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if len(ibanMap) == 0 {
+			continue
+		}
+
+		allTxs, _ := s.transactionRepo.ListAll(user.ID)
+		var candidates []domain.BankTransaction
+		for _, tx := range allTxs {
+			if !tx.IsLinkConfirmed && !tx.IsDeleted {
+				candidates = append(candidates, tx)
+			}
+		}
+
+		// 3. Match pairs
+		linkedIDs := make(map[string]bool)
+		for _, tx := range candidates {
+			if linkedIDs[tx.ID] {
+				continue
+			}
+
+			// Decrypt to get details
+			data, err := s.DecryptTransaction(user.ID, &tx, mikCache, nil)
+			if err != nil {
+				continue
+			}
+
+			var genTx domain.GenericTransaction
+			if err := json.Unmarshal(data, &genTx); err != nil {
+				continue
+			}
+
+			cleanPeerIBAN := strings.ReplaceAll(strings.ToUpper(genTx.PeerIBAN), " ", "")
+			cleanDesc := strings.TrimSpace(genTx.Description)
+
+			// Strategy A: IBAN Match
+			if targetAccID, ok := ibanMap[cleanPeerIBAN]; ok && targetAccID != tx.AccountID {
+				for _, other := range candidates {
+					if other.ID == tx.ID || other.AccountID != targetAccID || linkedIDs[other.ID] {
+						continue
+					}
+
+					otherData, err := s.DecryptTransaction(user.ID, &other, mikCache, nil)
+					if err != nil {
+						continue
+					}
+					var otherGenTx domain.GenericTransaction
+					if err := json.Unmarshal(otherData, &otherGenTx); err != nil {
+						continue
+					}
+
+					if math.Abs(genTx.Amount+otherGenTx.Amount) < 0.01 {
+						diff := tx.CreatedAt.Sub(other.CreatedAt)
+						if diff < 0 {
+							diff = -diff
+						}
+
+						if diff <= 96*time.Hour {
+							sourceAcc, destAcc := tx.AccountID, targetAccID
+							if genTx.Amount > 0 {
+								sourceAcc, destAcc = targetAccID, tx.AccountID
+							}
+
+							log.Printf("[LINK] Linking internal transfer (IBAN match): %s <-> %s", tx.ID, other.ID)
+							if err := s.transactionRepo.LinkInternalTransfer(user.ID, tx.ID, other.ID, sourceAcc, destAcc); err == nil {
+								linkedIDs[tx.ID] = true
+								linkedIDs[other.ID] = true
+							}
+							break
+						}
+					}
+				}
+			}
+
+			if linkedIDs[tx.ID] {
+				continue
+			}
+
+			// Strategy B: Fallback Description + Amount Match (for missing IBANs)
+			if cleanDesc != "" {
+				for _, other := range candidates {
+					if other.ID == tx.ID || other.AccountID == tx.AccountID || linkedIDs[other.ID] {
+						continue
+					}
+
+					otherData, err := s.DecryptTransaction(user.ID, &other, mikCache, nil)
+					if err != nil {
+						continue
+					}
+					var otherGenTx domain.GenericTransaction
+					if err := json.Unmarshal(otherData, &otherGenTx); err != nil {
+						continue
+					}
+
+					if math.Abs(genTx.Amount+otherGenTx.Amount) < 0.01 && strings.TrimSpace(otherGenTx.Description) == cleanDesc {
+						diff := tx.CreatedAt.Sub(other.CreatedAt)
+						if diff < 0 {
+							diff = -diff
+						}
+
+						if diff <= 96*time.Hour {
+							sourceAcc, destAcc := tx.AccountID, other.AccountID
+							if genTx.Amount > 0 {
+								sourceAcc, destAcc = other.AccountID, tx.AccountID
+							}
+
+							log.Printf("[LINK] Linking internal transfer (Fallback match): %s <-> %s", tx.ID, other.ID)
+							if err := s.transactionRepo.LinkInternalTransfer(user.ID, tx.ID, other.ID, sourceAcc, destAcc); err == nil {
+								linkedIDs[tx.ID] = true
+								linkedIDs[other.ID] = true
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func (s *SyncService) TraceMoneyMovementChains() {
+	log.Printf("[LINK] Starting money movement chain tracing...")
+
+	users, _ := s.userRepo.ListAll()
+	for _, user := range users {
+		allTxs, err := s.transactionRepo.ListAll(user.ID)
+		if err != nil {
+			continue
+		}
+
+		// 1. Separate expenses (unlinked) and received credits (linked)
+		var expenses []domain.BankTransaction
+		var transfers []domain.BankTransaction
+
+		for _, tx := range allTxs {
+			if tx.IsDeleted {
+				continue
+			}
+
+			if !tx.IsLinkConfirmed && tx.AccountID != "" && tx.SourceAccountID == tx.AccountID {
+				// We look at unlinked transactions where source == account (normal expense)
+				// Note: DecryptTransaction is needed to check amount sign accurately
+				expenses = append(expenses, tx)
+			} else if tx.IsLinkConfirmed && tx.SourceAccountID != "" && tx.SourceAccountID != tx.AccountID {
+				// Confirmed transfer: money moving between accounts
+				// We care about the "received" side (Amount > 0)
+				transfers = append(transfers, tx)
+			}
+		}
+
+		// 2. Pre-load MIKs for decryption
+		integrations, _ := s.integrationRepo.List(user.ID)
+		mikCache := make(map[string][]byte)
+		for _, i := range integrations {
+			if mk, err := s.GetMasterKey(user.ID, i.ID); err == nil {
+				mikCache[i.ID] = mk
+			}
+		}
+
+		// 3. Match Expenses to Funding Transfers
+		for _, ex := range expenses {
+			// Decrypt expense to get amount
+			exData, err := s.DecryptTransaction(user.ID, &ex, mikCache, nil)
+			if err != nil {
+				continue
+			}
+			var exGen domain.GenericTransaction
+			if err := json.Unmarshal(exData, &exGen); err != nil || exGen.Amount >= 0 {
+				continue // Only care about actual outgoing expenses
+			}
+
+			for _, tr := range transfers {
+				if tr.AccountID != ex.AccountID {
+					continue
+				}
+
+				// Decrypt transfer to verify amount
+				trData, err := s.DecryptTransaction(user.ID, &tr, mikCache, nil)
+				if err != nil {
+					continue
+				}
+				var trGen domain.GenericTransaction
+				if err := json.Unmarshal(trData, &trGen); err != nil || trGen.Amount <= 0 {
+					continue // Only care about received funds
+				}
+
+				// Match conditions:
+				// - Same absolute amount
+				// - Within 48 hours
+				if math.Abs(exGen.Amount+trGen.Amount) < 0.01 {
+					diff := ex.CreatedAt.Sub(tr.CreatedAt)
+					if diff < 0 {
+						diff = -diff
+					}
+
+					if diff <= 48*time.Hour {
+						// Found the chain! 
+						// Log: Tracing chain: Merchant (Ex Account) -> Intermediary (Tr Account) -> Original Source (Tr Source)
+						log.Printf("[LINK] Tracing chain: %s (%.2f) funded by transfer %s (source: %s)", ex.ID, exGen.Amount, tr.ID, tr.SourceAccountID)
+						s.transactionRepo.UpdateSourceAccountID(user.ID, ex.ID, tr.SourceAccountID)
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 func (s *SyncService) SyncAll() {
 	all, err := s.integrationRepo.ListAll()
 	if err == nil {
@@ -104,8 +487,6 @@ func (s *SyncService) SyncAll() {
 		for _, i := range all {
 			log.Printf("[SYNC] - %s (ID: %s, User: %s, Status: %s, Service: %s, LastError: %s)", i.Name, i.ID, i.UserID, i.Status, i.ServiceType, i.LastError)
 		}
-	} else {
-		log.Printf("[SYNC] Failed to list all integrations for debug: %v", err)
 	}
 
 	integrations, err := s.integrationRepo.ListAllActive()
@@ -120,10 +501,13 @@ func (s *SyncService) SyncAll() {
 		log.Printf("[SYNC] Starting scheduled sync for %s (User: %s)...", i.Name, i.UserID)
 		s.SyncIntegration(i.UserID, i.ID, false)
 	}
+
+	s.ReconcileBlockedFunds()
+	s.AutoLinkInternalTransfers()
+	s.TraceMoneyMovementChains()
 }
 
 func (s *SyncService) SyncIntegration(userID string, integrationID string, force bool) error {
-
 	integration, err := s.integrationRepo.GetByID(userID, integrationID)
 	if err != nil || integration == nil {
 		return fmt.Errorf("integration not found")
@@ -158,9 +542,8 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 }
 
 func (s *SyncService) GetMasterKey(userID string, integrationID string) ([]byte, error) {
-
 	s.cacheMu.RLock()
-	userCache := s.recoveryCache[userID]
+	userCache := s.masterKeyCache[userID]
 	if userCache != nil {
 		if cachedMik, ok := userCache[integrationID]; ok {
 			s.cacheMu.RUnlock()
@@ -174,21 +557,23 @@ func (s *SyncService) GetMasterKey(userID string, integrationID string) ([]byte,
 		return nil, fmt.Errorf("user not found")
 	}
 
-	return s.GetMasterKeyForUser(user, integrationID)
+	key, err := s.GetMasterKeyForUser(user, integrationID)
+	if err == nil {
+		s.CacheMasterKey(userID, integrationID, key)
+	}
+	return key, err
 }
 
 func (s *SyncService) CacheMasterKey(userID string, integrationID string, key []byte) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
-	if _, ok := s.recoveryCache[userID]; !ok {
-		s.recoveryCache[userID] = make(map[string][]byte)
+	if _, ok := s.masterKeyCache[userID]; !ok {
+		s.masterKeyCache[userID] = make(map[string][]byte)
 	}
-	s.recoveryCache[userID][integrationID] = key
+	s.masterKeyCache[userID][integrationID] = key
 }
 
 func (s *SyncService) GetMasterKeyForUser(user *domain.User, integrationID string) ([]byte, error) {
-
-	// 1. Try Slot-based (Multi-key support)
 	for _, auth := range user.Authenticators {
 		wrappedB64, err := s.integrationRepo.GetKeySlot(integrationID, auth.ID)
 		if err == nil && wrappedB64 != "" {
@@ -200,7 +585,6 @@ func (s *SyncService) GetMasterKeyForUser(user *domain.User, integrationID strin
 			}
 		}
 	}
-
 	return nil, fmt.Errorf("failed to retrieve master key")
 }
 
@@ -208,7 +592,6 @@ func (s *SyncService) handleSyncError(userID string, i *domain.Integration, err 
 	log.Printf("[SYNC] Error on %s: %v", i.Name, err)
 	i.LastError = err.Error()
 	i.Status = "ERROR"
-
 	s.integrationRepo.Save(userID, i)
 	return err
 }
@@ -223,7 +606,6 @@ func (s *SyncService) finalizeSync(userID string, i *domain.Integration, balance
 }
 
 func (s *SyncService) EnsureRecoveryTokens() {
-
 	log.Printf("[RECOVERY] Checking for missing recovery tokens...")
 	users, err := s.userRepo.ListAll()
 	if err != nil {
@@ -236,7 +618,6 @@ func (s *SyncService) EnsureRecoveryTokens() {
 			continue
 		}
 
-		// Generate new token: MB-XXXX-XXXX-XXXX
 		chars := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 		token := "MB-"
 		for i := 0; i < 3; i++ {
@@ -261,22 +642,18 @@ func (s *SyncService) EnsureRecoveryTokens() {
 }
 
 func (s *SyncService) PropagateKeyToNewAuthenticator(userID string, authPubKey []byte, authID []byte) error {
-
 	integrations, err := s.integrationRepo.List(userID)
 	if err != nil {
 		return err
 	}
 
 	newIk, _ := s.cryptoService.DeriveIdentityKey(authPubKey)
-
 	s.cacheMu.RLock()
-	userCache := s.recoveryCache[userID]
+	userCache := s.masterKeyCache[userID]
 	s.cacheMu.RUnlock()
 
 	for _, i := range integrations {
 		var mik []byte
-		var err error
-
 		if userCache != nil {
 			if cachedMik, ok := userCache[i.ID]; ok {
 				mik = cachedMik
@@ -284,27 +661,24 @@ func (s *SyncService) PropagateKeyToNewAuthenticator(userID string, authPubKey [
 		}
 
 		if mik == nil {
-			mik, err = s.GetMasterKey(userID, i.ID)
+			mik, _ = s.GetMasterKey(userID, i.ID)
 		}
 
-		if err != nil || mik == nil {
+		if mik == nil {
 			continue
 		}
 
 		wrapped, _ := s.cryptoService.WrapKey(newIk, mik)
 		s.integrationRepo.SaveKeySlot(i.ID, authID, base64.StdEncoding.EncodeToString(wrapped))
-		log.Printf("[CRYPTO] Propagated MIK to new authenticator for integration %s", i.Name)
 	}
 
 	s.cacheMu.Lock()
-	delete(s.recoveryCache, userID)
+	delete(s.masterKeyCache, userID)
 	s.cacheMu.Unlock()
-
 	return nil
 }
 
 func (s *SyncService) SetupRecoveryKey(userID string, phrase string) error {
-
 	integrations, err := s.integrationRepo.List(userID)
 	if err != nil {
 		return err
@@ -327,7 +701,6 @@ func (s *SyncService) SetupRecoveryKey(userID string, phrase string) error {
 }
 
 func (s *SyncService) RecoverMIKsToCache(userID string, phrase string) int {
-
 	integrations, err := s.integrationRepo.List(userID)
 	if err != nil {
 		return 0
@@ -340,8 +713,8 @@ func (s *SyncService) RecoverMIKsToCache(userID string, phrase string) int {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
-	if _, ok := s.recoveryCache[userID]; !ok {
-		s.recoveryCache[userID] = make(map[string][]byte)
+	if _, ok := s.masterKeyCache[userID]; !ok {
+		s.masterKeyCache[userID] = make(map[string][]byte)
 	}
 
 	recoveredCount := 0
@@ -357,21 +730,23 @@ func (s *SyncService) RecoverMIKsToCache(userID string, phrase string) int {
 			continue
 		}
 
-		s.recoveryCache[userID][i.ID] = mik
+		s.masterKeyCache[userID][i.ID] = mik
 		recoveredCount++
 	}
-
 	return recoveredCount
 }
 
 func (s *SyncService) GetAccountActiveIntegrations(userID string, mikCache map[string][]byte, integrations []domain.Integration) (map[string]string, error) {
+	s.cacheMu.RLock()
+	cached := s.activeIntegrationsCache[userID]
+	if cached != nil && integrations == nil {
+		s.cacheMu.RUnlock()
+		return cached, nil
+	}
+	s.cacheMu.RUnlock()
 
 	if integrations == nil {
-		var err error
-		integrations, err = s.integrationRepo.List(userID)
-		if err != nil {
-			return nil, err
-		}
+		integrations, _ = s.integrationRepo.List(userID)
 	}
 
 	accountActiveIntegration := make(map[string]string)
@@ -381,7 +756,6 @@ func (s *SyncService) GetAccountActiveIntegrations(userID string, mikCache map[s
 			continue
 		}
 
-		// Ensure mik is in cache for future use (e.g. by DecryptTransaction)
 		if mikCache != nil {
 			if _, ok := mikCache[i.ID]; !ok {
 				if mik, err := s.GetMasterKey(userID, i.ID); err == nil {
@@ -401,46 +775,37 @@ func (s *SyncService) GetAccountActiveIntegrations(userID string, mikCache map[s
 			}
 		}
 	}
+
+	s.cacheMu.Lock()
+	s.activeIntegrationsCache[userID] = accountActiveIntegration
+	s.cacheMu.Unlock()
+
 	return accountActiveIntegration, nil
 }
 
 func (s *SyncService) MigrateTransactionsBetweenChains() {
-
 	log.Printf("[SYNC] Starting cross-chain transaction migration check...")
 	users, err := s.userRepo.ListAll()
 	if err != nil {
-		log.Printf("[SYNC] Migration failed to list users: %v", err)
 		return
 	}
 
 	for _, user := range users {
 		mikCache := make(map[string][]byte)
-		integrations, err := s.integrationRepo.List(user.ID)
-		if err != nil {
-			continue
-		}
-
+		integrations, _ := s.integrationRepo.List(user.ID)
 		accountActiveIntegration, err := s.GetAccountActiveIntegrations(user.ID, mikCache, integrations)
 		if err != nil {
 			continue
 		}
 
-		txs, err := s.transactionRepo.List(user.ID)
-		if err != nil {
-			continue
-		}
-
+		txs, _ := s.transactionRepo.List(user.ID)
 		for _, tx := range txs {
 			activeIntegrationID, ok := accountActiveIntegration[tx.AccountID]
 			if ok && tx.IntegrationID != activeIntegrationID {
-				log.Printf("[SYNC] Migrating tx %s (Account: %s) from Integration %s to Integration %s", tx.ID, tx.AccountID, tx.IntegrationID, activeIntegrationID)
-
 				_, err := s.DecryptTransaction(user.ID, &tx, mikCache, accountActiveIntegration)
-				if err != nil {
-					log.Printf("[SYNC] Failed to decrypt and migrate tx %s: %v", tx.ID, err)
-					continue
+				if err == nil {
+					log.Printf("[SYNC] Migrated tx %s", tx.ID)
 				}
-				log.Printf("[SYNC] Successfully migrated tx %s", tx.ID)
 			}
 		}
 	}
@@ -469,140 +834,88 @@ func (s *SyncService) DecryptIntegrationConfig(userID string, integration *domai
 }
 
 func (s *SyncService) DecryptTransaction(userID string, tx *domain.BankTransaction, mikCache map[string][]byte, activeIntegrations map[string]string) ([]byte, error) {
-
-	// Determine if there is a cross-chain mismatch (encryption chain != active account chain)
-	var err error
 	activeIntegrationID := ""
 	if tx.AccountID != "" {
 		if activeIntegrations == nil {
-			activeIntegrations, err = s.GetAccountActiveIntegrations(userID, mikCache, nil)
-			if err == nil {
-				activeIntegrationID = activeIntegrations[tx.AccountID]
-			}
-		} else {
+			activeIntegrations, _ = s.GetAccountActiveIntegrations(userID, mikCache, nil)
+		}
+		if activeIntegrations != nil {
 			activeIntegrationID = activeIntegrations[tx.AccountID]
 		}
 	}
 
-	// 1. Try primary key from current integration_id
 	var decrypted []byte
 	var decryptedWithKeyID string
 	if mk, ok := mikCache[tx.IntegrationID]; ok {
-		decrypted, err = s.decrypt(mk, tx.EncryptedData)
-		if err == nil {
+		decrypted, _ = s.decrypt(mk, tx.EncryptedData)
+		if decrypted != nil {
 			decryptedWithKeyID = tx.IntegrationID
 		}
 	}
 
-	// 2. Recovery: Try all other available integration keys if primary failed
 	if decrypted == nil {
-		log.Printf("[SYNC] [RECOVERY] Primary decryption failed for tx %s (integration %s). Attempting recovery with %d alternate keys...", tx.ID, tx.IntegrationID, len(mikCache))
 		for intID, alternateMIK := range mikCache {
 			if intID == tx.IntegrationID {
 				continue
 			}
-
 			recoveredData, rerr := s.decrypt(alternateMIK, tx.EncryptedData)
 			if rerr == nil {
 				decrypted = recoveredData
 				decryptedWithKeyID = intID
-				log.Printf("[SYNC] [RECOVERY] Recovery SUCCESS for tx %s: decrypted using key from integration %s.", tx.ID, intID)
 				break
 			}
 		}
 	}
 
-	// 3. Handle live migration, self-healing, and DB sync
 	if decrypted != nil {
 		if activeIntegrationID != "" && tx.IntegrationID != activeIntegrationID {
-			// Cross-chain mismatch! Perform live on-the-fly migration to activeIntegrationID
-			log.Printf("[SYNC] [MIGRATION] Live cross-chain migration for tx %s: migrating from Integration %s to active Integration %s...", tx.ID, tx.IntegrationID, activeIntegrationID)
-			targetMK, ok := mikCache[activeIntegrationID]
-			if !ok {
-				// Fallback to deriving target key
-				targetMK, err = s.GetMasterKey(userID, activeIntegrationID)
-				if err == nil {
-					mikCache[activeIntegrationID] = targetMK
-				}
-			}
-
-			if ok || err == nil {
+			targetMK, err := s.GetMasterKey(userID, activeIntegrationID)
+			if err == nil {
+				mikCache[activeIntegrationID] = targetMK
 				newEncrypted, eerr := s.cryptoService.Encrypt(targetMK, decrypted)
 				if eerr == nil {
 					newEncryptedBase64 := base64.StdEncoding.EncodeToString(newEncrypted)
-					if uerr := s.transactionRepo.UpdateIntegrationAndEncryptedData(userID, tx.ID, activeIntegrationID, newEncryptedBase64); uerr != nil {
-						log.Printf("[SYNC] [MIGRATION] Warning: Failed to save migrated transaction data for tx %s: %v", tx.ID, uerr)
-					} else {
-						log.Printf("[SYNC] [MIGRATION] Live migration complete for tx %s.", tx.ID)
-						tx.IntegrationID = activeIntegrationID
-						tx.EncryptedData = newEncryptedBase64
-					}
-				} else {
-					log.Printf("[SYNC] [MIGRATION] Error: Failed to re-encrypt tx %s under target key: %v", tx.ID, eerr)
+					s.transactionRepo.UpdateIntegrationAndEncryptedData(userID, tx.ID, activeIntegrationID, newEncryptedBase64)
+					tx.IntegrationID = activeIntegrationID
+					tx.EncryptedData = newEncryptedBase64
 				}
 			}
 		} else if decryptedWithKeyID != "" && decryptedWithKeyID != tx.IntegrationID {
-			// Normal key mismatch recovery path (self-healing for current integration)
-			log.Printf("[SYNC] [RECOVERY] Mismatched key detected for tx %s (decrypted with %s but tx belongs to %s). Self-healing...", tx.ID, decryptedWithKeyID, tx.IntegrationID)
 			if primaryMK, ok := mikCache[tx.IntegrationID]; ok {
 				newEncrypted, eerr := s.cryptoService.Encrypt(primaryMK, decrypted)
 				if eerr == nil {
 					newEncryptedBase64 := base64.StdEncoding.EncodeToString(newEncrypted)
-					if uerr := s.transactionRepo.UpdateEncryptedData(userID, tx.ID, newEncryptedBase64); uerr != nil {
-						log.Printf("[SYNC] [RECOVERY] Warning: Failed to save healed encrypted data for tx %s: %v", tx.ID, uerr)
-					} else {
-						log.Printf("[SYNC] [RECOVERY] Self-healing complete for tx %s.", tx.ID)
-						tx.EncryptedData = newEncryptedBase64
-					}
+					s.transactionRepo.UpdateEncryptedData(userID, tx.ID, newEncryptedBase64)
+					tx.EncryptedData = newEncryptedBase64
 				}
 			}
 		}
 		return decrypted, nil
 	}
 
-	// 4. Recovery failed completely
-	log.Printf("[SYNC] [RECOVERY] Transaction %s could not be recovered. Deleting from database...", tx.ID)
 	s.transactionRepo.Delete(userID, tx.ID)
-
-	return nil, fmt.Errorf("decryption failed for tx %s using all available keys", tx.ID)
+	return nil, fmt.Errorf("decryption failed for tx %s", tx.ID)
 }
 
 func (s *SyncService) ReapplyAllRules(userID string) {
-
-	log.Printf("[SYNC] Manually triggering rule re-application for user %s...", userID)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[SYNC] Panic in ReapplyAllRules: %v", r)
-		}
-	}()
-
-	if err := s.ApplyRulesToAllTransactions(userID); err != nil {
-		log.Printf("[SYNC] Failed to re-apply rules for user %s: %v", userID, err)
-	} else {
-		log.Printf("[SYNC] Successfully re-applied all rules for user %s.", userID)
-		s.eventBus.Publish(context.Background(), bus.TopicRulesChanged, userID)
-	}
+	s.ApplyRulesToAllTransactions(userID)
+	s.eventBus.Publish(context.Background(), bus.TopicRulesChanged, userID)
 }
 
 func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
-
 	txs, err := s.transactionRepo.List(userID)
 	if err != nil {
 		return err
 	}
 
-	// Cache MIKs and Account Metadata to avoid redundant derivation/decryption
 	mikCache := make(map[string][]byte)
 	accountTagsCache := make(map[string]map[string]string)
-
-	// Pre-load all available integration MIKs for recovery
+	accountNamesCache := make(map[string]map[string]string)
 	integrations, _ := s.integrationRepo.List(userID)
 	for _, i := range integrations {
-		if _, ok := mikCache[i.ID]; !ok {
-			mik, err := s.GetMasterKey(userID, i.ID)
-			if err == nil {
-				mikCache[i.ID] = mik
-			}
+		mik, err := s.GetMasterKey(userID, i.ID)
+		if err == nil {
+			mikCache[i.ID] = mik
 		}
 	}
 
@@ -614,30 +927,27 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 		}
 
 		if _, ok := accountTagsCache[t.IntegrationID]; !ok {
-			// Find the integration in the list we already fetched
-			var integration *domain.Integration
 			for _, i := range integrations {
 				if i.ID == t.IntegrationID {
-					integration = &i
-					break
-				}
-			}
-
-			if integration != nil {
-				decrypted, err := s.DecryptIntegrationConfig(userID, integration)
-				if err == nil {
-					var config struct {
-						AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
-					}
-					if err := json.Unmarshal(decrypted, &config); err == nil {
-						tagsMap := make(map[string]string)
-						for accID, meta := range config.AccountsMetadata {
-							if meta != nil {
-								tagsMap[accID] = meta.Tags
-							}
+					decrypted, err := s.DecryptIntegrationConfig(userID, &i)
+					if err == nil {
+						var config struct {
+							AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
 						}
-						accountTagsCache[t.IntegrationID] = tagsMap
+						if err := json.Unmarshal(decrypted, &config); err == nil {
+							tagsMap := make(map[string]string)
+							namesMap := make(map[string]string)
+							for accID, meta := range config.AccountsMetadata {
+								if meta != nil {
+									tagsMap[accID] = meta.Tags
+									namesMap[accID] = meta.Alias
+								}
+							}
+							accountTagsCache[t.IntegrationID] = tagsMap
+							accountNamesCache[t.IntegrationID] = namesMap
+						}
 					}
+					break
 				}
 			}
 		}
@@ -647,26 +957,19 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 			continue
 		}
 
-		// Identify provider to parse data correctly
-		var integration *domain.Integration
+		provider := s.GetProvider("GOCARDLESS") // Fallback
 		for _, i := range integrations {
 			if i.ID == t.IntegrationID {
-				integration = &i
+				provider = s.GetProvider(i.ServiceType)
 				break
 			}
 		}
-		if integration == nil {
-			continue
-		}
-
-		provider := s.integrationRegistry.Get(integration.ServiceType)
 		if provider == nil {
 			continue
 		}
 
 		meta, err := provider.ParseTransaction(data, t.AccountID)
 		if err != nil {
-			log.Printf("[SYNC] Failed to parse transaction %s: %v", t.ID, err)
 			continue
 		}
 
@@ -675,278 +978,24 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 			accountTags = tagsMap[t.AccountID]
 		}
 
-		poolIDs, _ := s.ruleService.ProcessTransaction(userID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, meta.Amount)
-
-		// Check if pool_ids actually changed
-		changed := len(poolIDs) != len(t.PoolIDs)
-		if !changed {
-			poolMap := make(map[string]bool)
-			for _, p := range t.PoolIDs {
-				poolMap[p] = true
-			}
-			for _, p := range poolIDs {
-				if !poolMap[p] {
-					changed = true
-					break
-				}
-			}
+		accountName := ""
+		if namesMap, ok := accountNamesCache[t.IntegrationID]; ok {
+			accountName = namesMap[t.AccountID]
 		}
 
-		if changed {
-			s.transactionRepo.UpdatePools(userID, t.ID, poolIDs)
-		}
+		poolIDs, _ := s.ruleService.ProcessTransaction(userID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, accountName, meta.Amount)
+		s.transactionRepo.UpdatePools(userID, t.ID, poolIDs)
 	}
-
 	return nil
 }
 
-func (s *SyncService) CheckAndCorrectTransactionTimestamps(userID string) {
-
-	txs, err := s.transactionRepo.List(userID)
-	if err != nil {
-		log.Printf("[SYNC] Failed to load transactions for verification: %v", err)
+func (s *SyncService) WipeAndReimportBankLogs() {
+	wipeReimport := strings.ToLower(strings.Trim(os.Getenv("WIPE_AND_REIMPORT"), "\""))
+	if wipeReimport != "true" && wipeReimport != "1" {
 		return
 	}
 
-	integrations, err := s.integrationRepo.List(userID)
-	if err != nil {
-		log.Printf("[SYNC] Failed to list integrations: %v", err)
-		return
-	}
-
-	serviceTypeMap := make(map[string]string)
-	mikCache := make(map[string][]byte)
-	for _, i := range integrations {
-		serviceTypeMap[i.ID] = i.ServiceType
-		mk, err := s.GetMasterKey(userID, i.ID)
-		if err == nil {
-			mikCache[i.ID] = mk
-		}
-	}
-
-	activeIntegrations, _ := s.GetAccountActiveIntegrations(userID, mikCache, integrations)
-
-	existingExternalIDs := make(map[string]string)
-	for _, tx := range txs {
-		if tx.ExternalID != "" {
-			existingExternalIDs[tx.ExternalID] = tx.ID
-		}
-	}
-
-	for _, t := range txs {
-		serviceType, ok := serviceTypeMap[t.IntegrationID]
-		if !ok {
-			continue
-		}
-
-		data, err := s.DecryptTransaction(userID, &t, mikCache, activeIntegrations)
-		if err != nil {
-			continue
-		}
-
-		provider := s.integrationRegistry.Get(serviceType)
-		if provider == nil {
-			continue
-		}
-
-		meta, err := provider.ParseTransaction(data, t.AccountID)
-		if err != nil {
-			log.Printf("[SYNC] Failed to parse transaction %s for correction: %v", t.ID, err)
-			continue
-		}
-
-		correctTime := meta.CreatedAt
-		correctExternalID := meta.ExternalID
-
-		needsCorrection := !t.CreatedAt.Equal(correctTime) || t.ExternalID != correctExternalID
-		if needsCorrection {
-			// Duplicate check: see if another transaction already possesses this correct ID
-			duplicateTxID, exists := existingExternalIDs[correctExternalID]
-			if exists && duplicateTxID != t.ID {
-				log.Printf("[SYNC] [DUPLICATE] Mismatching duplicate detected: tx %s has incorrect ExternalID %s (should be %s). The correct transaction is %s. Database UNIQUE constraint will prevent normal correction.", t.ID, t.ExternalID, correctExternalID, duplicateTxID)
-			}
-
-			log.Printf("[SYNC] Mismatch detected for tx %s (Service: %s):\n  -> DB CreatedAt: %v vs True CreatedAt: %v\n  -> DB ExternalID: %s vs True ExternalID: %s. Correcting...", t.ID, serviceType, t.CreatedAt, correctTime, t.ExternalID, correctExternalID)
-			if err := s.transactionRepo.UpdateTimestampAndExternalID(userID, t.ID, correctTime, correctExternalID); err != nil {
-				log.Printf("[SYNC] Failed to correct transaction %s: %v", t.ID, err)
-			} else {
-				log.Printf("[SYNC] Successfully updated transaction %s in database.", t.ID)
-				// Update local map to reflect the new state
-				if t.ExternalID != "" {
-					delete(existingExternalIDs, t.ExternalID)
-				}
-				existingExternalIDs[correctExternalID] = t.ID
-			}
-		}
-	}
-}
-
-type TempLogger struct {
-}
-
-func (t *TempLogger) Debug(v ...interface{}) {
-
-	log.Printf("[DEBUG] %v", v)
-}
-
-func (s *SyncService) RetroactivelyFixGoCardlessSigns() {
-	log.Printf("[MIGRATION] Starting retroactive GoCardless sign and peer correction...")
-	integrations, err := s.integrationRepo.ListAll()
-	if err != nil {
-		log.Printf("[MIGRATION] Failed to list integrations: %v", err)
-		return
-	}
-
-	fixedCount := 0
-	for _, i := range integrations {
-		if i.ServiceType != "GOCARDLESS" {
-			continue
-		}
-
-		masterKey, err := s.GetMasterKey(i.UserID, i.ID)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to get master key: %v", i.Name, err)
-			continue
-		}
-
-		// Read integration config to get account tags
-		decryptedConfig, err := s.DecryptIntegrationConfig(i.UserID, &i)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to decrypt integration config: %v", i.Name, err)
-			continue
-		}
-
-		var config struct {
-			AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
-		}
-		if err := json.Unmarshal(decryptedConfig, &config); err != nil {
-			log.Printf("[MIGRATION][%s] Failed to unmarshal integration config: %v", i.Name, err)
-			continue
-		}
-
-		txs, err := s.transactionRepo.ListByIntegration(i.UserID, i.ID)
-		if err != nil {
-			log.Printf("[MIGRATION][%s] Failed to list transactions: %v", i.Name, err)
-			continue
-		}
-
-		mikCache := map[string][]byte{i.ID: masterKey}
-
-		for _, tx := range txs {
-			decrypted, err := s.DecryptTransaction(i.UserID, &tx, mikCache, nil)
-			if err != nil {
-				log.Printf("[MIGRATION][%s] Failed to decrypt tx %s", i.Name, tx.ID)
-				continue
-			}
-
-			// We need to know if it's already a GenericTransaction or raw GoCardless data
-			var txMap map[string]interface{}
-			json.Unmarshal(decrypted, &txMap)
-
-			var amt float64
-			var receiver string
-			var receiverIBAN string
-			var desc string
-			var externalID string
-			var createdAt time.Time
-
-			// Check if it's a GenericTransaction (has "Peer" or "Amount" as float)
-			isGeneric := false
-			if _, ok := txMap["Peer"]; ok {
-				isGeneric = true
-			} else if _, ok := txMap["peer"]; ok {
-				isGeneric = true
-			}
-
-			if isGeneric {
-				var gtx domain.GenericTransaction
-				json.Unmarshal(decrypted, &gtx)
-				amt = gtx.Amount
-				desc = gtx.Description
-				createdAt = gtx.CreatedAt
-				externalID = gtx.ExternalID
-				// We still need to re-calculate receiver to see if it was wrong
-				// But we need the RAW data for that.
-				// If it's already generic, the raw data is GONE unless we stored it inside?
-				// GC provider doesn't seem to store raw data inside GenericTransaction.
-				// So if it's already generic, we can't easily fix the peer if it was wrong.
-				// However, GC's old logic was "prefer Debtor", and for expenses the debtor is the USER.
-				// So if Peer == User's Name, it's probably wrong.
-
-				// For now, let's see if we can find raw data.
-				// If we can't, we skip peer fix but can still fix pools.
-				receiver = gtx.Peer
-				receiverIBAN = gtx.PeerIBAN
-			} else {
-				// Raw GoCardless data
-				// Use the provider's ParseTransaction logic (which we just fixed)
-				provider := s.integrationRegistry.Get("GOCARDLESS")
-				meta, err := provider.ParseTransaction(decrypted, tx.AccountID)
-				if err != nil {
-					continue
-				}
-				amt = meta.Amount
-				receiver = meta.Receiver
-				receiverIBAN = meta.ReceiverIBAN
-				desc = meta.Description
-				externalID = meta.ExternalID
-				createdAt = meta.CreatedAt
-			}
-
-			needsPoolFix := len(tx.PoolIDs) == 0
-
-			// For GC, we especially want to fix cases where the receiver is the user themselves (old broken logic)
-			// But without the user's name at hand, it's hard.
-			// However, re-running ParseTransaction on RAW data WILL fix it because it's now direction-aware.
-
-			if !isGeneric || needsPoolFix {
-				accountTags := ""
-				if meta, ok := config.AccountsMetadata[tx.AccountID]; ok && meta != nil {
-					accountTags = meta.Tags
-				}
-
-				poolIDs, _ := s.ruleService.ProcessTransaction(tx.UserID, tx.IntegrationID, receiver, desc, "", accountTags, amt)
-				tx.PoolIDs = poolIDs
-
-				genericTx := domain.GenericTransaction{
-					Amount:      amt,
-					Description: desc,
-					Peer:        receiver,
-					PeerIBAN:    receiverIBAN,
-					CreatedAt:   createdAt,
-					ExternalID:  externalID,
-				}
-
-				newJSON, _ := json.Marshal(genericTx)
-				encrypted, _ := s.cryptoService.Encrypt(masterKey, newJSON)
-				tx.EncryptedData = base64.StdEncoding.EncodeToString(encrypted)
-
-				err = s.transactionRepo.SaveBulk(tx.UserID, []domain.BankTransaction{tx})
-				if err == nil {
-					fixedCount++
-				}
-			}
-		}
-	}
-	log.Printf("[MIGRATION] Finished GoCardless correction. Fixed %d transactions.", fixedCount)
-}
-
-func getMapKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func Ptr[T any](v T) *T {
-	return &v
-}
-
-func (s *SyncService) DeduplicateAndCorrectExternalIDs() {
-	log.Printf("[DEDUPLICATE] Starting database deduplication and external ID correction...")
-
-	// 1. Run database backup first
+	log.Printf("[REIMPORT] Starting one-time data wipe and log-based re-import...")
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://budget:budgetpass@db:5432/budget?sslmode=disable"
@@ -957,198 +1006,214 @@ func (s *SyncService) DeduplicateAndCorrectExternalIDs() {
 	}
 	db.BackupDB(dbURL, dataDir)
 
-	users, err := s.userRepo.ListAll()
-	if err != nil {
-		log.Printf("[DEDUPLICATE] Failed to list users: %v", err)
+	logsDir := os.Getenv("LOGS_DIR")
+	if logsDir == "" {
+		logsDir = "/app/logs"
+	}
+	logsDir = filepath.Join(logsDir, "sync_runs")
+	if _, err := os.Stat(logsDir); os.IsNotExist(err) {
+		log.Printf("[REIMPORT] Logs directory does not exist: %s", logsDir)
 		return
 	}
 
-	for _, user := range users {
-		log.Printf("[DEDUPLICATE] Processing user %s...", user.Username)
+	users, _ := s.userRepo.ListAll()
+	targetServices := []string{"GOCARDLESS", "ENABLEBANKING"}
 
-		mikCache := make(map[string][]byte)
-		integrations, err := s.integrationRepo.List(user.ID)
+	for _, user := range users {
+		log.Printf("[REIMPORT] Processing user %s...", user.Username)
+		mapping, err := s.transactionRepo.GetCorrelationIDMapping(user.ID)
 		if err != nil {
-			log.Printf("[DEDUPLICATE] Failed to list integrations for user %s: %v", user.Username, err)
 			continue
 		}
 
+		s.transactionRepo.WipeTransactionsByServiceType(user.ID, targetServices)
+
+		integrations, _ := s.integrationRepo.List(user.ID)
+		integrationMap := make(map[string]domain.Integration)
+		mikCache := make(map[string][]byte)
 		for _, i := range integrations {
+			integrationMap[i.ID] = i
 			mk, err := s.GetMasterKey(user.ID, i.ID)
 			if err == nil {
 				mikCache[i.ID] = mk
 			}
 		}
 
-		// List ALL transactions (including soft-deleted ones)
-		txs, err := s.transactionRepo.ListAll(user.ID)
-		if err != nil {
-			log.Printf("[DEDUPLICATE] Failed to list transactions for user %s: %v", user.Username, err)
-			continue
+		type syncRun struct {
+			cid       string
+			timestamp time.Time
 		}
+		var runs []syncRun
 
-		log.Printf("[DEDUPLICATE] User %s: Found %d total transactions in DB.", user.Username, len(txs))
-
-		// Map to keep track of processed external IDs to detect duplicates.
-		// Key: correct_external_id -> transaction ID in DB
-		seenExternalIDs := make(map[string]string)
-
-		correctedCount := 0
-		deletedCount := 0
-
-		// Sort: active (IsDeleted=false) comes first, then sorted by CreatedAt DESC (newest first).
-		// That way, we process/keep the active, newest transaction as the primary one.
-		sort.Slice(txs, func(i, j int) bool {
-			if txs[i].IsDeleted != txs[j].IsDeleted {
-				return !txs[i].IsDeleted
+		entries, _ := os.ReadDir(logsDir)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
 			}
-			return txs[i].CreatedAt.After(txs[j].CreatedAt)
-		})
+			cid := entry.Name()
+			if _, ok := mapping[cid]; !ok {
+				continue
+			}
 
-		// 1. First pass: Correct ExternalIDs and group by composite key
-		// Key: compositeKey -> map[correlationID] -> list of transactions
-		groups := make(map[string]map[string][]domain.BankTransaction)
-		seenExternalIDs := make(map[string]string)
+			logFiles, _ := filepath.Glob(filepath.Join(logsDir, cid, "*_resp.json"))
+			if len(logFiles) == 0 {
+				continue
+			}
 
-		correctedCount := 0
-		deletedCount := 0
-
-		for _, tx := range txs {
-			// Find integration type
-			var integrationObj *domain.Integration
-			for _, i := range integrations {
-				if i.ID == tx.IntegrationID {
-					integrationObj = &i
-					break
+			foundTimestamp := false
+			for i := 0; i < len(logFiles) && i < 3; i++ {
+				content, err := os.ReadFile(logFiles[i])
+				if err != nil {
+					continue
+				}
+				var meta struct {
+					Timestamp string `json:"timestamp"`
+				}
+				if err := json.Unmarshal(content, &meta); err == nil && meta.Timestamp != "" {
+					if t, err := time.Parse(time.RFC3339, meta.Timestamp); err == nil {
+						runs = append(runs, syncRun{cid, t})
+						foundTimestamp = true
+						break
+					}
 				}
 			}
-			if integrationObj == nil {
+			if !foundTimestamp {
+				log.Printf("[REIMPORT] CID %s: No timestamp found.", cid)
+			}
+		}
+
+		sort.Slice(runs, func(i, j int) bool {
+			return runs[i].timestamp.Before(runs[j].timestamp)
+		})
+
+		log.Printf("[REIMPORT] User %s: Found %d sync runs.", user.Username, len(runs))
+		totalImported := 0
+		now := time.Now()
+
+		for _, run := range runs {
+			cidMapping := mapping[run.cid]
+			integrationObj, ok := integrationMap[cidMapping.IntegrationID]
+			if !ok {
 				continue
 			}
 
-			// Only deduplicate/correct GoCardless and Enable Banking
-			if integrationObj.ServiceType != "GOCARDLESS" && integrationObj.ServiceType != "ENABLEBANKING" {
-				continue
-			}
-
-			// Decrypt transaction
-			data, err := s.DecryptTransaction(user.ID, &tx, mikCache, nil)
-			if err != nil {
-				log.Printf("[DEDUPLICATE] Warning: Failed to decrypt transaction %s: %v", tx.ID, err)
-				continue
-			}
-
-			// Get provider
 			provider := s.GetProvider(integrationObj.ServiceType)
 			if provider == nil {
 				continue
 			}
 
-			// Parse transaction to extract correct external ID and metadata
-			meta, err := provider.ParseTransaction(data, tx.AccountID)
-			if err != nil {
-				log.Printf("[DEDUPLICATE] Warning: Failed to parse transaction %s: %v", tx.ID, err)
-				continue
-			}
+			logFilesPattern := filepath.Join(logsDir, run.cid, "*_resp.json")
+			respFiles, _ := filepath.Glob(logFilesPattern)
+			for _, logFile := range respFiles {
+				reqFile := strings.Replace(logFile, "_resp.json", "_req.json", 1)
+				targetAccountID := cidMapping.AccountID
+				if reqContent, err := os.ReadFile(reqFile); err == nil {
+					var reqData struct {
+						URL string `json:"url"`
+					}
+					if err := json.Unmarshal(reqContent, &reqData); err == nil {
+						re := regexp.MustCompile(`/accounts/([a-zA-Z0-9-]+)`)
+						match := re.FindStringSubmatch(reqData.URL)
+						if len(match) > 1 {
+							targetAccountID = match[1]
+						}
+					}
+				}
 
-			correctExternalID := meta.ExternalID
-			if correctExternalID != "" && tx.ExternalID != correctExternalID {
-				log.Printf("[DEDUPLICATE] Correcting external_id for transaction %s: '%s' -> '%s'", tx.ID, tx.ExternalID, correctExternalID)
-				if err := s.transactionRepo.UpdateExternalID(user.ID, tx.ID, correctExternalID); err != nil {
-					log.Printf("[DEDUPLICATE] Failed to update external_id for transaction %s: %v", tx.ID, err)
-				} else {
-					tx.ExternalID = correctExternalID
-					correctedCount++
+				content, err := os.ReadFile(logFile)
+				if err != nil {
+					continue
+				}
+
+				var logData struct {
+					Body json.RawMessage `json:"body"`
+				}
+				if err := json.Unmarshal(content, &logData); err != nil {
+					continue
+				}
+
+				var rawTransactions []json.RawMessage
+				if strings.Contains(logFile, "gocardless") {
+					var gcBody struct {
+						Transactions struct {
+							Booked []json.RawMessage `json:"booked"`
+						} `json:"transactions"`
+					}
+					if err := json.Unmarshal(logData.Body, &gcBody); err == nil {
+						rawTransactions = gcBody.Transactions.Booked
+					}
+				} else if strings.Contains(logFile, "enablebanking") {
+					var ebBody struct {
+						Transactions []json.RawMessage `json:"transactions"`
+					}
+					if err := json.Unmarshal(logData.Body, &ebBody); err == nil {
+						rawTransactions = ebBody.Transactions
+					}
+				}
+
+				if len(rawTransactions) == 0 {
+					continue
+				}
+
+				// Try to get account metadata if available
+				accountTags := ""
+				accountName := ""
+				decryptedConfig, err := s.DecryptIntegrationConfig(user.ID, &integrationObj)
+				if err == nil {
+					var config struct {
+						AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+					}
+					json.Unmarshal(decryptedConfig, &config)
+					if config.AccountsMetadata != nil && config.AccountsMetadata[targetAccountID] != nil {
+						accountTags = config.AccountsMetadata[targetAccountID].Tags
+						accountName = config.AccountsMetadata[targetAccountID].Alias
+					}
+				}
+
+				var batch []domain.BankTransaction
+				for _, raw := range rawTransactions {
+					meta, err := provider.ParseTransaction(raw, targetAccountID)
+					if err != nil {
+						continue
+					}
+
+					poolIDs, _ := s.ruleService.ProcessTransaction(user.ID, integrationObj.ID, meta.Receiver, meta.Description, "", accountTags, accountName, meta.Amount)
+					genericTx := domain.GenericTransaction{
+						Amount:         meta.Amount,
+						Description:    meta.Description,
+						Peer:           meta.Receiver,
+						PeerIBAN:       meta.ReceiverIBAN,
+						CreatedAt:      meta.CreatedAt,
+						ExternalID:     meta.ExternalID,
+						InternalStatus: meta.InternalStatus,
+					}
+					txJSON, _ := json.Marshal(genericTx)
+					encryptedData, _ := s.cryptoService.Encrypt(mikCache[integrationObj.ID], txJSON)
+
+					sourceAcc := ""
+					destAcc := targetAccountID
+					if meta.Amount < 0 {
+						sourceAcc = targetAccountID
+						destAcc = ""
+					}
+
+					batch = append(batch, domain.BankTransaction{
+						ID: uuid.New().String(), UserID: user.ID, IntegrationID: integrationObj.ID, AccountID: targetAccountID,
+						SourceAccountID: sourceAcc, DestinationAccountID: destAcc,
+						PoolIDs: poolIDs, ExternalID: meta.ExternalID, EncryptedData: base64.StdEncoding.EncodeToString(encryptedData),
+						CorrelationID: run.cid, InternalStatus: meta.InternalStatus,
+						CreatedAt:     meta.CreatedAt, SyncedAt: now,
+					})
+				}
+
+				if len(batch) > 0 {
+					if err := s.transactionRepo.SaveBulk(user.ID, batch); err == nil {
+						totalImported += len(batch)
+					}
 				}
 			}
-
-			// Create composite key for occurrence-based check
-			// Signature: date | amount | receiver | description
-			dk := fmt.Sprintf("%s|%.2f|%s|%s",
-				tx.CreatedAt.Format("2006-01-02"),
-				math.Abs(meta.Amount),
-				strings.ToUpper(strings.TrimSpace(meta.Receiver)),
-				strings.TrimSpace(meta.Description),
-			)
-
-			if groups[dk] == nil {
-				groups[dk] = make(map[string][]domain.BankTransaction)
-			}
-			cID := tx.CorrelationID
-			if cID == "" {
-				cID = "MANUAL_" + tx.ID // Treat manual/missing CID as unique
-			}
-			groups[dk][cID] = append(groups[dk][cID], tx)
 		}
-
-		// 2. Second pass: Deduplicate based on max occurrences per sync run
-		for dk, syncRuns := range groups {
-			// Find the maximum number of times this transaction appeared in any SINGLE sync run
-			maxPerRun := 0
-			allInGroup := []domain.BankTransaction{}
-			for _, txsInRun := range syncRuns {
-				if len(txsInRun) > maxPerRun {
-					maxPerRun = len(txsInRun)
-				}
-				allInGroup = append(allInGroup, txsInRun...)
-			}
-
-			if len(allInGroup) <= maxPerRun {
-				continue // No duplicates
-			}
-
-			// We have duplicates!
-			// Sort the whole group: active first, then newest, then those with external IDs
-			sort.Slice(allInGroup, func(i, j int) bool {
-				if allInGroup[i].IsDeleted != allInGroup[j].IsDeleted {
-					return !allInGroup[i].IsDeleted
-				}
-				if allInGroup[i].ExternalID != "" && allInGroup[j].ExternalID == "" {
-					return true
-				}
-				if allInGroup[i].ExternalID == "" && allInGroup[j].ExternalID != "" {
-					return false
-				}
-				return allInGroup[i].SyncedAt.After(allInGroup[j].SyncedAt)
-			})
-
-			// Also, we must respect the UNIQUE(user_id, external_id) constraint.
-			// If multiple transactions in this group have the SAME external_id, they are definitely duplicates.
-			// We'll track seen ExternalIDs within this group.
-			keptExternalIDs := make(map[string]bool)
-			keptCount := 0
-
-			for _, tx := range allInGroup {
-				isDuplicate := false
-
-				// Rule 1: Strict ExternalID uniqueness
-				if tx.ExternalID != "" {
-					if keptExternalIDs[tx.ExternalID] {
-						isDuplicate = true
-					}
-				}
-
-				// Rule 2: Occurrence limit
-				if !isDuplicate && keptCount >= maxPerRun {
-					isDuplicate = true
-				}
-
-				if isDuplicate {
-					log.Printf("[DEDUPLICATE] Deleting duplicate transaction %s (Group: %s, CID: %s)", tx.ID, dk, tx.CorrelationID)
-					if err := s.transactionRepo.HardDelete(user.ID, tx.ID); err != nil {
-						log.Printf("[DEDUPLICATE] Failed to hard delete transaction %s: %v", tx.ID, err)
-					} else {
-						deletedCount++
-					}
-				} else {
-					keptCount++
-					if tx.ExternalID != "" {
-						keptExternalIDs[tx.ExternalID] = true
-					}
-				}
-			}
-		}
-
-		log.Printf("[DEDUPLICATE] User %s: Deduplication complete. Corrected: %d, Deleted: %d.", user.Username, correctedCount, deletedCount)
+		log.Printf("[REIMPORT] User %s: Finished re-import. Processed %d entries.", user.Username, totalImported)
 	}
+	log.Printf("[REIMPORT] Global re-import complete.")
 }

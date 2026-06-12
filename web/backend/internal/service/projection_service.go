@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/crypto"
@@ -29,6 +30,9 @@ type ProjectionService struct {
 	cryptoService      *crypto.CryptoService
 	syncService        *SyncService
 	marketData         *MarketDataService
+
+	mcCache   map[string]float64
+	mcCacheMu sync.RWMutex
 }
 
 func NewProjectionService(sr *repository.ScenarioRepository, ir *repository.IncomeRepository, br *repository.BillRepository, er *repository.ExpenseRepository, ar *repository.AssetRepository, mds *MarketDataService) *ProjectionService {
@@ -40,6 +44,7 @@ func NewProjectionService(sr *repository.ScenarioRepository, ir *repository.Inco
 		expenseRepo:  er,
 		assetRepo:    ar,
 		marketData:   mds,
+		mcCache:      make(map[string]float64),
 	}
 }
 
@@ -1177,13 +1182,29 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 
 			log.Printf("[PROJECTION] Running Monte Carlo for asset %s (%s) with implementation %s (%d simulations, %d years, %.2f%% percent, %d history entries)...", a.Name, a.ID, mcImplementation, simulations, simYears, simPercent, len(histories))
-			if mcImplementation == "SIMD" {
-				state.simulatedYield = s.runMonteCarloSIMD(a.ActiveVersion, histories, simulations, simYears, simPercent)
-			} else if mcImplementation == "PARALLEL" {
-				state.simulatedYield = s.runMonteCarloParallel(a.ActiveVersion, histories, simulations, simYears, simPercent)
+
+			mcCacheKey := fmt.Sprintf("asset_%s_%s_%d_%d_%.2f_%d", a.ActiveVersion.ID, mcImplementation, simulations, simYears, simPercent, lookbackYears)
+			s.mcCacheMu.RLock()
+			cachedYield, found := s.mcCache[mcCacheKey]
+			s.mcCacheMu.RUnlock()
+
+			if found {
+				state.simulatedYield = cachedYield
+				log.Printf("[PROJECTION] Using cached Monte Carlo result for asset %s: %.2f%%", a.Name, state.simulatedYield*100)
 			} else {
-				state.simulatedYield = s.runMonteCarlo(a.ActiveVersion, histories, simulations, simYears, simPercent)
+				if mcImplementation == "SIMD" {
+					state.simulatedYield = s.runMonteCarloSIMD(a.ActiveVersion, histories, simulations, simYears, simPercent)
+				} else if mcImplementation == "PARALLEL" {
+					state.simulatedYield = s.runMonteCarloParallel(a.ActiveVersion, histories, simulations, simYears, simPercent)
+				} else {
+					state.simulatedYield = s.runMonteCarlo(a.ActiveVersion, histories, simulations, simYears, simPercent)
+				}
+
+				s.mcCacheMu.Lock()
+				s.mcCache[mcCacheKey] = state.simulatedYield
+				s.mcCacheMu.Unlock()
 			}
+
 			simulatedYields[a.ID] = state.simulatedYield * 100
 			log.Printf("[PROJECTION] Monte Carlo result for %s: %.2f%%", a.Name, simulatedYields[a.ID])
 
@@ -1197,12 +1218,26 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 
 				var yield float64
-				if mcImplementation == "SIMD" {
-					yield = s.runTrackerMonteCarloSIMD(history, t.TER, simulations, simYears, simPercent)
-				} else if mcImplementation == "PARALLEL" {
-					yield = s.runTrackerMonteCarloParallel(history, t.TER, simulations, simYears, simPercent)
+				trackerCacheKey := fmt.Sprintf("tracker_%s_%d_%s_%d_%d_%.2f_%d", a.ActiveVersion.ID, idx, mcImplementation, simulations, simYears, simPercent, lookbackYears)
+
+				s.mcCacheMu.RLock()
+				cachedTrackerYield, trackerFound := s.mcCache[trackerCacheKey]
+				s.mcCacheMu.RUnlock()
+
+				if trackerFound {
+					yield = cachedTrackerYield
 				} else {
-					yield = s.runTrackerMonteCarlo(history, t.TER, simulations, simYears, simPercent)
+					if mcImplementation == "SIMD" {
+						yield = s.runTrackerMonteCarloSIMD(history, t.TER, simulations, simYears, simPercent)
+					} else if mcImplementation == "PARALLEL" {
+						yield = s.runTrackerMonteCarloParallel(history, t.TER, simulations, simYears, simPercent)
+					} else {
+						yield = s.runTrackerMonteCarlo(history, t.TER, simulations, simYears, simPercent)
+					}
+
+					s.mcCacheMu.Lock()
+					s.mcCache[trackerCacheKey] = yield
+					s.mcCacheMu.Unlock()
 				}
 
 				state.trackerYields[t.Tracker] = yield
