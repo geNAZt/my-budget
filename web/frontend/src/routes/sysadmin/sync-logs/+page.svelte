@@ -16,7 +16,8 @@
         AlertCircle,
         ExternalLink,
         DollarSign,
-        Layers
+        Layers,
+        Filter
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
 
@@ -29,6 +30,28 @@
     let activeTab = $state<"transactions" | "logs">("transactions");
     let selectedRawLogFile = $state<any>(null);
     let expandedTxId = $state<string>("");
+
+    function getStored(key: string, def: any) {
+        if (typeof localStorage === "undefined") return def;
+        const val = localStorage.getItem(key);
+        if (val === null || val === "") return def;
+        if (typeof def === "number" || (def === null && key.includes("Value"))) {
+            const num = Number(val);
+            return isNaN(num) ? def : num;
+        }
+        return val;
+    }
+
+    let filterTxsValue = $state<number | null>(getStored("sync_logs_filterTxsValue", null));
+    let filterTxsOperator = $state<string>(getStored("sync_logs_filterTxsOperator", ">="));
+    let showTxsPopover = $state(false);
+
+    $effect(() => {
+        if (typeof localStorage !== "undefined") {
+            localStorage.setItem("sync_logs_filterTxsValue", filterTxsValue !== null ? String(filterTxsValue) : "");
+            localStorage.setItem("sync_logs_filterTxsOperator", filterTxsOperator);
+        }
+    });
 
     // Get unique integrations from loaded runs for the filter dropdown
     let integrations = $derived(() => {
@@ -43,10 +66,27 @@
 
     // Filter runs
     let filteredRuns = $derived(() => {
-        if (selectedIntegrationFilter === "ALL") {
-            return runs;
+        let list = runs;
+        if (selectedIntegrationFilter !== "ALL") {
+            list = list.filter(r => r.integrationId === selectedIntegrationFilter);
         }
-        return runs.filter(r => r.integrationId === selectedIntegrationFilter);
+
+        if (filterTxsValue !== null) {
+            const limit = filterTxsValue;
+            list = list.filter(r => {
+                const count = r.transactionCount || 0;
+                switch (filterTxsOperator) {
+                    case ">": return count > limit;
+                    case "<": return count < limit;
+                    case "=": return count === limit;
+                    case ">=": return count >= limit;
+                    case "<=": return count <= limit;
+                    default: return true;
+                }
+            });
+        }
+
+        return list;
     });
 
     onMount(async () => {
@@ -189,6 +229,69 @@
                         <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
                             <ChevronRight class="w-4 h-4 rotate-90" />
                         </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Filter by Txs Detected</span>
+                    <div class="relative inline-block">
+                        <button
+                            onclick={() => (showTxsPopover = !showTxsPopover)}
+                            class="flex items-center gap-2 px-4 py-2.5 bg-slate-900 border {filterTxsValue !== null ? 'border-indigo-500 text-indigo-400 font-black' : 'border-slate-700/60 text-slate-400'} rounded-xl text-sm font-bold hover:border-indigo-500 hover:text-indigo-400 transition-all cursor-pointer shadow-sm shrink-0"
+                        >
+                            <Filter class="w-4 h-4 {filterTxsValue !== null ? 'text-indigo-400' : 'text-slate-500'}" />
+                            <span>
+                                {filterTxsValue !== null 
+                                    ? `${filterTxsOperator} ${filterTxsValue} Txs`
+                                    : "Any Txs Detected"}
+                            </span>
+                        </button>
+                        {#if showTxsPopover}
+                            <div
+                                role="button"
+                                aria-label="Close amount popover"
+                                tabindex="-1"
+                                class="fixed inset-0 z-40"
+                                onclick={() => (showTxsPopover = false)}
+                                onkeydown={() => (showTxsPopover = false)}
+                            ></div>
+                            <div
+                                class="absolute top-full right-0 mt-2 w-[240px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-5 z-50 space-y-4"
+                                transition:fade
+                            >
+                                <div
+                                    class="flex items-center justify-between border-b border-slate-800 pb-2"
+                                >
+                                    <span class="text-[9px] font-black uppercase text-slate-400">Txs Detected Filter</span>
+                                    {#if filterTxsValue !== null}
+                                        <button
+                                            onclick={() => (filterTxsValue = null)}
+                                            class="text-[8px] font-black text-rose-500 uppercase hover:underline"
+                                        >Clear</button>
+                                    {/if}
+                                </div>
+                                <div class="grid grid-cols-5 gap-1.5">
+                                    {#each [">", "<", "=", ">=", "<="] as op}
+                                        <button
+                                            onclick={() => (filterTxsOperator = op)}
+                                            class="px-2 py-2 rounded-lg border text-[10px] font-black transition-all {filterTxsOperator === op
+                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-900/20'
+                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/50 hover:text-indigo-400'}"
+                                        >
+                                            {op}
+                                        </button>
+                                    {/each}
+                                </div>
+                                <div class="relative">
+                                    <input
+                                        type="number"
+                                        bind:value={filterTxsValue}
+                                        placeholder="0"
+                                        class="w-full px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl font-bold text-xs text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all placeholder:text-slate-600"
+                                    />
+                                </div>
+                            </div>
+                        {/if}
                     </div>
                 </div>
             </div>
