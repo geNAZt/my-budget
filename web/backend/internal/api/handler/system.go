@@ -15,6 +15,7 @@ import (
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
 	apiproto "github.com/genazt/my-budget-script/web/backend/internal/api/proto"
+	"github.com/genazt/my-budget-script/web/backend/internal/domain"
 	"github.com/genazt/my-budget-script/web/backend/internal/service"
 	"github.com/google/uuid"
 )
@@ -46,6 +47,56 @@ func NewSystem(handler *api.WebSocketHandler, logService *service.LogService, do
 		db:            db,
 	}
 }
+
+type userIntegration struct {
+	ID          string
+	Name        string
+	ServiceType string
+	AccountIDs  []string
+	ReqID       string
+}
+
+func (sys *System) loadUserIntegrations(userID string) ([]userIntegration, error) {
+	var userInts []userIntegration
+	rowsI, err := sys.db.Query("SELECT id, name, service_type, encrypted_config FROM integrations WHERE user_id = $1", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rowsI.Close()
+	for rowsI.Next() {
+		var id, name, st, encConfig string
+		if err := rowsI.Scan(&id, &name, &st, &encConfig); err == nil {
+			var accIDs []string
+			var requisitionID string
+
+			configBytes, errDec := sys.syncService.DecryptIntegrationConfig(userID, &domain.Integration{ID: id, EncryptedConfig: encConfig})
+			if errDec == nil {
+				var config struct {
+					RequisitionID string   `json:"requisition_id"`
+					AccountIDs    []string `json:"account_ids"`
+					AccountsMetadata map[string]interface{} `json:"accounts_metadata"`
+				}
+				if json.Unmarshal(configBytes, &config) == nil {
+					requisitionID = config.RequisitionID
+					accIDs = config.AccountIDs
+					for accID := range config.AccountsMetadata {
+						accIDs = append(accIDs, accID)
+					}
+				}
+			}
+
+			userInts = append(userInts, userIntegration{
+				ID:          id,
+				Name:        name,
+				ServiceType: st,
+				AccountIDs:  accIDs,
+				ReqID:       requisitionID,
+			})
+		}
+	}
+	return userInts, nil
+}
+
 
 
 // Containers lists available containers in the system
@@ -219,6 +270,9 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 		}
 	}
 
+	// Load user integrations for fallback matching
+	userInts, _ := sys.loadUserIntegrations(userID)
+
 	var runs []*apiproto.SyncRun
 
 	// Read logs directory
@@ -261,13 +315,78 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 			} else {
 				// Check db mappings
 				mapping, ok := dbMappings[correlationID]
-				if !ok {
-					continue
+				if ok {
+					integrationID = mapping.IntegrationID
+					integrationName = mapping.IntegrationName
+					serviceType = mapping.ServiceType
+					status = "COMPLETED"
+				} else {
+					// Fallback: guess/match based on user's integrations and log files
+					matches, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_resp.json"))
+					if len(matches) == 0 {
+						matches, _ = filepath.Glob(filepath.Join(logsDir, correlationID, "*_req.json"))
+					}
+					if len(matches) == 0 {
+						continue
+					}
+
+					detectedST := ""
+					firstFile := filepath.Base(matches[0])
+					if strings.Contains(firstFile, "gocardless") {
+						detectedST = "GOCARDLESS"
+					} else if strings.Contains(firstFile, "enablebanking") {
+						detectedST = "ENABLEBANKING"
+					} else if strings.Contains(firstFile, "trading212") {
+						detectedST = "TRADING212"
+					}
+					if detectedST == "" {
+						continue
+					}
+
+					var candidateInts []userIntegration
+					for _, ui := range userInts {
+						if ui.ServiceType == detectedST {
+							candidateInts = append(candidateInts, ui)
+						}
+					}
+					if len(candidateInts) == 0 {
+						continue
+					}
+
+					var matchedInt *userIntegration
+					if len(candidateInts) == 1 {
+						matchedInt = &candidateInts[0]
+					} else {
+						content, err := os.ReadFile(matches[0])
+						if err == nil {
+							contentStr := string(content)
+							for i := range candidateInts {
+								ui := &candidateInts[i]
+								if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
+									matchedInt = ui
+									break
+								}
+								for _, accID := range ui.AccountIDs {
+									if accID != "" && strings.Contains(contentStr, accID) {
+										matchedInt = ui
+										break
+									}
+								}
+								if matchedInt != nil {
+									break
+								}
+							}
+						}
+						if matchedInt == nil {
+							matchedInt = &candidateInts[0]
+						}
+					}
+
+					integrationID = matchedInt.ID
+					integrationName = matchedInt.Name
+					serviceType = matchedInt.ServiceType
+					status = "COMPLETED"
 				}
-				integrationID = mapping.IntegrationID
-				integrationName = mapping.IntegrationName
-				serviceType = mapping.ServiceType
-				status = "COMPLETED"
 
 				// Mod time of folder
 				if info, err := entry.Info(); err == nil {
@@ -376,13 +495,81 @@ func (sys *System) SyncRunDetails(s *api.WebsocketSession, reqID string, req *ap
 			FROM bank_transactions t
 			JOIN integrations i ON t.integration_id = i.id
 			WHERE t.user_id = $1 AND t.correlation_id = $2`, userID, correlationID).Scan(&iid, &name, &st)
-		if err != nil {
-			sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden or not found")
-			return
+		if err == nil {
+			integrationID = iid
+			integrationName = name
+			serviceType = st
+		} else {
+			// Fallback: guess/match based on user's integrations and log files
+			userInts, _ := sys.loadUserIntegrations(userID)
+			matches, _ := filepath.Glob(filepath.Join(runDir, "*_resp.json"))
+			if len(matches) == 0 {
+				matches, _ = filepath.Glob(filepath.Join(runDir, "*_req.json"))
+			}
+			if len(matches) == 0 {
+				sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden or not found")
+				return
+			}
+
+			detectedST := ""
+			firstFile := filepath.Base(matches[0])
+			if strings.Contains(firstFile, "gocardless") {
+				detectedST = "GOCARDLESS"
+			} else if strings.Contains(firstFile, "enablebanking") {
+				detectedST = "ENABLEBANKING"
+			} else if strings.Contains(firstFile, "trading212") {
+				detectedST = "TRADING212"
+			}
+			if detectedST == "" {
+				sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden or not found")
+				return
+			}
+
+			var candidateInts []userIntegration
+			for _, ui := range userInts {
+				if ui.ServiceType == detectedST {
+					candidateInts = append(candidateInts, ui)
+				}
+			}
+			if len(candidateInts) == 0 {
+				sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden or not found")
+				return
+			}
+
+			var matchedInt *userIntegration
+			if len(candidateInts) == 1 {
+				matchedInt = &candidateInts[0]
+			} else {
+				content, err := os.ReadFile(matches[0])
+				if err == nil {
+					contentStr := string(content)
+					for i := range candidateInts {
+						ui := &candidateInts[i]
+						if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
+							matchedInt = ui
+							break
+						}
+						for _, accID := range ui.AccountIDs {
+							if accID != "" && strings.Contains(contentStr, accID) {
+								matchedInt = ui
+								break
+							}
+						}
+						if matchedInt != nil {
+							break
+						}
+					}
+				}
+				if matchedInt == nil {
+					matchedInt = &candidateInts[0]
+				}
+			}
+
+			integrationID = matchedInt.ID
+			integrationName = matchedInt.Name
+			serviceType = matchedInt.ServiceType
 		}
-		integrationID = iid
-		integrationName = name
-		serviceType = st
+
 		// mod time of folder
 		if info, err := os.Stat(runDir); err == nil {
 			timestamp = info.ModTime().Format(time.RFC3339)
