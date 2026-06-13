@@ -2176,64 +2176,46 @@
                     </div>
                 </div>
 
-                <div class="space-y-2">
-                    <label
-                        for="edit-description-input"
-                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                        >Reference / Description</label
-                    >
-                    <div
-                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                    >
-                        <Hash class="w-4 h-4 text-slate-400" />
-                        <input
-                            id="edit-description-input"
-                            type="text"
-                            bind:value={editDescriptionInput}
-                            placeholder="..."
-                            class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                        />
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-2">
+                        <label
+                            for="edit-description-input"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                            >Reference / Description</label
+                        >
+                        <div
+                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                        >
+                            <Hash class="w-4 h-4 text-slate-400" />
+                            <input
+                                id="edit-description-input"
+                                type="text"
+                                bind:value={editDescriptionInput}
+                                placeholder="..."
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
+                        </div>
                     </div>
-                </div>
 
-                <div class="space-y-2">
-                    <label
-                        for="edit-amount-input"
-                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                        >Transaction Amount (€)</label
-                    >
-                    <div
-                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                    >
-                        <Euro class="w-4 h-4 text-slate-400" />
-                        <input
-                            id="edit-amount-input"
-                            type="number"
-                            step="0.01"
-                            bind:value={editAmountInput}
-                            placeholder="0,00"
-                            class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                        />
-                    </div>
-                </div>
-
-                <div class="space-y-2">
-                    <label
-                        for="deterministic-tags-input"
-                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                        >Deterministic Tags</label
-                    >
-                    <div
-                        class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                    >
-                        <Tags class="w-4 h-4 text-slate-400" />
-                        <input
-                            id="deterministic-tags-input"
-                            type="text"
-                            bind:value={editTagsInput}
-                            placeholder="e.g. Internal, Cashback..."
-                            class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                        />
+                    <div class="space-y-2">
+                        <label
+                            for="edit-amount-input"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                            >Transaction Amount (€)</label
+                        >
+                        <div
+                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                        >
+                            <Euro class="w-4 h-4 text-slate-400" />
+                            <input
+                                id="edit-amount-input"
+                                type="number"
+                                step="0.01"
+                                bind:value={editAmountInput}
+                                placeholder="0,00"
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -2245,28 +2227,23 @@
                         placeholder="Select pools..."
                     />
 
-                    <div
-                        class="p-6 bg-white rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm"
-                    >
-                        <div class="space-y-1">
-                            <span
-                                class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                                >Anchored Integration Node</span
-                            >
-                            <p
-                                class="text-xs font-black text-slate-900 uppercase tracking-[0.1em]"
-                            >
-                                {integrations.find(
-                                    (i) =>
-                                        i.integrationId ===
-                                        transactionToEdit.integrationId,
-                                )?.integrationName || "Unknown Integration"}
-                            </p>
-                        </div>
-                        <div
-                            class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 text-slate-400 group-hover:text-indigo-500 transition-colors"
+                    <div class="space-y-2">
+                        <label
+                            for="deterministic-tags-input"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                            >Deterministic Tags</label
                         >
-                            <ShieldCheck class="w-5 h-5" />
+                        <div
+                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                        >
+                            <Tags class="w-4 h-4 text-slate-400" />
+                            <input
+                                id="deterministic-tags-input"
+                                type="text"
+                                bind:value={editTagsInput}
+                                placeholder="e.g. Internal, Cashback..."
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
                         </div>
                     </div>
                 </div>
@@ -2443,6 +2420,16 @@
                             <pre class="text-[10px] font-mono text-slate-700 whitespace-pre-wrap break-all select-all leading-relaxed max-h-60 overflow-y-auto custom-scrollbar">{JSON.stringify(transactionToEdit, null, 4)}</pre>
                         </div>
                     {/if}
+                </div>
+
+                <div class="text-[10px] text-slate-400 flex items-center justify-center gap-1 font-medium italic">
+                    <ShieldCheck class="w-3.5 h-3.5 text-slate-400" />
+                    <span>Anchored Integration:</span>
+                    <span class="text-slate-500">
+                        {integrations.find(
+                            (i) => i.integrationId === transactionToEdit.integrationId,
+                        )?.integrationName || "Unknown Integration"}
+                    </span>
                 </div>
 
                 <div class="flex gap-4">
