@@ -18,7 +18,7 @@ import (
 )
 
 type HistoryProvider interface {
-	GetHistory(t domain.ETFTracker) ([]models.Bar, error)
+	GetHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error)
 }
 
 // Helper to get cache key
@@ -91,31 +91,51 @@ func NewYahooHistoryProvider(cache *repository.CacheRepository) *YahooHistoryPro
 	return &YahooHistoryProvider{cacheRepo: cache}
 }
 
-func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, error) {
+func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error) {
 	historicalTicker := t.HistoricalTracker
 	if historicalTicker == "" {
 		historicalTicker = t.Tracker
 	}
 
-	cacheKey := getHistoryCacheKey("yahoo_history", historicalTicker, t.ConversionTracker)
-
-	if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
-		var cached cachedHistory
-		if err := json.Unmarshal([]byte(data), &cached); err == nil {
-			if time.Since(cached.UpdatedAt) < 7*24*time.Hour {
-				log.Printf("[YAHOO_PROVIDER] Cache hit for %s", cacheKey)
-				return cached.Bars, nil
-			}
-		}
+	if rangeStr == "" {
+		rangeStr = "max"
 	}
 
-	log.Printf("[YAHOO_PROVIDER] Cache miss for %s", cacheKey)
+	cacheKey := getHistoryCacheKey("yahoo_history", historicalTicker, t.ConversionTracker)
 
-	// Fetch daily data because yfinance '1wk' over 'max' period often drops weeks entirely.
-	startDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
-	endDate := time.Now()
+	// For non-max ranges, we don't use the standard weekly cache
+	if rangeStr == "max" {
+		if data, ok, _ := p.cacheRepo.Get(cacheKey); ok {
+			var cached cachedHistory
+			if err := json.Unmarshal([]byte(data), &cached); err == nil {
+				if time.Since(cached.UpdatedAt) < 7*24*time.Hour {
+					log.Printf("[YAHOO_PROVIDER] Cache hit for %s", cacheKey)
+					return cached.Bars, nil
+				}
+			}
+		}
+		log.Printf("[YAHOO_PROVIDER] Cache miss for %s", cacheKey)
+	}
+
+	// Fetch data based on range
+	var startDate time.Time
+	var endDate = time.Now()
+	var interval = "1d"
+
+	switch rangeStr {
+	case "1d":
+		startDate = endDate.AddDate(0, 0, -1)
+		interval = "5m"
+	case "1w":
+		startDate = endDate.AddDate(0, 0, -7)
+		interval = "1h"
+	default: // max
+		startDate = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+		interval = "1d"
+	}
+
 	params := models.HistoryParams{
-		Interval: "1d",
+		Interval: interval,
 		Start:    &startDate,
 		End:      &endDate,
 	}
@@ -133,9 +153,9 @@ func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, er
 
 	fxMap, _ := fetchDailyFX(t.ConversionTracker)
 
-	// Anchoring Logic
+	// Anchoring Logic (only for max range as it's for stitching)
 	scaleMultiplier := 1.0
-	if t.Tracker != "" && t.Tracker != historicalTicker {
+	if rangeStr == "max" && t.Tracker != "" && t.Tracker != historicalTicker {
 		at, _ := ticker.New(t.Tracker)
 		if at != nil {
 			defer at.Close()
@@ -180,7 +200,25 @@ func (p *YahooHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, er
 		}
 	}
 
-	// Build Weekly History Slice
+	// For 1d and 1w, we return raw bars (in EUR if needed)
+	if rangeStr != "max" {
+		var result []models.Bar
+		for _, b := range bars {
+			fxRate := 1.0
+			if t.ConversionTracker != "" {
+				if rate, ok := findInWindow(fxMap, b.Date, 7); ok {
+					fxRate = rate
+				} else {
+					continue
+				}
+			}
+			b.AdjClose = b.AdjClose / fxRate
+			result = append(result, b)
+		}
+		return result, nil
+	}
+
+	// Build Weekly History Slice (Existing logic for "max")
 	var history []models.Bar
 	log.Printf("[YAHOO_PROVIDER] Building weekly history slice from %d daily bars. Scale: %e", len(bars), scaleMultiplier)
 
@@ -257,7 +295,7 @@ type solactiveRequest struct {
 	DayDate                int64  `json:"dayDate"`
 }
 
-func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, error) {
+func (p *SolactiveHistoryProvider) GetHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error) {
 	historicalTicker := t.HistoricalTracker
 	if historicalTicker == "" {
 		historicalTicker = t.Tracker
@@ -483,7 +521,7 @@ type msciResponse struct {
 	Data msciResponseData `json:"data"`
 }
 
-func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, error) {
+func (p *MSCIHistoryProvider) GetHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error) {
 	historicalTicker := t.HistoricalTracker
 	if historicalTicker == "" {
 		historicalTicker = t.Tracker
@@ -636,7 +674,7 @@ type justETFResponse struct {
 	Series []justETFSeriesItem `json:"series"`
 }
 
-func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker) ([]models.Bar, error) {
+func (p *JustETFHistoryProvider) GetHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error) {
 	historicalTicker := t.HistoricalTracker
 	if historicalTicker == "" {
 		historicalTicker = t.Tracker

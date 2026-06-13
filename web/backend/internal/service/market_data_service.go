@@ -42,9 +42,14 @@ func isoWeekToDate(year, week int) time.Time {
 	return monday.AddDate(0, 0, (week-1)*7)
 }
 
-func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map[string]float64, error) {
-	if len(t.StitchingSegments) > 0 {
-		return s.getStitchedWeeklyReturns(t)
+func (s *MarketDataService) GetTrackerHistory(t domain.ETFTracker, rangeStr string) ([]models.Bar, error) {
+	if rangeStr == "" {
+		rangeStr = "max"
+	}
+
+	// For max, we use stitching if segments are present
+	if rangeStr == "max" && len(t.StitchingSegments) > 0 {
+		return s.getStitchedHistory(t)
 	}
 
 	historicalTicker := t.HistoricalTracker
@@ -52,10 +57,9 @@ func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map
 		historicalTicker = t.Tracker
 	}
 
-	log.Printf("[MARKET_DATA] Fetching historical weekly returns for %s (provider: %s, conv: %s, anchor: %s)",
-		historicalTicker, t.HistoryProvider, t.ConversionTracker, t.Tracker)
+	log.Printf("[MARKET_DATA] Fetching historical bars for %s (range: %s, provider: %s)",
+		historicalTicker, rangeStr, t.HistoryProvider)
 
-	// 2. Select Provider
 	var provider HistoryProvider
 	switch strings.ToLower(t.HistoryProvider) {
 	case "solactive":
@@ -68,23 +72,10 @@ func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map
 		provider = NewYahooHistoryProvider(s.cacheRepo)
 	}
 
-	// 3. Fetch History
-	historyBars, err := provider.GetHistory(t)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(historyBars) < 2 {
-		return nil, fmt.Errorf("not enough data points from provider %s", t.HistoryProvider)
-	}
-
-	log.Printf("[MARKET_DATA] Processing %d chronological bars from provider", len(historyBars))
-
-	// 4. Calculate returns (Newest First) and detect gaps
-	return calculateReturnsFromBars(historyBars, t.Tracker), nil
+	return provider.GetHistory(t, rangeStr)
 }
 
-func (s *MarketDataService) getStitchedWeeklyReturns(t domain.ETFTracker) (map[string]float64, error) {
+func (s *MarketDataService) getStitchedHistory(t domain.ETFTracker) ([]models.Bar, error) {
 	log.Printf("[MARKET_DATA] Stitching history for %s with %d segments", t.Tracker, len(t.StitchingSegments))
 
 	// Prepend the main historical tracker as the first segment if it exists
@@ -135,7 +126,7 @@ func (s *MarketDataService) getStitchedWeeklyReturns(t domain.ETFTracker) (map[s
 			provider = NewYahooHistoryProvider(s.cacheRepo)
 		}
 
-		bars, err := provider.GetHistory(segTracker)
+		bars, err := provider.GetHistory(segTracker, "max")
 		if err != nil {
 			log.Printf("[MARKET_DATA] WARNING: Failed to fetch history for segment (%s, %s): %v", seg.Provider, seg.LookupTicker, err)
 			continue
@@ -250,10 +241,18 @@ func (s *MarketDataService) getStitchedWeeklyReturns(t domain.ETFTracker) (map[s
 		return nil, fmt.Errorf("not enough stitched data points for %s", t.Tracker)
 	}
 
-	log.Printf("[MARKET_DATA] Successfully stitched %d segments into %d weekly bars for %s", len(fetchedSegments), len(stitchedBars), t.Tracker)
+	log.Printf("[MARKET_DATA] Successfully stitched %d segments into %d bars for %s", len(fetchedSegments), len(stitchedBars), t.Tracker)
 
-	// Calculate returns
-	return calculateReturnsFromBars(stitchedBars, t.Tracker), nil
+	return stitchedBars, nil
+}
+
+func (s *MarketDataService) GetHistoricalWeeklyReturns(t domain.ETFTracker) (map[string]float64, error) {
+	bars, err := s.GetTrackerHistory(t, "max")
+	if err != nil {
+		return nil, err
+	}
+
+	return calculateReturnsFromBars(bars, t.Tracker), nil
 }
 
 func calculateReturnsFromBars(historyBars []models.Bar, trackerName string) map[string]float64 {

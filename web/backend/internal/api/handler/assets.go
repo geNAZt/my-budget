@@ -337,7 +337,7 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 }
 
 // GetTrackerCharts maps to route "assets::gettrackercharts"
-func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *apiproto.GenericID) {
+func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *apiproto.GetTrackerChartsRequest) {
 	userID, _ := s.GetAuth()
 	if userID == "" {
 		a.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
@@ -348,6 +348,11 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 	if err != nil {
 		a.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	rangeStr := "max"
+	if body != nil && body.Range != "" {
+		rangeStr = body.Range
 	}
 
 	resp := &apiproto.TrackerChartsResponse{}
@@ -367,126 +372,157 @@ func (a *Assets) GetTrackerCharts(s *api.WebsocketSession, reqID string, body *a
 			}
 			processedTrackers[trackerKey] = true
 
-			// Fetch history returns
-			returns, err := a.marketData.GetHistoricalWeeklyReturns(t)
-			if err != nil {
-				log.Printf("[ASSETS] Failed to get historical weekly returns for tracker %s: %v", t.Tracker, err)
-				continue
-			}
-
-			if len(returns) == 0 {
-				continue
-			}
-
-			// Sort weeks chronologically
-			var weeks []string
-			for wk := range returns {
-				weeks = append(weeks, wk)
-			}
-			sort.Strings(weeks)
-
-			// Construct cumulative performance series starting at 100.0
-			chartPoints := make([]*apiproto.TrackerChartPoint, 0, len(weeks)+1)
-
-			// Base starting point
-			// Let's find the first week and determine its preceding monday to represent the start
-			var baseDate time.Time
-			hasBaseDate := false
-			if len(weeks) > 0 {
-				firstWeek := weeks[0]
-				var year, wkNum int
-				_, err := fmt.Sscanf(firstWeek, "%d-W%d", &year, &wkNum)
-				if err == nil {
-					baseDate = isoWeekToDate(year, wkNum).AddDate(0, 0, -7)
-					chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
-						Date:  baseDate.Format("2006-01-02"),
-						Value: 100.0,
-					})
-					hasBaseDate = true
-				}
-			}
-
-			currVal := 100.0
-			for _, wk := range weeks {
-				var year, wkNum int
-				_, err := fmt.Sscanf(wk, "%d-W%d", &year, &wkNum)
+			if rangeStr == "max" {
+				// Fetch history returns
+				returns, err := a.marketData.GetHistoricalWeeklyReturns(t)
 				if err != nil {
+					log.Printf("[ASSETS] Failed to get historical weekly returns for tracker %s: %v", t.Tracker, err)
 					continue
 				}
 
-				currVal = currVal * (1.0 + returns[wk])
+				if len(returns) == 0 {
+					continue
+				}
 
-				chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
-					Date:  isoWeekToDate(year, wkNum).Format("2006-01-02"),
-					Value: currVal,
+				// Sort weeks chronologically
+				var weeks []string
+				for wk := range returns {
+					weeks = append(weeks, wk)
+				}
+				sort.Strings(weeks)
+
+				// Construct cumulative performance series starting at 100.0
+				chartPoints := make([]*apiproto.TrackerChartPoint, 0, len(weeks)+1)
+
+				// Base starting point
+				// Let's find the first week and determine its preceding monday to represent the start
+				var baseDate time.Time
+				hasBaseDate := false
+				if len(weeks) > 0 {
+					firstWeek := weeks[0]
+					var year, wkNum int
+					_, err := fmt.Sscanf(firstWeek, "%d-W%d", &year, &wkNum)
+					if err == nil {
+						baseDate = isoWeekToDate(year, wkNum).AddDate(0, 0, -7)
+						chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
+							Date:  baseDate.Format("2006-01-02"),
+							Value: 100.0,
+						})
+						hasBaseDate = true
+					}
+				}
+
+				currVal := 100.0
+				for _, wk := range weeks {
+					var year, wkNum int
+					_, err := fmt.Sscanf(wk, "%d-W%d", &year, &wkNum)
+					if err != nil {
+						continue
+					}
+
+					currVal = currVal * (1.0 + returns[wk])
+
+					chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
+						Date:  isoWeekToDate(year, wkNum).Format("2006-01-02"),
+						Value: currVal,
+					})
+				}
+
+				// Generate Monte Carlo points
+				var mcPoints []*apiproto.TrackerChartPoint
+				if len(weeks) > 0 {
+					// Populate flat returns slice
+					returnValues := make([]float64, 0, len(weeks))
+					for _, wk := range weeks {
+						returnValues = append(returnValues, returns[wk])
+					}
+
+					numSims := 1000
+					numWeeks := len(weeks)
+
+					// Initialize paths: numSims rows, numWeeks + 1 columns
+					paths := make([][]float64, numSims)
+					for i := 0; i < numSims; i++ {
+						paths[i] = make([]float64, numWeeks+1)
+						paths[i][0] = 100.0
+					}
+
+					r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 42))
+
+					for step := 1; step <= numWeeks; step++ {
+						for sim := 0; sim < numSims; sim++ {
+							randIdx := r.IntN(len(returnValues))
+							sampledReturn := returnValues[randIdx]
+							paths[sim][step] = paths[sim][step-1] * (1.0 + sampledReturn)
+						}
+					}
+
+					mcPoints = make([]*apiproto.TrackerChartPoint, 0, numWeeks+1)
+					if hasBaseDate {
+						mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
+							Date:  baseDate.Format("2006-01-02"),
+							Value: 100.0,
+						})
+					}
+
+					stepVals := make([]float64, numSims)
+					for step := 1; step <= numWeeks; step++ {
+						for sim := 0; sim < numSims; sim++ {
+							stepVals[sim] = paths[sim][step]
+						}
+						sort.Float64s(stepVals)
+						// Median (50th percentile)
+						medianVal := stepVals[numSims/2]
+
+						var dateStr string
+						var year, wkNum int
+						_, err := fmt.Sscanf(weeks[step-1], "%d-W%d", &year, &wkNum)
+						if err == nil {
+							dateStr = isoWeekToDate(year, wkNum).Format("2006-01-02")
+						}
+
+						mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
+							Date:  dateStr,
+							Value: medianVal,
+						})
+					}
+				}
+
+				resp.Charts = append(resp.Charts, &apiproto.TrackerChart{
+					Tracker:  t.Tracker,
+					Points:   chartPoints,
+					McPoints: mcPoints,
+				})
+			} else {
+				// For 1w and 1d, use GetTrackerHistory directly
+				bars, err := a.marketData.GetTrackerHistory(t, rangeStr)
+				if err != nil {
+					log.Printf("[ASSETS] Failed to get tracker history for range %s: %v", rangeStr, err)
+					continue
+				}
+
+				if len(bars) == 0 {
+					continue
+				}
+
+				chartPoints := make([]*apiproto.TrackerChartPoint, 0, len(bars))
+				firstPrice := bars[0].AdjClose
+				if firstPrice <= 0 {
+					continue
+				}
+
+				for _, b := range bars {
+					chartPoints = append(chartPoints, &apiproto.TrackerChartPoint{
+						Date:  b.Date.Format(time.RFC3339),
+						Value: 100.0 * (b.AdjClose / firstPrice),
+					})
+				}
+
+				resp.Charts = append(resp.Charts, &apiproto.TrackerChart{
+					Tracker: t.Tracker,
+					Points:  chartPoints,
 				})
 			}
-
-			// Generate Monte Carlo points
-			var mcPoints []*apiproto.TrackerChartPoint
-			if len(weeks) > 0 {
-				// Populate flat returns slice
-				returnValues := make([]float64, 0, len(weeks))
-				for _, wk := range weeks {
-					returnValues = append(returnValues, returns[wk])
-				}
-
-				numSims := 1000
-				numWeeks := len(weeks)
-
-				// Initialize paths: numSims rows, numWeeks + 1 columns
-				paths := make([][]float64, numSims)
-				for i := 0; i < numSims; i++ {
-					paths[i] = make([]float64, numWeeks+1)
-					paths[i][0] = 100.0
-				}
-
-				r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 42))
-
-				for step := 1; step <= numWeeks; step++ {
-					for sim := 0; sim < numSims; sim++ {
-						randIdx := r.IntN(len(returnValues))
-						sampledReturn := returnValues[randIdx]
-						paths[sim][step] = paths[sim][step-1] * (1.0 + sampledReturn)
-					}
-				}
-
-				mcPoints = make([]*apiproto.TrackerChartPoint, 0, numWeeks+1)
-				if hasBaseDate {
-					mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
-						Date:  baseDate.Format("2006-01-02"),
-						Value: 100.0,
-					})
-				}
-
-				stepVals := make([]float64, numSims)
-				for step := 1; step <= numWeeks; step++ {
-					for sim := 0; sim < numSims; sim++ {
-						stepVals[sim] = paths[sim][step]
-					}
-					sort.Float64s(stepVals)
-					// Median (50th percentile)
-					medianVal := stepVals[numSims/2]
-
-					var dateStr string
-					var year, wkNum int
-					_, err := fmt.Sscanf(weeks[step-1], "%d-W%d", &year, &wkNum)
-					if err == nil {
-						dateStr = isoWeekToDate(year, wkNum).Format("2006-01-02")
-					}
-
-					mcPoints = append(mcPoints, &apiproto.TrackerChartPoint{
-						Date:  dateStr,
-						Value: medianVal,
-					})
-				}
-			}
-
-			resp.Charts = append(resp.Charts, &apiproto.TrackerChart{
-				Tracker:  t.Tracker,
-				Points:   chartPoints,
-				McPoints: mcPoints,
-			})
 		}
 	}
 

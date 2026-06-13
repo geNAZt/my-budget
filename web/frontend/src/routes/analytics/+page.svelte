@@ -43,6 +43,7 @@
         PenaltyAnalysisSchema,
         ErrorSchema,
         TrackerChartsResponseSchema,
+        GetTrackerChartsRequestSchema,
         EmptySchema,
     } from "$lib/gen/api_pb.js";
 
@@ -109,6 +110,7 @@
     let timeHorizonYears = $state<number>(30);
     let allAssets = $state<any[]>([]);
     let trackerCharts = $state<any[]>([]);
+    let selectedTrackerRange = $state<string>("max");
 
     let projections = $state<Record<string, any>>({});
     let loadingProjections = $state<Record<string, boolean>>({});
@@ -154,7 +156,9 @@
 
     async function fetchTrackerCharts() {
         try {
-            const [resp, err] = await wsCall("assets::gettrackercharts", null, null, [
+            const [resp, err] = await wsCall("assets::gettrackercharts", {
+                range: selectedTrackerRange,
+            }, GetTrackerChartsRequestSchema, [
                 TrackerChartsResponseSchema,
             ]).one();
             if (err) throw err;
@@ -163,6 +167,12 @@
             console.error("Failed to fetch tracker charts:", err);
         }
     }
+
+    $effect(() => {
+        if (selectedTrackerRange) {
+            fetchTrackerCharts();
+        }
+    });
 
     let isClearingCache = $state(false);
 
@@ -197,6 +207,18 @@
 
         const labels = chart.points.map((p: any) => {
             const d = new Date(p.date);
+            if (selectedTrackerRange === "1d") {
+                return d.toLocaleTimeString("de-DE", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                });
+            } else if (selectedTrackerRange === "1w") {
+                return d.toLocaleDateString("de-DE", {
+                    day: "2-digit",
+                    month: "2-digit",
+                });
+            }
+
             return d.toLocaleDateString("de-DE", {
                 year: "2-digit",
                 month: "2-digit",
@@ -2929,15 +2951,27 @@
                                         </p>
                                     </div>
                                 </div>
-                                <span
-                                    class="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                >
-                                    {#if finalRealSplit}
-                                        Drifted Real Split
-                                    {:else}
-                                        Target Allocation
-                                    {/if}
-                                </span>
+                                <div class="flex items-center gap-3">
+                                    <div class="flex bg-slate-100 p-1 rounded-lg">
+                                        {#each ['max', '1w', '1d'] as range}
+                                            <button
+                                                class="px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all {selectedTrackerRange === range ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}"
+                                                onclick={() => selectedTrackerRange = range}
+                                            >
+                                                {range}
+                                            </button>
+                                        {/each}
+                                    </div>
+                                    <span
+                                        class="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                    >
+                                        {#if finalRealSplit}
+                                            Drifted Real Split
+                                        {:else}
+                                            Target Allocation
+                                        {/if}
+                                    </span>
+                                </div>
                             </div>
                             <div
                                 class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -3081,7 +3115,9 @@
                                                     <span class="text-slate-400 font-bold block text-[9px] uppercase tracking-wider text-left">Historical Performance (Base 100)</span>
                                                     <div class="flex items-center space-x-2.5 text-[8px] font-bold uppercase tracking-wider">
                                                         <span class="flex items-center text-emerald-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>History</span>
-                                                        <span class="flex items-center text-indigo-600"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1"></span>Monte Carlo</span>
+                                                        {#if selectedTrackerRange === 'max'}
+                                                            <span class="flex items-center text-indigo-600"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1"></span>Monte Carlo</span>
+                                                        {/if}
                                                     </div>
                                                 </div>
                                                 <div class="h-28 relative">
