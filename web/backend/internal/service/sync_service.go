@@ -559,6 +559,7 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 	res := provider.Sync(ctx, integration, force, psuHeaders)
 
 	if res.Error == nil {
+		s.ReconcilePendingDuplicates(userID, integrationID, res.FetchedExternalIDs)
 		s.eventBus.Publish(context.Background(), bus.TopicSyncFinished, bus.SyncFinishedPayload{
 			UserID:          userID,
 			IntegrationID:   integrationID,
@@ -1256,4 +1257,140 @@ func (s *SyncService) WipeAndReimportBankLogs() {
 		log.Printf("[REIMPORT] User %s: Finished re-import. Processed %d entries.", user.Username, totalImported)
 	}
 	log.Printf("[REIMPORT] Global re-import complete.")
+}
+
+func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID string, fetchedExternalIDs map[string]bool) {
+	if fetchedExternalIDs == nil {
+		fetchedExternalIDs = make(map[string]bool)
+	}
+
+	txs, err := s.transactionRepo.ListByIntegration(userID, integrationID)
+	if err != nil || len(txs) == 0 {
+		return
+	}
+
+	mik, err := s.GetMasterKey(userID, integrationID)
+	if err != nil {
+		return
+	}
+	mikCache := map[string][]byte{integrationID: mik}
+
+	integrationObj, _ := s.integrationRepo.GetByID(userID, integrationID)
+	if integrationObj == nil {
+		return
+	}
+	provider := s.GetProvider(integrationObj.ServiceType)
+	if provider == nil {
+		return
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -14)
+
+	type parsedTx struct {
+		tx        domain.BankTransaction
+		meta      integration.TransactionMetadata
+		isPending bool
+	}
+
+	var decryptedTxs []parsedTx
+
+	for _, tx := range txs {
+		if tx.IsDeleted {
+			continue
+		}
+		if tx.CreatedAt.Before(cutoff) {
+			continue
+		}
+
+		data, err := s.DecryptTransaction(userID, &tx, mikCache, nil)
+		if err != nil {
+			continue
+		}
+
+		meta, err := provider.ParseTransaction(data, tx.AccountID)
+		if err != nil {
+			continue
+		}
+
+		isPending := false
+		if meta.InternalStatus == "PENDING_REJECTION" {
+			isPending = true
+		} else {
+			var rawMap map[string]interface{}
+			if err := json.Unmarshal(data, &rawMap); err == nil {
+				if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
+					if subCode, ok := codeObj["sub_code"].(string); ok && subCode == "UPCT" {
+						isPending = true
+					}
+				}
+			}
+		}
+
+		decryptedTxs = append(decryptedTxs, parsedTx{
+			tx:        tx,
+			meta:      meta,
+			isPending: isPending,
+		})
+	}
+
+	normalizeName := func(name string) string {
+		name = strings.ToLower(name)
+		var sb strings.Builder
+		for _, r := range name {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				sb.WriteRune(r)
+			}
+		}
+		return sb.String()
+	}
+
+	for _, pTx := range decryptedTxs {
+		if !pTx.isPending {
+			continue
+		}
+
+		if fetchedExternalIDs[pTx.tx.ExternalID] {
+			continue
+		}
+
+		for _, other := range decryptedTxs {
+			if other.tx.ID == pTx.tx.ID || other.isPending {
+				continue
+			}
+			if other.tx.AccountID != pTx.tx.AccountID {
+				continue
+			}
+
+			diff := other.meta.CreatedAt.Sub(pTx.meta.CreatedAt)
+			if math.Abs(diff.Hours()) > 72.0 {
+				continue
+			}
+
+			if math.Abs(pTx.meta.Amount-other.meta.Amount) >= 0.01 {
+				continue
+			}
+
+			n1 := normalizeName(pTx.meta.Receiver)
+			n2 := normalizeName(other.meta.Receiver)
+			isSimilar := false
+			if n1 == n2 || (n1 != "" && n2 != "" && (strings.Contains(n1, n2) || strings.Contains(n2, n1))) {
+				isSimilar = true
+			} else if strings.Contains(n1, "paypal") && strings.Contains(n2, "paypal") {
+				isSimilar = true
+			} else if strings.Contains(n1, "amzn") && strings.Contains(n2, "amzn") {
+				isSimilar = true
+			} else if strings.Contains(n1, "amazon") && strings.Contains(n2, "amazon") {
+				isSimilar = true
+			} else if strings.Contains(n1, "lidl") && strings.Contains(n2, "lidl") {
+				isSimilar = true
+			}
+
+			if isSimilar {
+				log.Printf("[RECONCILE] Soft deleting duplicate pending transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) because it is no longer returned by the bank and matching finalized transaction %s (ExternalID: %s) exists.",
+					pTx.tx.ID, pTx.tx.ExternalID, pTx.meta.Amount, pTx.meta.Receiver, other.tx.ID, other.tx.ExternalID)
+				s.transactionRepo.Delete(userID, pTx.tx.ID)
+				break
+			}
+		}
+	}
 }

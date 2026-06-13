@@ -59,6 +59,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 	correlationID := service.CorrelationIDFromContext(ctx)
 	userID := i.UserID
 
+	fetchedExternalIDs := make(map[string]bool)
 	var backoffUntil *time.Time
 
 	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, i.ID)
@@ -306,6 +307,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 					continue
 				}
 
+				fetchedExternalIDs[externalID] = true
+
 				createdAt := now
 				if t.BookingDateTime != nil {
 					if parsed, err := time.Parse(time.RFC3339, *t.BookingDateTime); err == nil {
@@ -458,8 +461,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 
 	i.CachedBalance = totalBalance
 	return integration.SyncResult{
-		DiscoveredCount: newCount,
-		BackoffUntil:    backoffUntil,
+		DiscoveredCount:    newCount,
+		BackoffUntil:       backoffUntil,
+		FetchedExternalIDs: fetchedExternalIDs,
 	}
 }
 

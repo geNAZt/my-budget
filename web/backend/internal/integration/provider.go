@@ -8,9 +8,10 @@ import (
 )
 
 type SyncResult struct {
-	DiscoveredCount int
-	Error           error
-	BackoffUntil    *time.Time
+	DiscoveredCount    int
+	Error              error
+	BackoffUntil       *time.Time
+	FetchedExternalIDs map[string]bool
 }
 
 type DecryptedTxInfo struct {

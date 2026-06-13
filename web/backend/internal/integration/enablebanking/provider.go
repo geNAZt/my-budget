@@ -60,6 +60,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 	correlationID := service.CorrelationIDFromContext(ctx)
 	userID := i.UserID
 
+	fetchedExternalIDs := make(map[string]bool)
 	var backoffUntil *time.Time
 
 	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, i.ID)
@@ -226,7 +227,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
 		dateFrom := thirtyDaysAgo.Format("2006-01-02")
 		if !force && meta != nil && meta.LastSyncedAt != nil {
-			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -7)
+			lastSyncDate := meta.LastSyncedAt.AddDate(0, 0, -14)
 			if lastSyncDate.After(thirtyDaysAgo) {
 				dateFrom = lastSyncDate.Format("2006-01-02")
 			}
@@ -260,6 +261,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				// We skip if parsing fails completely, but ParseTransaction now handles UPCT tagging
 				continue
 			}
+
+			fetchedExternalIDs[txMeta.ExternalID] = true
 
 			if existingTx, found := existingMap[txMeta.ExternalID]; found {
 				if !existingTx.CreatedAt.Equal(txMeta.CreatedAt) {
@@ -348,8 +351,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 
 	i.CachedBalance = totalBalance
 	return integration.SyncResult{
-		DiscoveredCount: newCount,
-		BackoffUntil:    backoffUntil,
+		DiscoveredCount:    newCount,
+		BackoffUntil:       backoffUntil,
+		FetchedExternalIDs: fetchedExternalIDs,
 	}
 }
 
