@@ -127,7 +127,7 @@
                 return entry.realtimeBalance === undefined || entry.realtimeBalance === null || entry.realtimeBalance === 0;
             };
 
-            const mappedEntities: { name: string; type: string; amount: number; outstanding: boolean }[] = [];
+            const mappedEntities: { name: string; type: string; amount: number; outstanding: boolean; previousBookingDate?: string; bookingDate?: string }[] = [];
 
             for (const entry of breakdown.incomes || []) {
                 const factor = getAssignmentFactor(entry.accountIds, id);
@@ -140,6 +140,8 @@
                         type: "Income",
                         amount: entry.amount * factor,
                         outstanding: isOutstanding(entry),
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
                     });
                 }
             }
@@ -155,6 +157,8 @@
                         type: "Bill",
                         amount: entry.amount * factor,
                         outstanding: isOutstanding(entry),
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
                     });
                 }
             }
@@ -170,6 +174,8 @@
                         type: "Event",
                         amount: entry.amount * factor,
                         outstanding: isOutstanding(entry),
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
                     });
                 }
             }
@@ -189,6 +195,8 @@
                         type: "Asset",
                         amount: entry.amount * factor,
                         outstanding: isOutstanding(entry),
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
                     });
                 }
             }
@@ -204,9 +212,72 @@
                         type: "Loan",
                         amount: entry.amount * factor,
                         outstanding: isOutstanding(entry),
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
                     });
                 }
             }
+
+            const currentDay = new Date().getDate();
+            const getDay = (dateStr?: string) => {
+                if (!dateStr) return null;
+                const parts = dateStr.split("-");
+                if (parts.length === 3) {
+                    return parseInt(parts[2], 10);
+                }
+                return null;
+            };
+
+            const sortedEntities = [...mappedEntities].sort((a, b) => {
+                const getGroupIndex = (item: any) => {
+                    if (item.outstanding) {
+                        if (item.type === "Bill" || item.type === "Event") {
+                            return 1;
+                        }
+                        return 2;
+                    } else {
+                        if (item.type === "Income") {
+                            return 4;
+                        }
+                        return 3;
+                    }
+                };
+
+                const gA = getGroupIndex(a);
+                const gB = getGroupIndex(b);
+                if (gA !== gB) {
+                    return gA - gB;
+                }
+
+                if (gA === 1 || gA === 2) {
+                    const dayA = getDay(a.previousBookingDate);
+                    const dayB = getDay(b.previousBookingDate);
+
+                    if (dayA === null && dayB === null) return 0;
+                    if (dayA === null) return 1;
+                    if (dayB === null) return -1;
+
+                    const diffA = dayA - currentDay;
+                    const diffB = dayB - currentDay;
+
+                    const getSortScore = (diff: number) => {
+                        if (diff === 0) return 0;
+                        if (diff > 0) return diff;
+                        return 100 + Math.abs(diff);
+                    };
+
+                    return getSortScore(diffA) - getSortScore(diffB);
+                } else {
+                    const dayA = getDay(a.bookingDate);
+                    const dayB = getDay(b.bookingDate);
+
+                    if (dayA === null && dayB === null) return 0;
+                    if (dayA === null) return 1;
+                    if (dayB === null) return -1;
+
+                    return dayB - dayA;
+                }
+            });
 
             return {
                 id,
@@ -219,7 +290,7 @@
                 loan_debt: va.loan_debt !== undefined ? va.loan_debt : (va.loanDebt !== undefined ? va.loanDebt : 0),
                 outstandingInflow,
                 outstandingOutflow,
-                mappedEntities,
+                mappedEntities: sortedEntities,
             };
         });
     });
@@ -247,6 +318,16 @@
         });
     }
 
+    function formatDay(dateStr: string) {
+        if (!dateStr) return "";
+        const parts = dateStr.split("-");
+        if (parts.length === 3) {
+            return parseInt(parts[2], 10) + ".";
+        }
+        const d = new Date(dateStr);
+        return d.getDate() + ".";
+    }
+
     interface Entry {
         name: string;
         entityName?: string;
@@ -258,6 +339,8 @@
         trackerFlows?: Record<string, number>;
         subAssetFlows?: Record<string, number>;
         accountIds?: string[];
+        previousBookingDate?: string;
+        bookingDate?: string;
     }
 
     const groupedAssets = $derived.by(() => {
@@ -669,7 +752,18 @@
                                                             {entity.name}
                                                         </span>
                                                         <span class="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
-                                                            {entity.type} {#if entity.outstanding}• <span class="text-slate-400/80 dark:text-slate-500/80 font-bold lowercase">outstanding</span>{/if}
+                                                            {entity.type}
+                                                            {#if entity.outstanding}
+                                                                • <span class="text-slate-400/80 dark:text-slate-500/80 font-bold lowercase">outstanding</span>
+                                                                {#if entity.previousBookingDate}
+                                                                    • <span class="text-indigo-500 dark:text-indigo-400 font-bold lowercase">normally {formatDay(entity.previousBookingDate)}</span>
+                                                                {/if}
+                                                            {:else}
+                                                                • <span class="text-emerald-600/80 dark:text-emerald-500/80 font-bold lowercase">booked</span>
+                                                                {#if entity.bookingDate}
+                                                                    • <span class="text-slate-400/80 dark:text-slate-500/80 font-bold lowercase">{formatDay(entity.bookingDate)}</span>
+                                                                {/if}
+                                                            {/if}
                                                         </span>
                                                     </div>
                                                     <span class="font-extrabold tabular-nums whitespace-nowrap {entity.type === 'Income' ? 'text-emerald-600 dark:text-emerald-400' : (entity.type === 'Bill' || entity.type === 'Event' || entity.type === 'Loan' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-350')}">

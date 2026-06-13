@@ -218,6 +218,8 @@ message EntryBreakdown {
   map<string, double> real_split = 10;
   map<string, double> tracker_flows = 11;
   map<string, double> sub_asset_flows = 12;
+  string previous_booking_date = 13;
+  string booking_date = 14;
 }
 
 message MonthBreakdown {

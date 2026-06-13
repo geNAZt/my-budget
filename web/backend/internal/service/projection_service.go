@@ -1032,6 +1032,69 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 	mods, _ := s.resolveModifications(userID, scenario)
 	realtimeBalances, _ := s.loadRealtimeBalances(userID, monthStartDay)
 
+	// Load pool transactions for booking date resolution
+	poolTxs := make(map[string][]domain.BankTransaction)
+	if s.transactionRepo != nil && s.cryptoService != nil && s.syncService != nil {
+		if txs, err := s.transactionRepo.List(userID); err == nil && len(txs) > 0 {
+			if integrations, err := s.syncService.integrationRepo.List(userID); err == nil {
+				intTypeMap := make(map[string]string)
+				intKeyMap := make(map[string][]byte)
+				for _, i := range integrations {
+					intTypeMap[i.ID] = i.ServiceType
+					if key, err := s.syncService.GetMasterKey(userID, i.ID); err == nil {
+						intKeyMap[i.ID] = key
+					}
+				}
+				activeIntegrations, _ := s.syncService.GetAccountActiveIntegrations(userID, intKeyMap, nil)
+
+				// Load pools to build hierarchy map
+				var pools []domain.TransactionPool
+				if s.syncService.ruleService != nil && s.syncService.ruleService.repo != nil {
+					pools, _ = s.syncService.ruleService.repo.ListPools(userID)
+				}
+				poolMap := make(map[string]domain.TransactionPool)
+				for _, p := range pools {
+					poolMap[p.ID] = p
+				}
+
+				for i := range txs {
+					t := &txs[i]
+					if len(t.PoolIDs) == 0 {
+						continue
+					}
+					_, exists := intTypeMap[t.IntegrationID]
+					if !exists {
+						continue
+					}
+					// Decrypt transaction to ensure it is valid/accessible
+					if _, err := s.syncService.DecryptTransaction(userID, t, intKeyMap, activeIntegrations); err != nil {
+						continue
+					}
+
+					for _, poolID := range t.PoolIDs {
+						if poolID == "" {
+							continue
+						}
+						// Associate transaction with pool and parent pools
+						currPoolID := poolID
+						visited := make(map[string]bool)
+						for currPoolID != "" && !visited[currPoolID] {
+							visited[currPoolID] = true
+							poolTxs[currPoolID] = append(poolTxs[currPoolID], *t)
+
+							// Move to parent
+							if p, ok := poolMap[currPoolID]; ok && p.ParentID != nil {
+								currPoolID = *p.ParentID
+							} else {
+								currPoolID = ""
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	var virtualAccounts []domain.VirtualAccount
 	if s.virtualAccountRepo != nil {
 		virtualAccounts, _ = s.virtualAccountRepo.List(userID)
@@ -3502,6 +3565,51 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			month.VirtualAccounts = append(month.VirtualAccounts, unassignedBal)
 		}
+
+		// Resolve BookingDate and PreviousBookingDate for all entries in the breakdown
+		resolveList := func(list []domain.EntryBreakdown) {
+			for idx := range list {
+				entry := &list[idx]
+				if entry.PoolID == nil || *entry.PoolID == "" {
+					continue
+				}
+				pid := *entry.PoolID
+				txsInPool, ok := poolTxs[pid]
+				if !ok || len(txsInPool) == 0 {
+					continue
+				}
+
+				var latestCurrentTx *domain.BankTransaction
+				var latestPreviousTx *domain.BankTransaction
+
+				for txIdx := range txsInPool {
+					tx := &txsInPool[txIdx]
+					txMonth := projectionMonthForDate(tx.CreatedAt, monthStartDay, loc)
+					if txMonth.Equal(month.Date) {
+						if latestCurrentTx == nil || tx.CreatedAt.After(latestCurrentTx.CreatedAt) {
+							latestCurrentTx = tx
+						}
+					} else if txMonth.Before(month.Date) {
+						if latestPreviousTx == nil || tx.CreatedAt.After(latestPreviousTx.CreatedAt) {
+							latestPreviousTx = tx
+						}
+					}
+				}
+
+				if latestCurrentTx != nil {
+					entry.BookingDate = latestCurrentTx.CreatedAt.In(loc).Format("2006-01-02")
+				}
+				if latestPreviousTx != nil {
+					entry.PreviousBookingDate = latestPreviousTx.CreatedAt.In(loc).Format("2006-01-02")
+				}
+			}
+		}
+
+		resolveList(month.Breakdown.Incomes)
+		resolveList(month.Breakdown.Bills)
+		resolveList(month.Breakdown.Expenses)
+		resolveList(month.Breakdown.Assets)
+		resolveList(month.Breakdown.Loans)
 
 		result.Months[i] = month
 		if onMonth != nil {

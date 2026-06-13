@@ -126,4 +126,6 @@ type EntryBreakdown struct {
 	RealSplit       map[string]float64
 	TrackerFlows    map[string]float64
 	SubAssetFlows   map[string]float64
+	PreviousBookingDate string
+	BookingDate         string
 }

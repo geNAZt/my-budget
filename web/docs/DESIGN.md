@@ -193,3 +193,19 @@ To ensure transactions representing internal transfers between a user's accounts
    - Their descriptions are exactly equal (case-insensitive, trimmed).
    - OR, one transaction description contains the alias of the other transaction's account (case-insensitive, requiring alias length >= 3).
 3. **Execution**: The auto-linking logic updates both transactions' `linked_transaction_id`, sets `is_link_confirmed = TRUE`, and assigns `source_account_id` and `destination_account_id` respectively.
+
+## 13. Virtual Account Outstanding Booking Dates & Sorting
+
+To improve visibility into when outstanding virtual account items are expected to be booked and organize the virtual account breakdown:
+1. **Protobuf Schema Extensions**: Add `previous_booking_date` and `booking_date` fields to `EntryBreakdown` in `api.proto`.
+2. **Backend Booking Date Calculation**:
+   - For each simulated month, retrieve decrypted transactions for each pool.
+   - For each breakdown entry, associate it with its pool's transactions.
+   - `booking_date`: The latest transaction in the pool that falls in the current simulation month.
+   - `previous_booking_date`: The latest transaction in the pool that falls in a previous simulation month.
+3. **Frontend Integration & Display**:
+   - In Svelte, display the day of the previous booking (e.g. `(normally 15.)` using German formatting) next to outstanding items.
+   - Sort the virtual account's mapped items by category and date:
+     - **Outstanding Bills & Expenses**: Sorted by `booking day - current day`, putting 0 (due today) on top, followed by future days, and past days.
+     - **Booked Bills & Expenses**: Sorted by actual booking day in the current month, latest first.
+     - **Booked Incomes**: Sorted by actual booking day in the current month, latest first.
