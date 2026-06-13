@@ -1291,7 +1291,7 @@ var migrations = []Migration{
 		},
 	},
 	{
-		ID: "023_fix_upct_posd_transitions_from_logs",
+		ID: "023_fix_upct_posd_transitions_from_logs_v2",
 		Run: func(db *sql.DB) error {
 			return FixUPCTTransitions(db)
 		},
