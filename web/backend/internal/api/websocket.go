@@ -22,6 +22,7 @@ type WebsocketSession struct {
 	userID     string
 	tokenStr   string
 	closed     bool
+	remoteIP   string
 }
 
 func (s *WebsocketSession) SetAuth(userID string, tokenStr string) {
@@ -37,6 +38,10 @@ func (s *WebsocketSession) GetAuth() (string, string) {
 	defer s.stateMu.RUnlock()
 
 	return s.userID, s.tokenStr
+}
+
+func (s *WebsocketSession) RemoteAddr() string {
+	return s.remoteIP
 }
 
 func (s *WebsocketSession) IsClosed() bool {
@@ -84,8 +89,9 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 	}
 
 	session := &WebsocketSession{
-		ws:     ws,
-		closed: false,
+		ws:       ws,
+		closed:   false,
+		remoteIP: c.RealIP(),
 	}
 
 	sessionID := uuid.New().String()

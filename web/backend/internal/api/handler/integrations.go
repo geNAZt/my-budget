@@ -242,6 +242,15 @@ func (i *Integrations) Sync(s *api.WebsocketSession, reqID string, req *apiproto
 		return
 	}
 
+	// Ensure PSU headers are populated
+	if req.PsuHeaders == nil {
+		req.PsuHeaders = make(map[string]string)
+	}
+
+	if _, ok := req.PsuHeaders["Psu-Ip-Address"]; !ok || req.PsuHeaders["Psu-Ip-Address"] == "127.0.0.1" {
+		req.PsuHeaders["Psu-Ip-Address"] = s.RemoteAddr()
+	}
+
 	go func() {
 		err := i.syncService.SyncIntegration(userID, req.Id, req.Force, req.PsuHeaders)
 		if err != nil {
