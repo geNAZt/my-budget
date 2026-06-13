@@ -70,7 +70,7 @@ export async function login(username: string) {
 
     if (beginError) {
       console.log("[WS] Login begin failed:", beginError);
-      return;
+      throw new Error(beginError.message || "User not found");
     }
 
     console.log("Login Options from Server:", beginResp);
@@ -92,7 +92,7 @@ export async function login(username: string) {
 
     if (finishError) {
       console.log("[WS] Login finish failed:", finishError);
-      return;
+      throw new Error(finishError.message || "Authentication failed");
     }
 
     if (finishResp.status !== "success") {
