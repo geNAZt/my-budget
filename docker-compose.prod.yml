@@ -54,12 +54,19 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower:
-    image: nickfedor/watchtower:latest
+    image: containrrr/watchtower:latest
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${DOCKER_CONFIG_PATH:-/root/.docker/config.json}:/config.json:ro
-    command: --interval 60 --cleanup --label-enable --rolling-restart --debug
+    environment:
+      - WATCHTOWER_DEBUG=true
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_POLL_INTERVAL=60
+      - WATCHTOWER_ROLLING_RESTART=true
+      - REPO_USER=${REPO_USER}
+      - REPO_PASS=${REPO_PASS}
+    # No command needed as we use environment variables for configuration
 
 volumes:
   db-data:
