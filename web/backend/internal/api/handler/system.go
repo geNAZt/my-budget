@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
 	apiproto "github.com/genazt/my-budget-script/web/backend/internal/api/proto"
@@ -33,15 +34,20 @@ func (sys *System) Logs(s *api.WebsocketSession, reqID string, _ *apiproto.Empty
 	ch, initialBuffer := sys.logService.Subscribe(subID)
 	defer sys.logService.Unsubscribe(subID)
 
-	// Send initial buffer
-	for _, line := range initialBuffer {
+	// Send initial buffer in one batch for performance
+	if len(initialBuffer) > 0 {
 		if s.IsClosed() {
 			return
 		}
-		sys.handler.SendResponse(s, reqID, &apiproto.SystemLogChunk{Line: line}, false)
+		if err := sys.handler.SendResponse(s, reqID, &apiproto.SystemLogChunk{Lines: initialBuffer}, false); err != nil {
+			return
+		}
 	}
 
-	// Stream new logs
+	// Stream new logs with heartbeat
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case line, ok := <-ch:
@@ -52,7 +58,17 @@ func (sys *System) Logs(s *api.WebsocketSession, reqID string, _ *apiproto.Empty
 			if s.IsClosed() {
 				return
 			}
-			sys.handler.SendResponse(s, reqID, &apiproto.SystemLogChunk{Line: line}, false)
+			if err := sys.handler.SendResponse(s, reqID, &apiproto.SystemLogChunk{Line: line}, false); err != nil {
+				return
+			}
+		case <-ticker.C:
+			// Heartbeat to keep connection alive and detect dead sessions
+			if s.IsClosed() {
+				return
+			}
+			if err := sys.handler.SendResponse(s, reqID, &apiproto.SystemLogChunk{}, false); err != nil {
+				return
+			}
 		}
 	}
 }

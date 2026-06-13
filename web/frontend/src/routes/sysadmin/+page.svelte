@@ -56,7 +56,11 @@
                 break;
             }
             if (chunk && !isPaused) {
-                logs = [...logs, chunk.line].slice(-2000); // Keep last 2000 lines
+                if (chunk.lines && chunk.lines.length > 0) {
+                    logs = [...logs, ...chunk.lines].slice(-2000);
+                } else if (chunk.line) {
+                    logs = [...logs, chunk.line].slice(-2000);
+                }
             }
         }
     }

@@ -764,4 +764,5 @@ message CycleRecoveryResponse {
 
 message SystemLogChunk {
   string line = 1;
+  repeated string lines = 2;
 }

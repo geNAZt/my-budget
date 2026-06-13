@@ -46,7 +46,7 @@ func (s *LogService) Subscribe(id string) (chan string, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ch := make(chan string, 100)
+	ch := make(chan string, 1000)
 	s.subscribers[id] = ch
 
 	// Return copy of buffer

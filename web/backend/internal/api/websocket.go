@@ -203,7 +203,7 @@ func (h *WebSocketHandler) SendError(session *WebsocketSession, reqID string, st
 	h.SendResponse(session, reqID, resp, true)
 }
 
-func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string, body proto.Message, done bool) {
+func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string, body proto.Message, done bool) error {
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = proto.Marshal(body)
@@ -222,5 +222,10 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 	bytes, _ := proto.Marshal(resp)
 	session.writeMutex.Lock()
 	defer session.writeMutex.Unlock()
-	session.ws.WriteMessage(websocket.BinaryMessage, bytes)
+
+	if session.closed {
+		return http.ErrHandlerTimeout
+	}
+
+	return session.ws.WriteMessage(websocket.BinaryMessage, bytes)
 }
