@@ -535,30 +535,65 @@ func (s *SyncService) SyncAll() {
 	s.TraceMoneyMovementChains()
 }
 
+type syncMetadata struct {
+	IntegrationID   string    `json:"integration_id"`
+	IntegrationName string    `json:"integration_name"`
+	ServiceType     string    `json:"service_type"`
+	UserID          string    `json:"user_id"`
+	Timestamp       time.Time `json:"timestamp"`
+	Status          string    `json:"status"`
+	Error           string    `json:"error,omitempty"`
+}
+
 func (s *SyncService) SyncIntegration(userID string, integrationID string, force bool, psuHeaders map[string]string) error {
 	integration, err := s.integrationRepo.GetByID(userID, integrationID)
 	if err != nil || integration == nil {
 		return fmt.Errorf("integration not found")
 	}
 
-	correlationID := uuid.New().String()
-
 	if integration.BackoffUntil != nil && integration.BackoffUntil.After(time.Now()) && !force {
-		log.Printf("[SYNC][%s] Skipping %s due to backoff until %v", correlationID, integration.Name, integration.BackoffUntil)
+		log.Printf("[SYNC] Skipping %s due to backoff until %v", integration.Name, integration.BackoffUntil)
 		return nil
+	}
+
+	correlationID := uuid.New().String()
+	logDir := getLogDir(correlationID)
+	_ = os.MkdirAll(logDir, 0755)
+
+	meta := syncMetadata{
+		IntegrationID:   integration.ID,
+		IntegrationName: integration.Name,
+		ServiceType:     integration.ServiceType,
+		UserID:          userID,
+		Timestamp:       time.Now(),
+		Status:          "STARTED",
+	}
+	if metaBytes, err := json.MarshalIndent(meta, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(logDir, "metadata.json"), metaBytes, 0644)
+	}
+
+	writeMetaUpdate := func(status string, errMsg string) {
+		meta.Status = status
+		meta.Error = errMsg
+		if metaBytes, err := json.MarshalIndent(meta, "", "  "); err == nil {
+			_ = os.WriteFile(filepath.Join(logDir, "metadata.json"), metaBytes, 0644)
+		}
 	}
 
 	log.Printf("[SYNC][%s] Dispatching sync for %s (%s)...", correlationID, integration.Name, integration.ServiceType)
 
 	provider := s.integrationRegistry.Get(integration.ServiceType)
 	if provider == nil {
-		return s.handleSyncError(userID, integration, fmt.Errorf("unsupported service type: %s", integration.ServiceType))
+		errMsg := fmt.Sprintf("unsupported service type: %s", integration.ServiceType)
+		writeMetaUpdate("FAILED", errMsg)
+		return s.handleSyncError(userID, integration, fmt.Errorf("%s", errMsg))
 	}
 
 	ctx := ContextWithCorrelationID(context.Background(), correlationID)
 	res := provider.Sync(ctx, integration, force, psuHeaders)
 
 	if res.Error == nil {
+		writeMetaUpdate("COMPLETED", "")
 		s.ReconcilePendingDuplicates(userID, integrationID, res.FetchedExternalIDs)
 		s.eventBus.Publish(context.Background(), bus.TopicSyncFinished, bus.SyncFinishedPayload{
 			UserID:          userID,
@@ -570,6 +605,7 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 	}
 
 	if res.Error != nil {
+		writeMetaUpdate("FAILED", res.Error.Error())
 		if res.BackoffUntil != nil {
 			integration.BackoffUntil = res.BackoffUntil
 			_ = s.integrationRepo.Save(userID, integration)
@@ -580,6 +616,7 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 
 	return s.finalizeSync(userID, integration, integration.CachedBalance, res.BackoffUntil)
 }
+
 
 func (s *SyncService) GetMasterKey(userID string, integrationID string) ([]byte, error) {
 	s.cacheMu.RLock()

@@ -19,6 +19,7 @@
         Moon,
         Calendar,
         ChevronDown,
+        Terminal,
     } from "@lucide/svelte";
     import {
         Chart as ChartJS,
@@ -136,6 +137,7 @@
             icon: ShieldAlert,
             children: [
                 { name: "Automations", href: "/automations", icon: Cpu },
+                { name: "Sync Logs", href: "/sysadmin/sync-logs", icon: Terminal },
                 { name: "Sysadmin", href: "/sysadmin", icon: ShieldAlert },
             ]
         },

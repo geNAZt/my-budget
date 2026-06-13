@@ -176,7 +176,7 @@ func main() {
 	// 1. Initialize special cases or dependencies
 	dockerService := service.NewDockerService()
 	authAPI := handler.NewAuth(webSocketHandler, userRepo, wauth, sessionRepo, syncService, []byte(jwtSecret))
-	systemAPI := handler.NewSystem(webSocketHandler, logService, dockerService)
+	systemAPI := handler.NewSystem(webSocketHandler, logService, dockerService, syncService, database)
 
 
 	// 2. Register everything in a single, readable pass

@@ -789,3 +789,56 @@ message SystemLogRequest {
   string container_id = 1;
 }
 
+message SyncRun {
+  string correlation_id = 1;
+  string integration_id = 2;
+  string integration_name = 3;
+  string service_type = 4;
+  string timestamp = 5;
+  string status = 6;
+  int32 transaction_count = 7;
+  bool has_log_files = 8;
+}
+
+message SyncRunList {
+  repeated SyncRun runs = 1;
+}
+
+message SyncRunDetailsRequest {
+  string correlation_id = 1;
+}
+
+message DetectedTransaction {
+  string external_id = 1;
+  double amount = 2;
+  string currency = 3;
+  string description = 4;
+  string peer = 5;
+  string booking_date = 6;
+  string raw_json = 7;
+  repeated SyncRunInfoForTx other_sync_runs = 8;
+}
+
+message SyncRunInfoForTx {
+  string correlation_id = 1;
+  string timestamp = 2;
+  string integration_name = 3;
+}
+
+message SyncRawLogFile {
+  string filename = 1;
+  string content = 2;
+  bool is_request = 3;
+}
+
+message SyncRunDetailsResponse {
+  string correlation_id = 1;
+  string integration_id = 2;
+  string integration_name = 3;
+  string service_type = 4;
+  string timestamp = 5;
+  repeated DetectedTransaction detected_transactions = 6;
+  repeated SyncRawLogFile raw_logs = 7;
+}
+
+

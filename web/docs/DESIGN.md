@@ -209,3 +209,23 @@ To improve visibility into when outstanding virtual account items are expected t
      - **Outstanding Bills & Expenses**: Sorted by `booking day - current day`, putting 0 (due today) on top, followed by future days, and past days.
      - **Booked Bills & Expenses**: Sorted by actual booking day in the current month, latest first.
      - **Booked Incomes**: Sorted by actual booking day in the current month, latest first.
+
+## 14. Sync Run Log Parser & Transaction Viewer
+
+To allow administrators to audit bank/integration synchronization processes and trace transaction histories:
+1. **Sync Run Metadata Tracking**:
+   - When initiating a sync via `SyncIntegration`, create and save a `metadata.json` file inside the correlation ID directory.
+   - Metadata contains the integration ID, integration name, service type, user ID, and start timestamp.
+2. **Sync Log Parsing**:
+   - The Go backend will expose two new WebSocket handlers:
+     - `system::sync_runs`: Lists all sync runs (both from metadata files and database-mapped correlation IDs), sorted by date (newest first). Supports integration filtering.
+     - `system::sync_run_details`: Returns details of a specific sync run, including parsed transactions found in `*_resp.json` files and raw logs.
+3. **Transaction Extraction & Parsing**:
+   - Scan all `*_resp.json` log files for transaction arrays based on provider format (GoCardless: `transactions.booked`/`pending`, EnableBanking: `transactions`, Trading212: raw array).
+   - Extract unique transaction IDs, amount, currency, description, peer, and raw JSON representation.
+4. **Transaction Cross-Linking**:
+   - When viewing details of a transaction, find all other sync runs containing the same transaction (external ID) by scanning historical logs or querying the database.
+5. **Frontend UI (`/sysadmin/sync-logs`)**:
+   - A modern, high-density dashboard following the project's glassmorphism style.
+   - Filters runs by integration, lists them with counts/timestamps, parses transactions, and offers raw JSON inspect/linkage views.
+

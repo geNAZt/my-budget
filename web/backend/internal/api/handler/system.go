@@ -2,8 +2,15 @@ package handler
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
@@ -16,15 +23,30 @@ type System struct {
 	handler       *api.WebSocketHandler
 	logService    *service.LogService
 	dockerService *service.DockerService
+	syncService   *service.SyncService
+	db            *sql.DB
 }
 
-func NewSystem(handler *api.WebSocketHandler, logService *service.LogService, dockerService *service.DockerService) *System {
+type syncMetadata struct {
+	IntegrationID   string    `json:"integration_id"`
+	IntegrationName string    `json:"integration_name"`
+	ServiceType     string    `json:"service_type"`
+	UserID          string    `json:"user_id"`
+	Timestamp       time.Time `json:"timestamp"`
+	Status          string    `json:"status"`
+	Error           string    `json:"error,omitempty"`
+}
+
+func NewSystem(handler *api.WebSocketHandler, logService *service.LogService, dockerService *service.DockerService, syncService *service.SyncService, db *sql.DB) *System {
 	return &System{
 		handler:       handler,
 		logService:    logService,
 		dockerService: dockerService,
+		syncService:   syncService,
+		db:            db,
 	}
 }
+
 
 // Containers lists available containers in the system
 func (sys *System) Containers(s *api.WebsocketSession, reqID string, _ *apiproto.Empty) {
@@ -161,4 +183,544 @@ func (sys *System) Logs(s *api.WebsocketSession, reqID string, req *apiproto.Sys
 		}
 	}
 }
+
+// SyncRuns lists all sync runs (logs) for the authenticated user
+func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.Empty) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		sys.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	baseDir := "/app"
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		if _, err := os.Stat("web"); err == nil {
+			baseDir = "web"
+		} else {
+			baseDir = "."
+		}
+	}
+	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
+
+	// Get correlation mappings from db
+	dbMappings := make(map[string]struct{ IntegrationID, IntegrationName, ServiceType string })
+	rowsC, err := sys.db.Query(`
+		SELECT DISTINCT t.correlation_id, t.integration_id, i.name, i.service_type
+		FROM bank_transactions t
+		JOIN integrations i ON t.integration_id = i.id
+		WHERE t.user_id = $1 AND t.correlation_id != ''`, userID)
+	if err == nil {
+		defer rowsC.Close()
+		for rowsC.Next() {
+			var cid, iid, name, st string
+			if err := rowsC.Scan(&cid, &iid, &name, &st); err == nil {
+				dbMappings[cid] = struct{ IntegrationID, IntegrationName, ServiceType string }{iid, name, st}
+			}
+		}
+	}
+
+	var runs []*apiproto.SyncRun
+
+	// Read logs directory
+	entries, err := os.ReadDir(logsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			correlationID := entry.Name()
+
+			// Check metadata.json
+			metaPath := filepath.Join(logsDir, correlationID, "metadata.json")
+			var meta syncMetadata
+			hasMeta := false
+
+			metaBytes, err := os.ReadFile(metaPath)
+			if err == nil {
+				if err := json.Unmarshal(metaBytes, &meta); err == nil {
+					hasMeta = true
+				}
+			}
+
+			// Security: check user ownership
+			integrationID := ""
+			integrationName := ""
+			serviceType := ""
+			status := ""
+			timestamp := ""
+
+			if hasMeta {
+				if meta.UserID != userID {
+					continue
+				}
+				integrationID = meta.IntegrationID
+				integrationName = meta.IntegrationName
+				serviceType = meta.ServiceType
+				status = meta.Status
+				timestamp = meta.Timestamp.Format(time.RFC3339)
+			} else {
+				// Check db mappings
+				mapping, ok := dbMappings[correlationID]
+				if !ok {
+					continue
+				}
+				integrationID = mapping.IntegrationID
+				integrationName = mapping.IntegrationName
+				serviceType = mapping.ServiceType
+				status = "COMPLETED"
+
+				// Mod time of folder
+				if info, err := entry.Info(); err == nil {
+					timestamp = info.ModTime().Format(time.RFC3339)
+				}
+			}
+
+			// Parse response files in the folder to count transactions
+			txCount := int32(0)
+			matches, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_resp.json"))
+			for _, rf := range matches {
+				if content, err := os.ReadFile(rf); err == nil {
+					var dump struct {
+						Body interface{} `json:"body"`
+					}
+					if err := json.Unmarshal(content, &dump); err == nil && dump.Body != nil {
+						detected := parseTransactionsFromJSON(strings.ToLower(serviceType), dump.Body)
+						txCount += int32(len(detected))
+					}
+				}
+			}
+
+			runs = append(runs, &apiproto.SyncRun{
+				CorrelationId:    correlationID,
+				IntegrationId:    integrationID,
+				IntegrationName:  integrationName,
+				ServiceType:      serviceType,
+				Timestamp:        timestamp,
+				Status:           status,
+				TransactionCount: txCount,
+				HasLogFiles:      len(matches) > 0,
+			})
+		}
+	}
+
+	// Sort runs by date DESC
+	sort.Slice(runs, func(i, j int) bool {
+		ti, errI := time.Parse(time.RFC3339, runs[i].Timestamp)
+		tj, errJ := time.Parse(time.RFC3339, runs[j].Timestamp)
+		if errI != nil || errJ != nil {
+			return runs[i].Timestamp > runs[j].Timestamp
+		}
+		return ti.After(tj)
+	})
+
+	sys.handler.SendResponse(s, reqID, &apiproto.SyncRunList{Runs: runs}, false)
+}
+
+// SyncRunDetails returns details of a specific sync run
+func (sys *System) SyncRunDetails(s *api.WebsocketSession, reqID string, req *apiproto.SyncRunDetailsRequest) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		sys.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	correlationID := req.CorrelationId
+	if correlationID == "" {
+		sys.handler.SendError(s, reqID, http.StatusBadRequest, "Missing correlation ID")
+		return
+	}
+
+	baseDir := "/app"
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		if _, err := os.Stat("web"); err == nil {
+			baseDir = "web"
+		} else {
+			baseDir = "."
+		}
+	}
+	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
+	runDir := filepath.Join(logsDir, correlationID)
+
+	// Check metadata.json
+	metaPath := filepath.Join(runDir, "metadata.json")
+	var meta syncMetadata
+	hasMeta := false
+
+	metaBytes, err := os.ReadFile(metaPath)
+	if err == nil {
+		if err := json.Unmarshal(metaBytes, &meta); err == nil {
+			hasMeta = true
+		}
+	}
+
+	// Security: verify ownership
+	integrationID := ""
+	integrationName := ""
+	serviceType := ""
+	timestamp := ""
+
+	if hasMeta {
+		if meta.UserID != userID {
+			sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden")
+			return
+		}
+		integrationID = meta.IntegrationID
+		integrationName = meta.IntegrationName
+		serviceType = meta.ServiceType
+		timestamp = meta.Timestamp.Format(time.RFC3339)
+	} else {
+		// Verify via db mappings
+		var iid, name, st string
+		err := sys.db.QueryRow(`
+			SELECT DISTINCT t.integration_id, i.name, i.service_type
+			FROM bank_transactions t
+			JOIN integrations i ON t.integration_id = i.id
+			WHERE t.user_id = $1 AND t.correlation_id = $2`, userID, correlationID).Scan(&iid, &name, &st)
+		if err != nil {
+			sys.handler.SendError(s, reqID, http.StatusForbidden, "Forbidden or not found")
+			return
+		}
+		integrationID = iid
+		integrationName = name
+		serviceType = st
+		// mod time of folder
+		if info, err := os.Stat(runDir); err == nil {
+			timestamp = info.ModTime().Format(time.RFC3339)
+		}
+	}
+
+	// Read all files in folder
+	files, err := os.ReadDir(runDir)
+	if err != nil {
+		sys.handler.SendError(s, reqID, http.StatusNotFound, "Sync run log folder not found")
+		return
+	}
+
+	var detectedTxs []*apiproto.DetectedTransaction
+	var rawLogs []*apiproto.SyncRawLogFile
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		filename := f.Name()
+		filePath := filepath.Join(runDir, filename)
+
+		// Only return req/resp JSON files, skip metadata.json
+		if filename == "metadata.json" {
+			continue
+		}
+
+		contentBytes, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		isRequest := strings.HasSuffix(filename, "_req.json")
+		isResponse := strings.HasSuffix(filename, "_resp.json")
+
+		if !isRequest && !isResponse {
+			continue
+		}
+
+		// Parse detected transactions from response files
+		if isResponse {
+			var dump struct {
+				Body interface{} `json:"body"`
+			}
+			if err := json.Unmarshal(contentBytes, &dump); err == nil && dump.Body != nil {
+				txs := parseTransactionsFromJSON(strings.ToLower(serviceType), dump.Body)
+				for _, tx := range txs {
+					// Find other sync runs containing this transaction ID
+					otherRuns := findOtherSyncRunsForTx(sys.db, userID, correlationID, tx.ExternalId, logsDir)
+
+					detectedTxs = append(detectedTxs, &apiproto.DetectedTransaction{
+						ExternalId:    tx.ExternalId,
+						Amount:        tx.Amount,
+						Currency:      tx.Currency,
+						Description:   tx.Description,
+						Peer:          tx.Peer,
+						BookingDate:   tx.BookingDate,
+						RawJson:       tx.RawJson,
+						OtherSyncRuns: otherRuns,
+					})
+				}
+			}
+		}
+
+		rawLogs = append(rawLogs, &apiproto.SyncRawLogFile{
+			Filename:  filename,
+			Content:   string(contentBytes),
+			IsRequest: isRequest,
+		})
+	}
+
+	// Sort rawLogs by name
+	sort.Slice(rawLogs, func(i, j int) bool {
+		return rawLogs[i].Filename < rawLogs[j].Filename
+	})
+
+	sys.handler.SendResponse(s, reqID, &apiproto.SyncRunDetailsResponse{
+		CorrelationId:        correlationID,
+		IntegrationId:        integrationID,
+		IntegrationName:      integrationName,
+		ServiceType:          serviceType,
+		Timestamp:            timestamp,
+		DetectedTransactions: detectedTxs,
+		RawLogs:              rawLogs,
+	}, false)
+}
+
+// Helper to find other sync runs containing the same transaction ID
+func findOtherSyncRunsForTx(db *sql.DB, userID string, currentCorrelationID string, txID string, logsDir string) []*apiproto.SyncRunInfoForTx {
+	var results []*apiproto.SyncRunInfoForTx
+
+	// Query database first since it is extremely fast
+	rows, err := db.Query(`
+		SELECT DISTINCT t.correlation_id, t.synced_at, i.name
+		FROM bank_transactions t
+		JOIN integrations i ON t.integration_id = i.id
+		WHERE t.user_id = $1 AND t.correlation_id != $2 AND (t.external_id = $3 OR t.external_id LIKE '%' || $3)`,
+		userID, currentCorrelationID, txID)
+	if err == nil {
+		defer rows.Close()
+		seenCorrelationIDs := make(map[string]bool)
+		for rows.Next() {
+			var cid, name string
+			var syncedAt time.Time
+			if err := rows.Scan(&cid, &syncedAt, &name); err == nil {
+				seenCorrelationIDs[cid] = true
+				results = append(results, &apiproto.SyncRunInfoForTx{
+					CorrelationId:   cid,
+					Timestamp:       syncedAt.Format(time.RFC3339),
+					IntegrationName: name,
+				})
+			}
+		}
+	}
+
+	// Scan filesystem for other matches (covers runs where transaction was filtered/skipped and not written to DB)
+	entries, err := os.ReadDir(logsDir)
+	if err == nil {
+		seen := make(map[string]bool)
+		for _, r := range results {
+			seen[r.CorrelationId] = true
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			cid := entry.Name()
+			if cid == currentCorrelationID || seen[cid] {
+				continue
+			}
+
+			// Check metadata
+			metaPath := filepath.Join(logsDir, cid, "metadata.json")
+			metaBytes, err := os.ReadFile(metaPath)
+			if err != nil {
+				continue
+			}
+			var meta syncMetadata
+			if err := json.Unmarshal(metaBytes, &meta); err != nil || meta.UserID != userID {
+				continue
+			}
+
+			// Substring check on response files (extremely fast pre-filter)
+			respFiles, _ := filepath.Glob(filepath.Join(logsDir, cid, "*_resp.json"))
+			foundTx := false
+			for _, rf := range respFiles {
+				content, err := os.ReadFile(rf)
+				if err != nil {
+					continue
+				}
+				if strings.Contains(string(content), txID) {
+					var dump struct {
+						Body interface{} `json:"body"`
+					}
+					if err := json.Unmarshal(content, &dump); err == nil && dump.Body != nil {
+						detected := parseTransactionsFromJSON(strings.ToLower(meta.ServiceType), dump.Body)
+						for _, t := range detected {
+							if t.ExternalId == txID {
+								foundTx = true
+								break
+							}
+						}
+					}
+				}
+				if foundTx {
+					break
+				}
+			}
+
+			if foundTx {
+				results = append(results, &apiproto.SyncRunInfoForTx{
+					CorrelationId:   cid,
+					Timestamp:       meta.Timestamp.Format(time.RFC3339),
+					IntegrationName: meta.IntegrationName,
+				})
+				seen[cid] = true
+			}
+		}
+	}
+
+	return results
+}
+
+// Helper to extract transactions from unmarshaled JSON body
+func parseTransactionsFromJSON(serviceType string, body interface{}) []*apiproto.DetectedTransaction {
+	var txs []*apiproto.DetectedTransaction
+
+	parseTxObj := func(obj map[string]interface{}) (*apiproto.DetectedTransaction, bool) {
+		id := ""
+		if val, ok := obj["transactionId"].(string); ok {
+			id = val
+		} else if val, ok := obj["transaction_id"].(string); ok {
+			id = val
+		} else if val, ok := obj["orderId"].(string); ok {
+			id = val
+		} else if val, ok := obj["id"].(string); ok {
+			id = val
+		} else if val, ok := obj["entryReference"].(string); ok {
+			id = val
+		} else if val, ok := obj["entry_reference"].(string); ok {
+			id = val
+		}
+		if id == "" {
+			return nil, false
+		}
+
+		dt := &apiproto.DetectedTransaction{
+			ExternalId: id,
+		}
+
+		// Amount and Currency
+		amount := 0.0
+		currency := ""
+		if amtVal, ok := obj["transactionAmount"].(map[string]interface{}); ok {
+			if aStr, ok := amtVal["amount"].(string); ok {
+				amount, _ = strconv.ParseFloat(aStr, 64)
+			}
+			if cStr, ok := amtVal["currency"].(string); ok {
+				currency = cStr
+			}
+		} else if amtVal, ok := obj["transaction_amount"].(map[string]interface{}); ok {
+			if aStr, ok := amtVal["amount"].(string); ok {
+				amount, _ = strconv.ParseFloat(aStr, 64)
+			}
+			if cStr, ok := amtVal["currency"].(string); ok {
+				currency = cStr
+			}
+		} else if aNum, ok := obj["amount"].(float64); ok {
+			amount = aNum
+		} else if aStr, ok := obj["amount"].(string); ok {
+			amount, _ = strconv.ParseFloat(aStr, 64)
+		} else if cashNum, ok := obj["cash"].(float64); ok {
+			amount = cashNum
+		} else if totalNum, ok := obj["total"].(float64); ok {
+			amount = totalNum
+		}
+		dt.Amount = amount
+		dt.Currency = currency
+
+		// Description/Remittance
+		desc := ""
+		if val, ok := obj["remittanceInformationUnstructured"].(string); ok {
+			desc = val
+		} else if val, ok := obj["remittanceInformationUnstructuredArray"].([]interface{}); ok && len(val) > 0 {
+			var parts []string
+			for _, p := range val {
+				if s, ok := p.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+			desc = strings.Join(parts, " ")
+		} else if val, ok := obj["remittance_information"].([]interface{}); ok && len(val) > 0 {
+			var parts []string
+			for _, p := range val {
+				if s, ok := p.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+			desc = strings.Join(parts, " ")
+		} else if val, ok := obj["description"].(string); ok {
+			desc = val
+		} else if val, ok := obj["name"].(string); ok {
+			desc = val
+		} else if val, ok := obj["symbol"].(string); ok {
+			desc = val
+		}
+		dt.Description = desc
+
+		// Peer
+		peer := ""
+		if val, ok := obj["creditorName"].(string); ok {
+			peer = val
+		} else if val, ok := obj["debtorName"].(string); ok && peer == "" {
+			peer = val
+		} else if cred, ok := obj["creditor"].(map[string]interface{}); ok {
+			if name, ok := cred["name"].(string); ok {
+				peer = name
+			}
+		} else if deb, ok := obj["debtor"].(map[string]interface{}); ok && peer == "" {
+			if name, ok := deb["name"].(string); ok {
+				peer = name
+			}
+		} else if val, ok := obj["peer"].(string); ok {
+			peer = val
+		}
+		dt.Peer = peer
+
+		// Booking Date
+		date := ""
+		if val, ok := obj["bookingDate"].(string); ok {
+			date = val
+		} else if val, ok := obj["booking_date"].(string); ok {
+			date = val
+		} else if val, ok := obj["valueDate"].(string); ok {
+			date = val
+		} else if val, ok := obj["value_date"].(string); ok {
+			date = val
+		} else if val, ok := obj["date"].(string); ok {
+			date = val
+		} else if val, ok := obj["timestamp"].(string); ok {
+			date = val
+		} else if val, ok := obj["time"].(string); ok {
+			date = val
+		}
+		dt.BookingDate = date
+
+		// Raw JSON
+		rawBytes, _ := json.Marshal(obj)
+		dt.RawJson = string(rawBytes)
+
+		return dt, true
+	}
+
+	var scanVal func(val interface{})
+	scanVal = func(val interface{}) {
+		if val == nil {
+			return
+		}
+		switch v := val.(type) {
+		case map[string]interface{}:
+			if dt, ok := parseTxObj(v); ok {
+				txs = append(txs, dt)
+				return
+			}
+			for _, child := range v {
+				scanVal(child)
+			}
+		case []interface{}:
+			for _, child := range v {
+				scanVal(child)
+			}
+		}
+	}
+
+	scanVal(body)
+	return txs
+}
+
 

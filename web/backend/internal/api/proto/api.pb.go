@@ -7522,6 +7522,527 @@ func (x *SystemLogRequest) GetContainerId() string {
 	return ""
 }
 
+type SyncRun struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CorrelationId    string `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	IntegrationId    string `protobuf:"bytes,2,opt,name=integration_id,json=integrationId,proto3" json:"integration_id,omitempty"`
+	IntegrationName  string `protobuf:"bytes,3,opt,name=integration_name,json=integrationName,proto3" json:"integration_name,omitempty"`
+	ServiceType      string `protobuf:"bytes,4,opt,name=service_type,json=serviceType,proto3" json:"service_type,omitempty"`
+	Timestamp        string `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Status           string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	TransactionCount int32  `protobuf:"varint,7,opt,name=transaction_count,json=transactionCount,proto3" json:"transaction_count,omitempty"`
+	HasLogFiles      bool   `protobuf:"varint,8,opt,name=has_log_files,json=hasLogFiles,proto3" json:"has_log_files,omitempty"`
+}
+
+func (x *SyncRun) Reset() {
+	*x = SyncRun{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[100]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRun) ProtoMessage() {}
+
+func (x *SyncRun) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[100]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRun.ProtoReflect.Descriptor instead.
+func (*SyncRun) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *SyncRun) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *SyncRun) GetIntegrationId() string {
+	if x != nil {
+		return x.IntegrationId
+	}
+	return ""
+}
+
+func (x *SyncRun) GetIntegrationName() string {
+	if x != nil {
+		return x.IntegrationName
+	}
+	return ""
+}
+
+func (x *SyncRun) GetServiceType() string {
+	if x != nil {
+		return x.ServiceType
+	}
+	return ""
+}
+
+func (x *SyncRun) GetTimestamp() string {
+	if x != nil {
+		return x.Timestamp
+	}
+	return ""
+}
+
+func (x *SyncRun) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SyncRun) GetTransactionCount() int32 {
+	if x != nil {
+		return x.TransactionCount
+	}
+	return 0
+}
+
+func (x *SyncRun) GetHasLogFiles() bool {
+	if x != nil {
+		return x.HasLogFiles
+	}
+	return false
+}
+
+type SyncRunList struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Runs []*SyncRun `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+}
+
+func (x *SyncRunList) Reset() {
+	*x = SyncRunList{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[101]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRunList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRunList) ProtoMessage() {}
+
+func (x *SyncRunList) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[101]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRunList.ProtoReflect.Descriptor instead.
+func (*SyncRunList) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *SyncRunList) GetRuns() []*SyncRun {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
+type SyncRunDetailsRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CorrelationId string `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+}
+
+func (x *SyncRunDetailsRequest) Reset() {
+	*x = SyncRunDetailsRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[102]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRunDetailsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRunDetailsRequest) ProtoMessage() {}
+
+func (x *SyncRunDetailsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[102]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRunDetailsRequest.ProtoReflect.Descriptor instead.
+func (*SyncRunDetailsRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *SyncRunDetailsRequest) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+type DetectedTransaction struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ExternalId    string              `protobuf:"bytes,1,opt,name=external_id,json=externalId,proto3" json:"external_id,omitempty"`
+	Amount        float64             `protobuf:"fixed64,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency      string              `protobuf:"bytes,3,opt,name=currency,proto3" json:"currency,omitempty"`
+	Description   string              `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Peer          string              `protobuf:"bytes,5,opt,name=peer,proto3" json:"peer,omitempty"`
+	BookingDate   string              `protobuf:"bytes,6,opt,name=booking_date,json=bookingDate,proto3" json:"booking_date,omitempty"`
+	RawJson       string              `protobuf:"bytes,7,opt,name=raw_json,json=rawJson,proto3" json:"raw_json,omitempty"`
+	OtherSyncRuns []*SyncRunInfoForTx `protobuf:"bytes,8,rep,name=other_sync_runs,json=otherSyncRuns,proto3" json:"other_sync_runs,omitempty"`
+}
+
+func (x *DetectedTransaction) Reset() {
+	*x = DetectedTransaction{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[103]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DetectedTransaction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DetectedTransaction) ProtoMessage() {}
+
+func (x *DetectedTransaction) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[103]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DetectedTransaction.ProtoReflect.Descriptor instead.
+func (*DetectedTransaction) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *DetectedTransaction) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetAmount() float64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *DetectedTransaction) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetPeer() string {
+	if x != nil {
+		return x.Peer
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetBookingDate() string {
+	if x != nil {
+		return x.BookingDate
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetRawJson() string {
+	if x != nil {
+		return x.RawJson
+	}
+	return ""
+}
+
+func (x *DetectedTransaction) GetOtherSyncRuns() []*SyncRunInfoForTx {
+	if x != nil {
+		return x.OtherSyncRuns
+	}
+	return nil
+}
+
+type SyncRunInfoForTx struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CorrelationId   string `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	Timestamp       string `protobuf:"bytes,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	IntegrationName string `protobuf:"bytes,3,opt,name=integration_name,json=integrationName,proto3" json:"integration_name,omitempty"`
+}
+
+func (x *SyncRunInfoForTx) Reset() {
+	*x = SyncRunInfoForTx{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[104]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRunInfoForTx) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRunInfoForTx) ProtoMessage() {}
+
+func (x *SyncRunInfoForTx) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[104]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRunInfoForTx.ProtoReflect.Descriptor instead.
+func (*SyncRunInfoForTx) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *SyncRunInfoForTx) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *SyncRunInfoForTx) GetTimestamp() string {
+	if x != nil {
+		return x.Timestamp
+	}
+	return ""
+}
+
+func (x *SyncRunInfoForTx) GetIntegrationName() string {
+	if x != nil {
+		return x.IntegrationName
+	}
+	return ""
+}
+
+type SyncRawLogFile struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Filename  string `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
+	Content   string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	IsRequest bool   `protobuf:"varint,3,opt,name=is_request,json=isRequest,proto3" json:"is_request,omitempty"`
+}
+
+func (x *SyncRawLogFile) Reset() {
+	*x = SyncRawLogFile{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[105]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRawLogFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRawLogFile) ProtoMessage() {}
+
+func (x *SyncRawLogFile) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[105]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRawLogFile.ProtoReflect.Descriptor instead.
+func (*SyncRawLogFile) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *SyncRawLogFile) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *SyncRawLogFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *SyncRawLogFile) GetIsRequest() bool {
+	if x != nil {
+		return x.IsRequest
+	}
+	return false
+}
+
+type SyncRunDetailsResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CorrelationId        string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	IntegrationId        string                 `protobuf:"bytes,2,opt,name=integration_id,json=integrationId,proto3" json:"integration_id,omitempty"`
+	IntegrationName      string                 `protobuf:"bytes,3,opt,name=integration_name,json=integrationName,proto3" json:"integration_name,omitempty"`
+	ServiceType          string                 `protobuf:"bytes,4,opt,name=service_type,json=serviceType,proto3" json:"service_type,omitempty"`
+	Timestamp            string                 `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	DetectedTransactions []*DetectedTransaction `protobuf:"bytes,6,rep,name=detected_transactions,json=detectedTransactions,proto3" json:"detected_transactions,omitempty"`
+	RawLogs              []*SyncRawLogFile      `protobuf:"bytes,7,rep,name=raw_logs,json=rawLogs,proto3" json:"raw_logs,omitempty"`
+}
+
+func (x *SyncRunDetailsResponse) Reset() {
+	*x = SyncRunDetailsResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[106]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SyncRunDetailsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRunDetailsResponse) ProtoMessage() {}
+
+func (x *SyncRunDetailsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[106]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRunDetailsResponse.ProtoReflect.Descriptor instead.
+func (*SyncRunDetailsResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *SyncRunDetailsResponse) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+func (x *SyncRunDetailsResponse) GetIntegrationId() string {
+	if x != nil {
+		return x.IntegrationId
+	}
+	return ""
+}
+
+func (x *SyncRunDetailsResponse) GetIntegrationName() string {
+	if x != nil {
+		return x.IntegrationName
+	}
+	return ""
+}
+
+func (x *SyncRunDetailsResponse) GetServiceType() string {
+	if x != nil {
+		return x.ServiceType
+	}
+	return ""
+}
+
+func (x *SyncRunDetailsResponse) GetTimestamp() string {
+	if x != nil {
+		return x.Timestamp
+	}
+	return ""
+}
+
+func (x *SyncRunDetailsResponse) GetDetectedTransactions() []*DetectedTransaction {
+	if x != nil {
+		return x.DetectedTransactions
+	}
+	return nil
+}
+
+func (x *SyncRunDetailsResponse) GetRawLogs() []*SyncRawLogFile {
+	if x != nil {
+		return x.RawLogs
+	}
+	return nil
+}
+
 var File_api_proto protoreflect.FileDescriptor
 
 var file_api_proto_rawDesc = []byte{
@@ -8596,7 +9117,87 @@ var file_api_proto_rawDesc = []byte{
 	0x10, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x4c, 0x6f, 0x67, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
 	0x74, 0x12, 0x21, 0x0a, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x5f, 0x69,
 	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e,
-	0x65, 0x72, 0x49, 0x64, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
+	0x65, 0x72, 0x49, 0x64, 0x22, 0xac, 0x02, 0x0a, 0x07, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e,
+	0x12, 0x25, 0x0a, 0x0e, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
+	0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x64, 0x12, 0x25, 0x0a, 0x0e, 0x69, 0x6e, 0x74, 0x65, 0x67,
+	0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0d, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x64, 0x12, 0x29,
+	0x0a, 0x10, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x6e, 0x61,
+	0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x65, 0x72,
+	0x76, 0x69, 0x63, 0x65, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0b, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1c, 0x0a, 0x09,
+	0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x74,
+	0x61, 0x74, 0x75, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74,
+	0x75, 0x73, 0x12, 0x2b, 0x0a, 0x11, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x05, 0x52, 0x10, 0x74,
+	0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12,
+	0x22, 0x0a, 0x0d, 0x68, 0x61, 0x73, 0x5f, 0x6c, 0x6f, 0x67, 0x5f, 0x66, 0x69, 0x6c, 0x65, 0x73,
+	0x18, 0x08, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0b, 0x68, 0x61, 0x73, 0x4c, 0x6f, 0x67, 0x46, 0x69,
+	0x6c, 0x65, 0x73, 0x22, 0x2f, 0x0a, 0x0b, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e, 0x4c, 0x69,
+	0x73, 0x74, 0x12, 0x20, 0x0a, 0x04, 0x72, 0x75, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
+	0x32, 0x0c, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e, 0x52, 0x04,
+	0x72, 0x75, 0x6e, 0x73, 0x22, 0x3e, 0x0a, 0x15, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e, 0x44,
+	0x65, 0x74, 0x61, 0x69, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x25, 0x0a,
+	0x0e, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69,
+	0x6f, 0x6e, 0x49, 0x64, 0x22, 0x9d, 0x02, 0x0a, 0x13, 0x44, 0x65, 0x74, 0x65, 0x63, 0x74, 0x65,
+	0x64, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1f, 0x0a, 0x0b,
+	0x65, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x0a, 0x65, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x49, 0x64, 0x12, 0x16, 0x0a,
+	0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x01, 0x52, 0x06, 0x61,
+	0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6e, 0x63,
+	0x79, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6e, 0x63,
+	0x79, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74,
+	0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x70, 0x65, 0x65, 0x72, 0x18, 0x05, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x04, 0x70, 0x65, 0x65, 0x72, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6f, 0x6f, 0x6b, 0x69,
+	0x6e, 0x67, 0x5f, 0x64, 0x61, 0x74, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x62,
+	0x6f, 0x6f, 0x6b, 0x69, 0x6e, 0x67, 0x44, 0x61, 0x74, 0x65, 0x12, 0x19, 0x0a, 0x08, 0x72, 0x61,
+	0x77, 0x5f, 0x6a, 0x73, 0x6f, 0x6e, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x72, 0x61,
+	0x77, 0x4a, 0x73, 0x6f, 0x6e, 0x12, 0x3d, 0x0a, 0x0f, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x5f, 0x73,
+	0x79, 0x6e, 0x63, 0x5f, 0x72, 0x75, 0x6e, 0x73, 0x18, 0x08, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15,
+	0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e, 0x49, 0x6e, 0x66, 0x6f,
+	0x46, 0x6f, 0x72, 0x54, 0x78, 0x52, 0x0d, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x53, 0x79, 0x6e, 0x63,
+	0x52, 0x75, 0x6e, 0x73, 0x22, 0x82, 0x01, 0x0a, 0x10, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e,
+	0x49, 0x6e, 0x66, 0x6f, 0x46, 0x6f, 0x72, 0x54, 0x78, 0x12, 0x25, 0x0a, 0x0e, 0x63, 0x6f, 0x72,
+	0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x0d, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x64,
+	0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x29,
+	0x0a, 0x10, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x6e, 0x61,
+	0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4e, 0x61, 0x6d, 0x65, 0x22, 0x65, 0x0a, 0x0e, 0x53, 0x79, 0x6e,
+	0x63, 0x52, 0x61, 0x77, 0x4c, 0x6f, 0x67, 0x46, 0x69, 0x6c, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x66,
+	0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x66,
+	0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65,
+	0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x69, 0x73, 0x5f, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x69, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x22, 0xd1, 0x02, 0x0a, 0x16, 0x53, 0x79, 0x6e, 0x63, 0x52, 0x75, 0x6e, 0x44, 0x65, 0x74, 0x61,
+	0x69, 0x6c, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x25, 0x0a, 0x0e, 0x63,
+	0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x0d, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x49, 0x64, 0x12, 0x25, 0x0a, 0x0e, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f,
+	0x6e, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x69, 0x6e, 0x74, 0x65,
+	0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x64, 0x12, 0x29, 0x0a, 0x10, 0x69, 0x6e, 0x74,
+	0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x0f, 0x69, 0x6e, 0x74, 0x65, 0x67, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x4e, 0x61, 0x6d, 0x65, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x5f,
+	0x74, 0x79, 0x70, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x73, 0x65, 0x72, 0x76,
+	0x69, 0x63, 0x65, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73,
+	0x74, 0x61, 0x6d, 0x70, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65,
+	0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x4d, 0x0a, 0x15, 0x64, 0x65, 0x74, 0x65, 0x63, 0x74, 0x65,
+	0x64, 0x5f, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x06,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x44, 0x65, 0x74, 0x65, 0x63,
+	0x74, 0x65, 0x64, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x14,
+	0x64, 0x65, 0x74, 0x65, 0x63, 0x74, 0x65, 0x64, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74,
+	0x69, 0x6f, 0x6e, 0x73, 0x12, 0x2e, 0x0a, 0x08, 0x72, 0x61, 0x77, 0x5f, 0x6c, 0x6f, 0x67, 0x73,
+	0x18, 0x07, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x79, 0x6e,
+	0x63, 0x52, 0x61, 0x77, 0x4c, 0x6f, 0x67, 0x46, 0x69, 0x6c, 0x65, 0x52, 0x07, 0x72, 0x61, 0x77,
+	0x4c, 0x6f, 0x67, 0x73, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
 	0x6f, 0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61, 0x7a, 0x74, 0x2f, 0x6d, 0x79, 0x2d, 0x62, 0x75, 0x64,
 	0x67, 0x65, 0x74, 0x2d, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x2f, 0x62,
 	0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f,
@@ -8616,7 +9217,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 114)
 var file_api_proto_goTypes = []interface{}{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Empty)(nil),                       // 1: api.Empty
@@ -8718,13 +9319,20 @@ var file_api_proto_goTypes = []interface{}{
 	(*ContainerInfo)(nil),               // 97: api.ContainerInfo
 	(*ContainerList)(nil),               // 98: api.ContainerList
 	(*SystemLogRequest)(nil),            // 99: api.SystemLogRequest
-	nil,                                 // 100: api.YieldMap.YieldsEntry
-	nil,                                 // 101: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 102: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 103: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 104: api.Scenario.EtfParamsEntry
-	nil,                                 // 105: api.SubExpense.MetadataEntry
-	nil,                                 // 106: api.IntegrationSyncRequest.PsuHeadersEntry
+	(*SyncRun)(nil),                     // 100: api.SyncRun
+	(*SyncRunList)(nil),                 // 101: api.SyncRunList
+	(*SyncRunDetailsRequest)(nil),       // 102: api.SyncRunDetailsRequest
+	(*DetectedTransaction)(nil),         // 103: api.DetectedTransaction
+	(*SyncRunInfoForTx)(nil),            // 104: api.SyncRunInfoForTx
+	(*SyncRawLogFile)(nil),              // 105: api.SyncRawLogFile
+	(*SyncRunDetailsResponse)(nil),      // 106: api.SyncRunDetailsResponse
+	nil,                                 // 107: api.YieldMap.YieldsEntry
+	nil,                                 // 108: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 109: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 110: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 111: api.Scenario.EtfParamsEntry
+	nil,                                 // 112: api.SubExpense.MetadataEntry
+	nil,                                 // 113: api.IntegrationSyncRequest.PsuHeadersEntry
 }
 var file_api_proto_depIdxs = []int32{
 	10,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -8733,10 +9341,10 @@ var file_api_proto_depIdxs = []int32{
 	21,  // 3: api.IntegrationList.integrations:type_name -> api.Integration
 	23,  // 4: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	20,  // 5: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	100, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	101, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	102, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	103, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	107, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	108, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	109, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	110, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	28,  // 10: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	28,  // 11: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	28,  // 12: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -8746,7 +9354,7 @@ var file_api_proto_depIdxs = []int32{
 	29,  // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	32,  // 17: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
 	34,  // 18: api.Scenario.entities:type_name -> api.ScenarioEntity
-	104, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	111, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	36,  // 20: api.ScenarioList.scenarios:type_name -> api.Scenario
 	38,  // 21: api.ETFTracker.stitching_segments:type_name -> api.HistoryStitchingSegment
 	40,  // 22: api.TrackerChart.points:type_name -> api.TrackerChartPoint
@@ -8765,7 +9373,7 @@ var file_api_proto_depIdxs = []int32{
 	52,  // 35: api.BillVersion.slices:type_name -> api.TimeSlice
 	56,  // 36: api.Bill.active_version:type_name -> api.BillVersion
 	57,  // 37: api.BillList.bills:type_name -> api.Bill
-	105, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
+	112, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
 	52,  // 39: api.ExpenseVersion.slices:type_name -> api.TimeSlice
 	59,  // 40: api.ExpenseVersion.sub_expenses:type_name -> api.SubExpense
 	60,  // 41: api.Expense.active_version:type_name -> api.ExpenseVersion
@@ -8779,15 +9387,19 @@ var file_api_proto_depIdxs = []int32{
 	71,  // 49: api.TransactionRuleList.rules:type_name -> api.TransactionRule
 	75,  // 50: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
 	80,  // 51: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
-	106, // 52: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
+	113, // 52: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
 	91,  // 53: api.UserProfile.authenticators:type_name -> api.UserAuthenticator
 	97,  // 54: api.ContainerList.containers:type_name -> api.ContainerInfo
-	35,  // 55: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
-	56,  // [56:56] is the sub-list for method output_type
-	56,  // [56:56] is the sub-list for method input_type
-	56,  // [56:56] is the sub-list for extension type_name
-	56,  // [56:56] is the sub-list for extension extendee
-	0,   // [0:56] is the sub-list for field type_name
+	100, // 55: api.SyncRunList.runs:type_name -> api.SyncRun
+	104, // 56: api.DetectedTransaction.other_sync_runs:type_name -> api.SyncRunInfoForTx
+	103, // 57: api.SyncRunDetailsResponse.detected_transactions:type_name -> api.DetectedTransaction
+	105, // 58: api.SyncRunDetailsResponse.raw_logs:type_name -> api.SyncRawLogFile
+	35,  // 59: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
+	60,  // [60:60] is the sub-list for method output_type
+	60,  // [60:60] is the sub-list for method input_type
+	60,  // [60:60] is the sub-list for extension type_name
+	60,  // [60:60] is the sub-list for extension extendee
+	0,   // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -9996,6 +10608,90 @@ func file_api_proto_init() {
 				return nil
 			}
 		}
+		file_api_proto_msgTypes[100].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRun); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[101].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRunList); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[102].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRunDetailsRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[103].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DetectedTransaction); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[104].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRunInfoForTx); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[105].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRawLogFile); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[106].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SyncRunDetailsResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -10003,7 +10699,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_api_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   107,
+			NumMessages:   114,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
