@@ -1,12 +1,17 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -17,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"golang.org/x/crypto/hkdf"
 )
 
 func init() {
@@ -1284,6 +1290,12 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "023_fix_upct_posd_transitions_from_logs",
+		Run: func(db *sql.DB) error {
+			return FixUPCTTransitions(db)
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {
@@ -1862,4 +1874,547 @@ func NormalizeJSONColumns(db *sql.DB) {
 			log.Printf("[DB] scenarios JSON columns migration complete.")
 		}
 	}
+}
+
+type logTx struct {
+	Ref        string
+	Amount     float64
+	Receiver   string
+	Date       time.Time
+	SubCode    string
+	IsPending  bool
+	StatusCode string
+}
+
+type enableBankingTx struct {
+	EntryReference     string `json:"entry_reference"`
+	TransactionID      string `json:"transaction_id"`
+	BookingDate        string `json:"booking_date"`
+	ValueDate          string `json:"value_date"`
+	CreditDebit        string `json:"credit_debit_indicator"`
+	Status             string `json:"status"`
+	TransactionAmount  *struct {
+		Amount string `json:"amount"`
+	} `json:"transaction_amount"`
+	Creditor *struct {
+		Name string `json:"name"`
+	} `json:"creditor"`
+	Debtor *struct {
+		Name string `json:"name"`
+	} `json:"debtor"`
+	BankTransactionCode *struct {
+		SubCode string `json:"sub_code"`
+	} `json:"bank_transaction_code"`
+}
+
+type goCardlessTx struct {
+	TransactionID   string `json:"transactionId"`
+	EntryReference  string `json:"entryReference"`
+	BookingDate     string `json:"bookingDate"`
+	ValueDate       string `json:"valueDate"`
+	CreditorName    string `json:"creditorName"`
+	DebtorName      string `json:"debtorName"`
+	TransactionAmount *struct {
+		Amount string `json:"amount"`
+	} `json:"transactionAmount"`
+}
+
+type syncRespBody struct {
+	Body struct {
+		Transactions interface{} `json:"transactions"`
+	} `json:"body"`
+}
+
+func parseLogFile(filePath string) ([]logTx, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp syncRespBody
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	var txs []logTx
+
+	// Check if Transactions is a slice (EnableBanking)
+	txsSliceJSON, err := json.Marshal(resp.Body.Transactions)
+	if err != nil {
+		return nil, err
+	}
+
+	var ebTxs []enableBankingTx
+	if err := json.Unmarshal(txsSliceJSON, &ebTxs); err == nil && len(ebTxs) > 0 {
+		for _, tx := range ebTxs {
+			ref := tx.EntryReference
+			if ref == "" {
+				ref = tx.TransactionID
+			}
+			if ref == "" {
+				continue
+			}
+
+			dateStr := tx.BookingDate
+			if dateStr == "" {
+				dateStr = tx.ValueDate
+			}
+			if dateStr == "" {
+				continue
+			}
+			tDate, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				continue
+			}
+
+			var amount float64
+			if tx.TransactionAmount != nil {
+				fmt.Sscanf(tx.TransactionAmount.Amount, "%f", &amount)
+			}
+			if tx.CreditDebit == "DBIT" {
+				amount = -amount
+			}
+
+			receiver := ""
+			if tx.Creditor != nil {
+				receiver = tx.Creditor.Name
+			} else if tx.Debtor != nil {
+				receiver = tx.Debtor.Name
+			}
+
+			subcode := ""
+			if tx.BankTransactionCode != nil {
+				subcode = tx.BankTransactionCode.SubCode
+			}
+
+			isPending := (subcode == "UPCT" || (tx.Status != "" && tx.Status != "BOOK" && tx.Status != "BOOKED" && tx.Status != "booked"))
+
+			txs = append(txs, logTx{
+				Ref:        ref,
+				Amount:     amount,
+				Receiver:   receiver,
+				Date:       tDate,
+				SubCode:    subcode,
+				IsPending:  isPending,
+				StatusCode: tx.Status,
+			})
+		}
+		return txs, nil
+	}
+
+	// Try GoCardless format
+	var gcTxs map[string][]goCardlessTx
+	if err := json.Unmarshal(txsSliceJSON, &gcTxs); err == nil {
+		for section, list := range gcTxs {
+			for _, tx := range list {
+				ref := tx.TransactionID
+				if ref == "" {
+					ref = tx.EntryReference
+				}
+				if ref == "" {
+					continue
+				}
+
+				dateStr := tx.BookingDate
+				if dateStr == "" {
+					dateStr = tx.ValueDate
+				}
+				if dateStr == "" {
+					continue
+				}
+				tDate, err := time.Parse("2006-01-02", dateStr)
+				if err != nil {
+					continue
+				}
+
+				var amount float64
+				if tx.TransactionAmount != nil {
+					fmt.Sscanf(tx.TransactionAmount.Amount, "%f", &amount)
+				}
+
+				receiver := tx.CreditorName
+				if receiver == "" {
+					receiver = tx.DebtorName
+				}
+
+				isPending := (section == "pending")
+
+				txs = append(txs, logTx{
+					Ref:        ref,
+					Amount:     amount,
+					Receiver:   receiver,
+					Date:       tDate,
+					SubCode:    "",
+					IsPending:  isPending,
+					StatusCode: section,
+				})
+			}
+		}
+		return txs, nil
+	}
+
+	return nil, nil
+}
+
+func findServerID() (string, error) {
+	paths := []string{
+		"/app/data/server.id",
+		"web/data/server.id",
+		"data/server.id",
+		"./server.id",
+		"server.id",
+	}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			return strings.TrimSpace(string(data)), nil
+		}
+	}
+	return "", fmt.Errorf("server.id not found")
+}
+
+type dbAuthenticator struct {
+	ID             []byte
+	CredentialJSON string
+}
+
+type dbKeySlot struct {
+	AuthenticatorID []byte
+	EncryptedKey    string
+}
+
+func deriveIdentityKey(serverID string, pubKey []byte) ([]byte, error) {
+	hash := sha256.New
+	masterSecret := make([]byte, 0, len(serverID)+len(pubKey))
+	masterSecret = append(masterSecret, serverID...)
+	masterSecret = append(masterSecret, pubKey...)
+
+	hkdfReader := hkdf.New(hash, masterSecret, []byte("IDENTITY_V1"), nil)
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(hkdfReader, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func decryptAESGCM(key []byte, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+func getIntegrationMasterKey(db *sql.DB, serverID string, userID string, integrationID string) ([]byte, error) {
+	rows, err := db.Query("SELECT authenticator_id, encrypted_key FROM integration_key_slots WHERE integration_id = $1", integrationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var slots []dbKeySlot
+	for rows.Next() {
+		var slot dbKeySlot
+		if err := rows.Scan(&slot.AuthenticatorID, &slot.EncryptedKey); err == nil {
+			slots = append(slots, slot)
+		}
+	}
+
+	if len(slots) == 0 {
+		return nil, fmt.Errorf("no key slots found")
+	}
+
+	rows2, err := db.Query("SELECT id, credential_json FROM authenticators WHERE user_id = $1", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows2.Close()
+
+	var auths []dbAuthenticator
+	for rows2.Next() {
+		var auth dbAuthenticator
+		if err := rows2.Scan(&auth.ID, &auth.CredentialJSON); err == nil {
+			auths = append(auths, auth)
+		}
+	}
+
+	for _, auth := range auths {
+		var matchingSlot *dbKeySlot
+		for _, slot := range slots {
+			if bytes.Equal(slot.AuthenticatorID, auth.ID) {
+				matchingSlot = &slot
+				break
+			}
+		}
+		if matchingSlot == nil {
+			continue
+		}
+
+		var cred struct {
+			PublicKey []byte `json:"PublicKey"`
+		}
+		credData, err := base64.StdEncoding.DecodeString(auth.CredentialJSON)
+		if err != nil {
+			credData = []byte(auth.CredentialJSON)
+		}
+		if err := json.Unmarshal(credData, &cred); err != nil {
+			continue
+		}
+
+		ik, err := deriveIdentityKey(serverID, cred.PublicKey)
+		if err != nil {
+			continue
+		}
+
+		wrapped, err := base64.StdEncoding.DecodeString(matchingSlot.EncryptedKey)
+		if err != nil {
+			wrapped = []byte(matchingSlot.EncryptedKey)
+		}
+
+		mik, err := decryptAESGCM(ik, wrapped)
+		if err == nil {
+			return mik, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to unwrap master key")
+}
+
+func getLatestCorrelationID(db *sql.DB, integrationID string) (string, error) {
+	var cid string
+	err := db.QueryRow("SELECT correlation_id FROM bank_transactions WHERE integration_id = $1 ORDER BY synced_at DESC LIMIT 1", integrationID).Scan(&cid)
+	return cid, err
+}
+
+func decryptTransactionData(serverID string, encryptedData string, key []byte) ([]byte, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return nil, err
+	}
+	return decryptAESGCM(key, ciphertext)
+}
+
+func FixUPCTTransitions(db *sql.DB) error {
+	log.Printf("[DB] Running UPCT -> POSD transition migration...")
+
+	serverID, err := findServerID()
+	if err != nil {
+		log.Printf("[DB Warning] Skipping UPCT migration: %v", err)
+		return nil
+	}
+
+	logsDir := os.Getenv("LOGS_DIR")
+	if logsDir == "" {
+		logsDir = "/app/logs"
+	}
+	logsDir = filepath.Join(logsDir, "sync_runs")
+
+	type dbIntegration struct {
+		ID     string
+		UserID string
+	}
+	rows, err := db.Query("SELECT id, user_id FROM integrations")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var integrations []dbIntegration
+	for rows.Next() {
+		var i dbIntegration
+		if err := rows.Scan(&i.ID, &i.UserID); err == nil {
+			integrations = append(integrations, i)
+		}
+	}
+
+	for _, integration := range integrations {
+		mik, err := getIntegrationMasterKey(db, serverID, integration.UserID, integration.ID)
+		if err != nil {
+			log.Printf("[DB Warning] Failed to get master key for integration %s: %v", integration.ID, err)
+			continue
+		}
+
+		latestCID, err := getLatestCorrelationID(db, integration.ID)
+		var latestRefs = make(map[string]bool)
+		if err == nil && latestCID != "" {
+			dirPath := filepath.Join(logsDir, latestCID)
+			entries, err := os.ReadDir(dirPath)
+			if err == nil {
+				for _, entry := range entries {
+					if !entry.IsDir() && strings.HasSuffix(entry.Name(), "_resp.json") {
+						txs, err := parseLogFile(filepath.Join(dirPath, entry.Name()))
+						if err == nil {
+							for _, tx := range txs {
+								latestRefs[tx.Ref] = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		type dbTx struct {
+			ID            string
+			ExternalID    string
+			EncryptedData string
+		}
+		rowsTx, err := db.Query("SELECT id, external_id, encrypted_data FROM bank_transactions WHERE integration_id = $1 AND is_deleted = FALSE", integration.ID)
+		if err != nil {
+			continue
+		}
+
+		var txList []dbTx
+		for rowsTx.Next() {
+			var t dbTx
+			if err := rowsTx.Scan(&t.ID, &t.ExternalID, &t.EncryptedData); err == nil {
+				txList = append(txList, t)
+			}
+		}
+		rowsTx.Close()
+
+		type parsedTx struct {
+			dbID       string
+			externalID string
+			amount     float64
+			receiver   string
+			date       time.Time
+			isPending  bool
+		}
+
+		var decryptedTxs []parsedTx
+		for _, t := range txList {
+			decrypted, err := decryptTransactionData(serverID, t.EncryptedData, mik)
+			if err != nil {
+				continue
+			}
+
+			var rawMap map[string]interface{}
+			if err := json.Unmarshal(decrypted, &rawMap); err != nil {
+				continue
+			}
+
+			var amount float64
+			if amtVal, ok := rawMap["amount"].(float64); ok {
+				amount = amtVal
+			}
+			
+			var txDate time.Time
+			if dateStr, ok := rawMap["date"].(string); ok {
+				txDate, _ = time.Parse("2006-01-02", dateStr)
+				if txDate.IsZero() {
+					txDate, _ = time.Parse(time.RFC3339, dateStr)
+				}
+			}
+
+			receiver := ""
+			if recVal, ok := rawMap["receiver"].(string); ok {
+				receiver = recVal
+			}
+
+			subcode := ""
+			if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
+				if sc, ok := codeObj["sub_code"].(string); ok {
+					subcode = sc
+				}
+			}
+
+			isPending := (subcode == "UPCT")
+			if status, ok := rawMap["status"].(string); ok {
+				if status == "PENDING_REJECTION" || (status != "BOOK" && status != "BOOKED" && status != "booked" && status != "") {
+					isPending = true
+				}
+			}
+
+			decryptedTxs = append(decryptedTxs, parsedTx{
+				dbID:       t.ID,
+				externalID: t.ExternalID,
+				amount:     amount,
+				receiver:   receiver,
+				date:       txDate,
+				isPending:  isPending,
+			})
+		}
+
+		normalizeName := func(name string) string {
+			name = strings.ToLower(name)
+			var sb strings.Builder
+			for _, r := range name {
+				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+					sb.WriteRune(r)
+				}
+			}
+			return sb.String()
+		}
+
+		for _, pTx := range decryptedTxs {
+			if !pTx.isPending {
+				continue
+			}
+
+			if len(latestRefs) > 0 && latestRefs[pTx.externalID] {
+				continue
+			}
+
+			for _, other := range decryptedTxs {
+				if other.dbID == pTx.dbID || other.isPending {
+					continue
+				}
+
+				diff := other.date.Sub(pTx.date)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff.Hours() > 72.0 {
+					continue
+				}
+
+				diffAmt := other.amount - pTx.amount
+				if diffAmt < 0 {
+					diffAmt = -diffAmt
+				}
+				if diffAmt >= 0.01 {
+					continue
+				}
+
+				n1 := normalizeName(pTx.receiver)
+				n2 := normalizeName(other.receiver)
+				isSimilar := false
+				if n1 == n2 || (n1 != "" && n2 != "" && (strings.Contains(n1, n2) || strings.Contains(n2, n1))) {
+					isSimilar = true
+				} else if strings.Contains(n1, "paypal") && strings.Contains(n2, "paypal") {
+					isSimilar = true
+				} else if strings.Contains(n1, "amzn") && strings.Contains(n2, "amzn") {
+					isSimilar = true
+				} else if strings.Contains(n1, "amazon") && strings.Contains(n2, "amazon") {
+					isSimilar = true
+				} else if strings.Contains(n1, "lidl") && strings.Contains(n2, "lidl") {
+					isSimilar = true
+				}
+
+				if isSimilar {
+					log.Printf("[DB MIGRATION] Soft-deleting transitioned pending duplicate transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) matching finalized %s.",
+						pTx.dbID, pTx.externalID, pTx.amount, pTx.receiver, other.dbID)
+					_, err = db.Exec("UPDATE bank_transactions SET is_deleted = TRUE, internal_status = 'EXPIRED_REJECTION' WHERE id = $1", pTx.dbID)
+					if err != nil {
+						log.Printf("[DB MIGRATION Warning] Failed to delete transaction: %v", err)
+					}
+					break
+				}
+			}
+		}
+	}
+
+	return nil
 }
