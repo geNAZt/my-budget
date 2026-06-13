@@ -303,10 +303,22 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 			status := ""
 			timestamp := ""
 
+			// Pre-check for log files to use in cleanup and later
+			respFiles, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_resp.json"))
+			reqFiles, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_req.json"))
+			isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
+
 			if hasMeta {
 				if meta.UserID != userID {
 					continue
 				}
+
+				// Cleanup: delete empty logs older than 24h
+				if isEmpty && time.Since(meta.Timestamp) > 24*time.Hour {
+					os.RemoveAll(filepath.Join(logsDir, correlationID))
+					continue
+				}
+
 				integrationID = meta.IntegrationID
 				integrationName = meta.IntegrationName
 				serviceType = meta.ServiceType
@@ -316,18 +328,31 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 				// Check db mappings
 				mapping, ok := dbMappings[correlationID]
 				if ok {
+					// Cleanup: delete empty logs older than 24h
+					if isEmpty {
+						if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > 24*time.Hour {
+							os.RemoveAll(filepath.Join(logsDir, correlationID))
+							continue
+						}
+					}
+
 					integrationID = mapping.IntegrationID
 					integrationName = mapping.IntegrationName
 					serviceType = mapping.ServiceType
 					status = "COMPLETED"
 				} else {
 					// Fallback: guess/match based on user's integrations and log files
-					matches, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_resp.json"))
-					if len(matches) == 0 {
-						matches, _ = filepath.Glob(filepath.Join(logsDir, correlationID, "*_req.json"))
-					}
-					if len(matches) == 0 {
+					if isEmpty {
+						// Cleanup orphaned empty old logs
+						if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > 24*time.Hour {
+							os.RemoveAll(filepath.Join(logsDir, correlationID))
+						}
 						continue
+					}
+
+					matches := respFiles
+					if len(matches) == 0 {
+						matches = reqFiles
 					}
 
 					detectedST := ""
@@ -396,8 +421,7 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 
 			// Parse response files in the folder to count transactions
 			txCount := int32(0)
-			matches, _ := filepath.Glob(filepath.Join(logsDir, correlationID, "*_resp.json"))
-			for _, rf := range matches {
+			for _, rf := range respFiles {
 				if content, err := os.ReadFile(rf); err == nil {
 					var dump struct {
 						Body interface{} `json:"body"`
@@ -417,7 +441,7 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 				Timestamp:        timestamp,
 				Status:           status,
 				TransactionCount: txCount,
-				HasLogFiles:      len(matches) > 0,
+				HasLogFiles:      !isEmpty,
 			})
 		}
 	}
