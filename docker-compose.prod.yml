@@ -58,14 +58,14 @@ services:
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_CONFIG_PATH:-~/.docker}:/config:ro
     environment:
       - WATCHTOWER_DEBUG=true
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_POLL_INTERVAL=60
       - WATCHTOWER_ROLLING_RESTART=true
-      - REPO_USER=${REPO_USER}
-      - REPO_PASS=${REPO_PASS}
+      - DOCKER_CONFIG=/config
     # No command needed as we use environment variables for configuration
 
 volumes:
