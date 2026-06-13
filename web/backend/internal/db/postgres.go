@@ -674,14 +674,16 @@ func InitDB(dsn string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	migrate(db)
+	if err := runMigrations(db); err != nil {
+		return nil, err
+	}
 
 	return db, nil
 }
 
 func hasColumn(db *sql.DB, table, column string) bool {
 	var name string
-	query := "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2"
+	query := "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema()"
 	err := db.QueryRow(query, table, column).Scan(&name)
 	if err != nil {
 		return false
@@ -691,7 +693,7 @@ func hasColumn(db *sql.DB, table, column string) bool {
 
 func columnDataType(db *sql.DB, table, column string) string {
 	var dataType string
-	query := "SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2"
+	query := "SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema()"
 	if err := db.QueryRow(query, table, column).Scan(&dataType); err != nil {
 		return ""
 	}
@@ -750,341 +752,589 @@ func ensurePostgresTypes(db *sql.DB) {
 	}
 }
 
-func migrate(db *sql.DB) {
-	ensurePostgresTypes(db)
+type Migration struct {
+	ID  string
+	Run func(*sql.DB) error
+}
 
-	// Users table enhancements
-	if !hasColumn(db, "users", "dashboard_scenario_id") {
-		db.Exec("ALTER TABLE users ADD COLUMN dashboard_scenario_id TEXT")
-	}
-	if !hasColumn(db, "users", "dashboard_month_offset") {
-		db.Exec("ALTER TABLE users ADD COLUMN dashboard_month_offset INTEGER DEFAULT 0")
-	}
-	if !hasColumn(db, "users", "recovery_hash") {
-		db.Exec("ALTER TABLE users ADD COLUMN recovery_hash TEXT")
-	}
+var migrations = []Migration{
+	{
+		ID: "001_ensure_postgres_types",
+		Run: func(db *sql.DB) error {
+			ensurePostgresTypes(db)
+			return nil
+		},
+	},
+	{
+		ID: "002_users_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "users", "dashboard_scenario_id") {
+				if _, err := db.Exec("ALTER TABLE users ADD COLUMN dashboard_scenario_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "users", "dashboard_month_offset") {
+				if _, err := db.Exec("ALTER TABLE users ADD COLUMN dashboard_month_offset INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "users", "recovery_hash") {
+				if _, err := db.Exec("ALTER TABLE users ADD COLUMN recovery_hash TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "003_income_versions_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "income_versions", "stop_modification_id") {
+				if _, err := db.Exec("ALTER TABLE income_versions ADD COLUMN stop_modification_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "income_versions", "interval_increase_percentage") {
+				if _, err := db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_percentage DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "income_versions", "interval_increase_months") {
+				if _, err := db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_months INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "income_versions", "interval_increase_start_date") {
+				if _, err := db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_start_date TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "004_loan_versions_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "loan_versions", "early_payoff_penalty") {
+				if _, err := db.Exec("ALTER TABLE loan_versions ADD COLUMN early_payoff_penalty DOUBLE PRECISION DEFAULT 1"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "loan_versions", "next_loan_id") {
+				if _, err := db.Exec("ALTER TABLE loan_versions ADD COLUMN next_loan_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "loan_versions", "remainder_start_date") {
+				if _, err := db.Exec("ALTER TABLE loan_versions ADD COLUMN remainder_start_date TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "005_asset_versions_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "asset_versions", "dumping_loan_id") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN dumping_loan_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "asset_versions", "stop_modification_id") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN stop_modification_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "asset_versions", "withdrawal_penalty") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN withdrawal_penalty DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "asset_versions", "remainder_start_date") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN remainder_start_date TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "006_asset_version_sub_assets_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "asset_version_sub_assets", "expense_id") {
+				if _, err := db.Exec("ALTER TABLE asset_version_sub_assets ADD COLUMN expense_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "007_etf_stitching_segments",
+		Run: func(db *sql.DB) error {
+			_, err := db.Exec(`
+				CREATE TABLE IF NOT EXISTS asset_version_etf_stitching_segments (
+					id TEXT PRIMARY KEY,
+					etf_config_id TEXT NOT NULL,
+					provider TEXT DEFAULT '',
+					lookup_ticker TEXT DEFAULT '',
+					conversion_tracker TEXT DEFAULT '',
+					sort_order INTEGER DEFAULT 0,
+					FOREIGN KEY(etf_config_id) REFERENCES asset_version_etf_configs(id) ON DELETE CASCADE
+				)
+			`)
+			if err != nil {
+				return err
+			}
 
-	// Income versions
-	if !hasColumn(db, "income_versions", "stop_modification_id") {
-		db.Exec("ALTER TABLE income_versions ADD COLUMN stop_modification_id TEXT")
-	}
-	if !hasColumn(db, "income_versions", "interval_increase_percentage") {
-		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_percentage DOUBLE PRECISION DEFAULT 0")
-	}
-	if !hasColumn(db, "income_versions", "interval_increase_months") {
-		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_months INTEGER DEFAULT 0")
-	}
-	if !hasColumn(db, "income_versions", "interval_increase_start_date") {
-		db.Exec("ALTER TABLE income_versions ADD COLUMN interval_increase_start_date TIMESTAMP")
-	}
+			if !hasColumn(db, "asset_version_etf_stitching_segments", "conversion_tracker") {
+				if _, err = db.Exec("ALTER TABLE asset_version_etf_stitching_segments ADD COLUMN conversion_tracker TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
 
-	// Loan versions
-	if !hasColumn(db, "loan_versions", "early_payoff_penalty") {
-		db.Exec("ALTER TABLE loan_versions ADD COLUMN early_payoff_penalty DOUBLE PRECISION DEFAULT 1")
-	}
-	if !hasColumn(db, "loan_versions", "next_loan_id") {
-		db.Exec("ALTER TABLE loan_versions ADD COLUMN next_loan_id TEXT")
-	}
-	if !hasColumn(db, "loan_versions", "remainder_start_date") {
-		db.Exec("ALTER TABLE loan_versions ADD COLUMN remainder_start_date TIMESTAMP")
-	}
+			// Migrate data from stitching_segments_json if it exists
+			if hasColumn(db, "asset_version_etf_configs", "stitching_segments_json") {
+				log.Printf("[DB] Found old stitching_segments_json column. Migrating stitching segments...")
+				type dbSegment struct {
+					Provider     string `json:"provider"`
+					LookupTicker string `json:"lookup_ticker"`
+				}
+				rows, err := db.Query("SELECT id, stitching_segments_json FROM asset_version_etf_configs WHERE stitching_segments_json IS NOT NULL AND stitching_segments_json != ''")
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
 
-	// Asset versions
-	if !hasColumn(db, "asset_versions", "dumping_loan_id") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN dumping_loan_id TEXT")
-	}
-	if !hasColumn(db, "asset_versions", "stop_modification_id") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN stop_modification_id TEXT")
-	}
-	if !hasColumn(db, "asset_versions", "withdrawal_penalty") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN withdrawal_penalty DOUBLE PRECISION DEFAULT 0")
-	}
-	if !hasColumn(db, "asset_versions", "remainder_start_date") {
-		db.Exec("ALTER TABLE asset_versions ADD COLUMN remainder_start_date TIMESTAMP")
-	}
+				var updates []struct {
+					ConfigID string
+					Segments []dbSegment
+				}
+				for rows.Next() {
+					var configID string
+					var jsonStr string
+					if err := rows.Scan(&configID, &jsonStr); err == nil {
+						var segs []dbSegment
+						if err := json.Unmarshal([]byte(jsonStr), &segs); err == nil && len(segs) > 0 {
+							updates = append(updates, struct {
+								ConfigID string
+								Segments []dbSegment
+							}{configID, segs})
+						}
+					}
+				}
 
-	// Asset version sub assets
-	if !hasColumn(db, "asset_version_sub_assets", "expense_id") {
-		db.Exec("ALTER TABLE asset_version_sub_assets ADD COLUMN expense_id TEXT")
-	}
+				for _, update := range updates {
+					// Avoid duplicate migration
+					var count int
+					_ = db.QueryRow("SELECT COUNT(*) FROM asset_version_etf_stitching_segments WHERE etf_config_id = $1", update.ConfigID).Scan(&count)
+					if count == 0 {
+						for i, seg := range update.Segments {
+							_, err = db.Exec(`
+								INSERT INTO asset_version_etf_stitching_segments (id, etf_config_id, provider, lookup_ticker, sort_order)
+								VALUES ($1, $2, $3, $4, $5)`,
+								uuid.New().String(), update.ConfigID, seg.Provider, seg.LookupTicker, i)
+							if err != nil {
+								return err
+							}
+						}
+					}
+				}
+				log.Printf("[DB] Migrated stitching segments for %d ETF configurations.", len(updates))
 
-	// Asset version ETF configs - stitching segments
+				// Now drop the column so it's clean
+				_, err = db.Exec("ALTER TABLE asset_version_etf_configs DROP COLUMN stitching_segments_json")
+				if err != nil {
+					log.Printf("[DB Warning] Failed to drop stitching_segments_json column: %v", err)
+				} else {
+					log.Printf("[DB] Dropped stitching_segments_json column.")
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "008_authenticators_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "authenticators", "credential_json") {
+				if _, err := db.Exec("ALTER TABLE authenticators ADD COLUMN credential_json TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "authenticators", "name") {
+				if _, err := db.Exec("ALTER TABLE authenticators ADD COLUMN name TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "authenticators", "created_at") {
+				if _, err := db.Exec("ALTER TABLE authenticators ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "009_scenarios_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "scenarios", "month_start_day") {
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN month_start_day INTEGER DEFAULT 1"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "scenarios", "simulations") {
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN simulations INTEGER DEFAULT 50000"); err != nil {
+					return err
+				}
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN sim_years INTEGER DEFAULT 10"); err != nil {
+					return err
+				}
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN sim_percent DOUBLE PRECISION DEFAULT 50"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "scenarios", "lookback_years") {
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN lookback_years INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "scenarios", "passive_income_percentage") {
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN passive_income_percentage DOUBLE PRECISION DEFAULT 3.5"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "scenarios", "mc_implementation") {
+				if _, err := db.Exec("ALTER TABLE scenarios ADD COLUMN mc_implementation TEXT DEFAULT 'STANDARD'"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "010_integrations_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "integrations", "name") {
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN name TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN status TEXT DEFAULT 'AWAITING_AUTH'"); err != nil {
+					return err
+				}
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN last_sync_at TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "integrations", "sync_interval_seconds") {
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN sync_interval_seconds INTEGER DEFAULT 21600"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "integrations", "last_error") {
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN last_error TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "integrations", "cached_balance") {
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN cached_balance DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "integrations", "backoff_until") {
+				if _, err := db.Exec("ALTER TABLE integrations ADD COLUMN backoff_until TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "011_transaction_pools_parent_id",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "transaction_pools", "parent_id") {
+				if _, err := db.Exec("ALTER TABLE transaction_pools ADD COLUMN parent_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "012_transaction_rules_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "transaction_rules", "parent_id") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN parent_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "operator") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN operator TEXT DEFAULT 'NONE'"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "field") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN field TEXT DEFAULT 'NONE'"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "regex") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN regex TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "amount_operator") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN amount_operator TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "amount_value") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN amount_value DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "priority") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN priority INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "transaction_rules", "negate") {
+				if _, err := db.Exec("ALTER TABLE transaction_rules ADD COLUMN negate BOOLEAN DEFAULT FALSE"); err != nil {
+					return err
+				}
+			}
+
+			_, _ = db.Exec("UPDATE transaction_rules SET operator = 'NONE' WHERE operator IS NULL OR operator = ''")
+			_, _ = db.Exec("UPDATE transaction_rules SET field = 'NONE' WHERE field IS NULL OR field = ''")
+			_, _ = db.Exec("UPDATE transaction_rules SET regex = '' WHERE regex IS NULL")
+			_, _ = db.Exec("UPDATE transaction_rules SET amount_operator = '' WHERE amount_operator IS NULL")
+			_, _ = db.Exec("UPDATE transaction_rules SET parent_id = NULL WHERE parent_id = ''")
+			_, _ = db.Exec("UPDATE transaction_rules SET integration_id = NULL WHERE integration_id = ''")
+			_, _ = db.Exec("UPDATE transaction_rules SET target_pool_id = NULL WHERE target_pool_id = ''")
+			return nil
+		},
+	},
+	{
+		ID: "013_bank_transactions_enhancements",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "bank_transactions", "pool_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN pool_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "account_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN account_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "source_account_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN source_account_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "destination_account_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN destination_account_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "synced_at") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "tags") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN tags TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "linked_transaction_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN linked_transaction_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "is_link_confirmed") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN is_link_confirmed BOOLEAN DEFAULT FALSE"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "correlation_id") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN correlation_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "is_deleted") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "bank_transactions", "denied_duplicate_ids") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN denied_duplicate_ids TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "014_bank_transactions_unique_idx",
+		Run: func(db *sql.DB) error {
+			_, err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_transactions_user_external ON bank_transactions(user_id, external_id) WHERE external_id != ''")
+			return err
+		},
+	},
+	{
+		ID: "015_bank_transactions_internal_status",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "bank_transactions", "internal_status") {
+				if _, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN internal_status TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "016_modification_assets",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "modification_versions", "withdrawal_percentage") {
+				if _, err := db.Exec("ALTER TABLE modification_versions ADD COLUMN withdrawal_percentage DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+
+			_, err := db.Exec(`CREATE TABLE IF NOT EXISTS modification_assets (
+				modification_id TEXT,
+				asset_id TEXT,
+				PRIMARY KEY (modification_id, asset_id),
+				FOREIGN KEY(modification_id) REFERENCES modifications(id),
+				FOREIGN KEY(asset_id) REFERENCES assets(id)
+			)`)
+			if err != nil {
+				return err
+			}
+
+			_, err = db.Exec(`INSERT INTO modification_assets (modification_id, asset_id)
+				SELECT id, target_id FROM modifications
+				WHERE target_type = 'ASSET' AND target_id IS NOT NULL AND target_id != ''
+				ON CONFLICT DO NOTHING`)
+			return err
+		},
+	},
+	{
+		ID: "017_entity_pool_account_links_and_timezone",
+		Run: func(db *sql.DB) error {
+			entities := []string{"incomes", "bills", "expenses", "assets", "loans"}
+			for _, ent := range entities {
+				if !hasColumn(db, ent, "pool_id") {
+					if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN pool_id TEXT DEFAULT ''", ent)); err != nil {
+						return err
+					}
+				}
+				if !hasColumn(db, ent, "account_id") {
+					if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN account_id TEXT DEFAULT ''", ent)); err != nil {
+						return err
+					}
+				}
+			}
+			if !hasColumn(db, "users", "timezone") {
+				if _, err := db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "018_bank_transaction_pools_migration",
+		Run: func(db *sql.DB) error {
+			_, err := db.Exec(`INSERT INTO bank_transaction_pools (transaction_id, pool_id)
+				SELECT id, pool_id FROM bank_transactions
+				WHERE pool_id IS NOT NULL AND pool_id != ''
+				ON CONFLICT DO NOTHING`)
+			return err
+		},
+	},
+	{
+		ID: "019_migrate_rules_to_global",
+		Run: func(db *sql.DB) error {
+			MigrateRulesToGlobal(db)
+			return nil
+		},
+	},
+	{
+		ID: "020_migrate_virtual_accounts_to_multi",
+		Run: func(db *sql.DB) error {
+			MigrateVirtualAccountsToMulti(db)
+			return nil
+		},
+	},
+	{
+		ID: "021_normalize_json_columns",
+		Run: func(db *sql.DB) error {
+			NormalizeJSONColumns(db)
+			return nil
+		},
+	},
+	{
+		ID: "022_restore_expired_bank_transactions_upct_bug",
+		Run: func(db *sql.DB) error {
+			if _, err := db.Exec("UPDATE bank_transactions SET is_deleted = FALSE, internal_status = '' WHERE is_deleted = TRUE AND internal_status = 'EXPIRED_REJECTION'"); err != nil {
+				return err
+			}
+			return nil
+		},
+	},
+}
+
+func runMigrations(db *sql.DB) error {
+	log.Printf("[DB] Running migrations...")
+	// 1. Create schema_migrations table if not exists
 	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS asset_version_etf_stitching_segments (
-			id TEXT PRIMARY KEY,
-			etf_config_id TEXT NOT NULL,
-			provider TEXT DEFAULT '',
-			lookup_ticker TEXT DEFAULT '',
-			conversion_tracker TEXT DEFAULT '',
-			sort_order INTEGER DEFAULT 0,
-			FOREIGN KEY(etf_config_id) REFERENCES asset_version_etf_configs(id) ON DELETE CASCADE
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY,
+			run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
 	if err != nil {
-		log.Printf("[DB Warning] Failed to create asset_version_etf_stitching_segments: %v", err)
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
-	if !hasColumn(db, "asset_version_etf_stitching_segments", "conversion_tracker") {
-		_, _ = db.Exec("ALTER TABLE asset_version_etf_stitching_segments ADD COLUMN conversion_tracker TEXT DEFAULT ''")
+	// 2. Fetch already run migrations
+	rows, err := db.Query("SELECT version FROM schema_migrations")
+	if err != nil {
+		return fmt.Errorf("failed to query schema_migrations: %w", err)
+	}
+	defer rows.Close()
+
+	runVersions := make(map[string]bool)
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return fmt.Errorf("failed to scan migration version: %w", err)
+		}
+		runVersions[v] = true
 	}
 
-	// Migrate data from stitching_segments_json if it exists
-	if hasColumn(db, "asset_version_etf_configs", "stitching_segments_json") {
-		log.Printf("[DB] Found old stitching_segments_json column. Migrating stitching segments...")
-		type dbSegment struct {
-			Provider     string `json:"provider"`
-			LookupTicker string `json:"lookup_ticker"`
+	// 3. Run migrations sequentially
+	for _, migration := range migrations {
+		if runVersions[migration.ID] {
+			continue
 		}
-		rows, err := db.Query("SELECT id, stitching_segments_json FROM asset_version_etf_configs WHERE stitching_segments_json IS NOT NULL AND stitching_segments_json != ''")
-		if err == nil {
-			var updates []struct {
-				ConfigID string
-				Segments []dbSegment
-			}
-			for rows.Next() {
-				var configID string
-				var jsonStr string
-				if err := rows.Scan(&configID, &jsonStr); err == nil {
-					var segs []dbSegment
-					if err := json.Unmarshal([]byte(jsonStr), &segs); err == nil && len(segs) > 0 {
-						updates = append(updates, struct {
-							ConfigID string
-							Segments []dbSegment
-						}{configID, segs})
-					}
-				}
-			}
-			rows.Close()
 
-			for _, update := range updates {
-				// Avoid duplicate migration
-				var count int
-				_ = db.QueryRow("SELECT COUNT(*) FROM asset_version_etf_stitching_segments WHERE etf_config_id = ?", update.ConfigID).Scan(&count)
-				if count == 0 {
-					for i, seg := range update.Segments {
-						_, _ = db.Exec(`
-							INSERT INTO asset_version_etf_stitching_segments (id, etf_config_id, provider, lookup_ticker, sort_order)
-							VALUES (?, ?, ?, ?, ?)`,
-							uuid.New().String(), update.ConfigID, seg.Provider, seg.LookupTicker, i)
-					}
-				}
-			}
-			log.Printf("[DB] Migrated stitching segments for %d ETF configurations.", len(updates))
+		log.Printf("[DB] Running migration %s...", migration.ID)
+		if err := migration.Run(db); err != nil {
+			return fmt.Errorf("migration %s failed: %w", migration.ID, err)
 		}
-		// Now drop the column so it's clean
-		_, err = db.Exec("ALTER TABLE asset_version_etf_configs DROP COLUMN stitching_segments_json")
+
+		// Record migration as run
+		_, err = db.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", migration.ID)
 		if err != nil {
-			log.Printf("[DB Warning] Failed to drop stitching_segments_json column: %v", err)
-		} else {
-			log.Printf("[DB] Dropped stitching_segments_json column.")
+			return fmt.Errorf("failed to record migration %s: %w", migration.ID, err)
 		}
+		log.Printf("[DB] Migration %s completed successfully.", migration.ID)
 	}
 
-	// Authenticators
-	if !hasColumn(db, "authenticators", "credential_json") {
-		db.Exec("ALTER TABLE authenticators ADD COLUMN credential_json TEXT")
-	}
-	if !hasColumn(db, "authenticators", "name") {
-		db.Exec("ALTER TABLE authenticators ADD COLUMN name TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "authenticators", "created_at") {
-		db.Exec("ALTER TABLE authenticators ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-	}
-
-	// Scenarios
-	if !hasColumn(db, "scenarios", "month_start_day") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN month_start_day INTEGER DEFAULT 1")
-	}
-	if !hasColumn(db, "scenarios", "simulations") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN simulations INTEGER DEFAULT 50000")
-		db.Exec("ALTER TABLE scenarios ADD COLUMN sim_years INTEGER DEFAULT 10")
-		db.Exec("ALTER TABLE scenarios ADD COLUMN sim_percent DOUBLE PRECISION DEFAULT 50")
-	}
-	if !hasColumn(db, "scenarios", "lookback_years") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN lookback_years INTEGER DEFAULT 0")
-	}
-	if !hasColumn(db, "scenarios", "passive_income_percentage") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN passive_income_percentage DOUBLE PRECISION DEFAULT 3.5")
-	}
-	if !hasColumn(db, "scenarios", "mc_implementation") {
-		db.Exec("ALTER TABLE scenarios ADD COLUMN mc_implementation TEXT DEFAULT 'STANDARD'")
-	}
-
-	// Integrations
-	if !hasColumn(db, "integrations", "name") {
-		db.Exec("ALTER TABLE integrations ADD COLUMN name TEXT")
-		db.Exec("ALTER TABLE integrations ADD COLUMN status TEXT DEFAULT 'AWAITING_AUTH'")
-		db.Exec("ALTER TABLE integrations ADD COLUMN last_sync_at TIMESTAMP")
-	}
-	if !hasColumn(db, "integrations", "sync_interval_seconds") {
-		db.Exec("ALTER TABLE integrations ADD COLUMN sync_interval_seconds INTEGER DEFAULT 21600")
-	}
-	if !hasColumn(db, "integrations", "last_error") {
-		db.Exec("ALTER TABLE integrations ADD COLUMN last_error TEXT")
-	}
-	if !hasColumn(db, "integrations", "cached_balance") {
-		db.Exec("ALTER TABLE integrations ADD COLUMN cached_balance DOUBLE PRECISION DEFAULT 0")
-	}
-	if !hasColumn(db, "integrations", "backoff_until") {
-		db.Exec("ALTER TABLE integrations ADD COLUMN backoff_until TIMESTAMP")
-	}
-
-	// Transaction Pools
-	if !hasColumn(db, "transaction_pools", "parent_id") {
-		db.Exec("ALTER TABLE transaction_pools ADD COLUMN parent_id TEXT")
-	}
-
-	// Transaction Rules
-	if !hasColumn(db, "transaction_rules", "parent_id") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN parent_id TEXT")
-	}
-	if !hasColumn(db, "transaction_rules", "operator") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN operator TEXT DEFAULT 'NONE'")
-	}
-	if !hasColumn(db, "transaction_rules", "field") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN field TEXT DEFAULT 'NONE'")
-	}
-	if !hasColumn(db, "transaction_rules", "regex") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN regex TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "transaction_rules", "amount_operator") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN amount_operator TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "transaction_rules", "amount_value") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN amount_value DOUBLE PRECISION DEFAULT 0")
-	}
-	if !hasColumn(db, "transaction_rules", "priority") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN priority INTEGER DEFAULT 0")
-	}
-	if !hasColumn(db, "transaction_rules", "negate") {
-		db.Exec("ALTER TABLE transaction_rules ADD COLUMN negate BOOLEAN DEFAULT FALSE")
-	}
-	db.Exec("UPDATE transaction_rules SET operator = 'NONE' WHERE operator IS NULL OR operator = ''")
-	db.Exec("UPDATE transaction_rules SET field = 'NONE' WHERE field IS NULL OR field = ''")
-	db.Exec("UPDATE transaction_rules SET regex = '' WHERE regex IS NULL")
-	db.Exec("UPDATE transaction_rules SET amount_operator = '' WHERE amount_operator IS NULL")
-	db.Exec("UPDATE transaction_rules SET parent_id = NULL WHERE parent_id = ''")
-	db.Exec("UPDATE transaction_rules SET integration_id = NULL WHERE integration_id = ''")
-	db.Exec("UPDATE transaction_rules SET target_pool_id = NULL WHERE target_pool_id = ''")
-
-	// Bank Transactions
-	if !hasColumn(db, "bank_transactions", "pool_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN pool_id TEXT")
-	}
-	if !hasColumn(db, "bank_transactions", "account_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "bank_transactions", "source_account_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN source_account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "bank_transactions", "destination_account_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN destination_account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "bank_transactions", "synced_at") {
-		_, err := db.Exec("ALTER TABLE bank_transactions ADD COLUMN synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-		if err != nil {
-			log.Printf("[DB] Failed to add synced_at: %v", err)
-		}
-	}
-	if !hasColumn(db, "bank_transactions", "tags") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN tags TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "bank_transactions", "linked_transaction_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN linked_transaction_id TEXT")
-	}
-	if !hasColumn(db, "bank_transactions", "is_link_confirmed") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN is_link_confirmed BOOLEAN DEFAULT FALSE")
-	}
-	if !hasColumn(db, "bank_transactions", "correlation_id") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN correlation_id TEXT")
-	}
-	if !hasColumn(db, "bank_transactions", "is_deleted") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE")
-	}
-	if !hasColumn(db, "bank_transactions", "denied_duplicate_ids") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN denied_duplicate_ids TEXT DEFAULT ''")
-	}
-
-	// Unique constraint for deduplication
-	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_transactions_user_external ON bank_transactions(user_id, external_id) WHERE external_id != ''")
-
-	if !hasColumn(db, "bank_transactions", "internal_status") {
-		db.Exec("ALTER TABLE bank_transactions ADD COLUMN internal_status TEXT DEFAULT ''")
-	}
-
-	// Modifications
-	if !hasColumn(db, "modification_versions", "withdrawal_percentage") {
-		db.Exec("ALTER TABLE modification_versions ADD COLUMN withdrawal_percentage DOUBLE PRECISION DEFAULT 0")
-	}
-
-	// Join tables
-	db.Exec(`CREATE TABLE IF NOT EXISTS modification_assets (
-		modification_id TEXT,
-		asset_id TEXT,
-		PRIMARY KEY (modification_id, asset_id),
-		FOREIGN KEY(modification_id) REFERENCES modifications(id),
-		FOREIGN KEY(asset_id) REFERENCES assets(id)
-	)`)
-
-	db.Exec(`INSERT INTO modification_assets (modification_id, asset_id)
-		SELECT id, target_id FROM modifications
-		WHERE target_type = 'ASSET' AND target_id IS NOT NULL AND target_id != ''
-		ON CONFLICT DO NOTHING`)
-
-	// Planning Entity Realtime Pool Links
-	if !hasColumn(db, "incomes", "pool_id") {
-		db.Exec("ALTER TABLE incomes ADD COLUMN pool_id TEXT")
-	}
-	if !hasColumn(db, "bills", "pool_id") {
-		db.Exec("ALTER TABLE bills ADD COLUMN pool_id TEXT")
-	}
-	if !hasColumn(db, "expenses", "pool_id") {
-		db.Exec("ALTER TABLE expenses ADD COLUMN pool_id TEXT")
-	}
-	if !hasColumn(db, "assets", "pool_id") {
-		db.Exec("ALTER TABLE assets ADD COLUMN pool_id TEXT")
-	}
-	if !hasColumn(db, "loans", "pool_id") {
-		db.Exec("ALTER TABLE loans ADD COLUMN pool_id TEXT")
-	}
-
-	// Planning Entity Virtual Account Links
-	if !hasColumn(db, "incomes", "account_id") {
-		db.Exec("ALTER TABLE incomes ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "bills", "account_id") {
-		db.Exec("ALTER TABLE bills ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "expenses", "account_id") {
-		db.Exec("ALTER TABLE expenses ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "assets", "account_id") {
-		db.Exec("ALTER TABLE assets ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-	if !hasColumn(db, "loans", "account_id") {
-		db.Exec("ALTER TABLE loans ADD COLUMN account_id TEXT DEFAULT ''")
-	}
-
-	if !hasColumn(db, "users", "timezone") {
-		db.Exec("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'UTC'")
-	}
-
-	// Migrate existing bank transactions to the many-to-many join table
-	db.Exec(`INSERT INTO bank_transaction_pools (transaction_id, pool_id)
-		SELECT id, pool_id FROM bank_transactions
-		WHERE pool_id IS NOT NULL AND pool_id != ''
-		ON CONFLICT DO NOTHING`)
-
-	MigrateRulesToGlobal(db)
-	MigrateVirtualAccountsToMulti(db)
-	NormalizeJSONColumns(db)
-
-	// Restore any bank transactions that were wrongly auto-deleted due to the UPCT pending rejection bug
-	if _, err := db.Exec("UPDATE bank_transactions SET is_deleted = FALSE, internal_status = '' WHERE is_deleted = TRUE AND internal_status = 'EXPIRED_REJECTION'"); err != nil {
-		log.Printf("[DB Warning] Failed to restore wrongly expired bank transactions: %v", err)
-	} else {
-		log.Printf("[DB] Restored wrongly expired bank transactions (UPCT bug fix).")
-	}
+	return nil
 }
 
 func MigrateRulesToGlobal(db *sql.DB) {
