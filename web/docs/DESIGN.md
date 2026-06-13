@@ -169,3 +169,13 @@ To enable live diagnostic log monitoring for all running Docker containers in th
    - Include a default option for "Current Process" to preserve local/standard diagnostics logs.
 2. **Dynamic Streaming Reconnection**:
    - Re-establish the websocket log stream (`system::logs`) with the new `container_id` when the user changes the selected container.
+
+## 11. Transaction Status Validation for UPCT Pending Rejection
+
+To prevent booked (finalized/posted) bank transactions that happen to contain the `UPCT` (Unrealised Payment Card Transaction) subcode from being incorrectly marked as pending (hold/blocked funds) and subsequently deleted/expired, the EnableBanking integration provider must check the transaction status.
+
+### Logic Details
+1. **Status Check**: When parsing transactions, the provider checks the `status` field.
+2. **Pending Rejection Rule**: A transaction with the `UPCT` sub-code is only marked as `PENDING_REJECTION` if its status is **not** `"BOOK"` (or `"BOOKED"`). If the status is `"BOOK"`, it is treated as a standard finalized booked transaction and not as a pending hold.
+3. **Fallback Struct Extension**: Add the `Status *string` field to the minimal fallback unmarshal structure to ensure it is always captured.
+

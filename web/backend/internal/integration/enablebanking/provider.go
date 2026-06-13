@@ -388,6 +388,7 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 		var item struct {
 			EntryReference      *string `json:"entry_reference"`
 			TransactionId       *string `json:"transaction_id"`
+			Status              *string `json:"status"`
 			BankTransactionCode *struct {
 				SubCode *string `json:"sub_code"`
 			} `json:"bank_transaction_code"`
@@ -410,7 +411,9 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 			meta := integration.TransactionMetadata{}
 
 			if item.BankTransactionCode != nil && item.BankTransactionCode.SubCode != nil && *item.BankTransactionCode.SubCode == "UPCT" {
-				meta.InternalStatus = "PENDING_REJECTION"
+				if item.Status == nil || *item.Status != "BOOK" {
+					meta.InternalStatus = "PENDING_REJECTION"
+				}
 			}
 
 			if item.TransactionId != nil && *item.TransactionId != "" {
@@ -469,7 +472,9 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 	meta := integration.TransactionMetadata{}
 
 	if et.BankTransactionCode != nil && et.BankTransactionCode.SubCode != nil && *et.BankTransactionCode.SubCode == "UPCT" {
-		meta.InternalStatus = "PENDING_REJECTION"
+		if et.Status == nil || *et.Status != "BOOK" {
+			meta.InternalStatus = "PENDING_REJECTION"
+		}
 	}
 
 	if et.TransactionId != nil && *et.TransactionId != "" {
