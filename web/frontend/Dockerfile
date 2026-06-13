@@ -21,7 +21,10 @@ RUN apk add --no-cache curl && \
     curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-$(uname -s)-$(uname -m)" -o "${BIN}/buf" && \
     chmod +x "${BIN}/buf"
 
-COPY . .
+# Copy only necessary files for building (proto and frontend)
+COPY proto/ ./proto/
+COPY frontend/ ./frontend/
+
 WORKDIR /app/frontend
 COPY --from=deps /app/frontend/node_modules ./node_modules
 
