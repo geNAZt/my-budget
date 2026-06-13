@@ -243,12 +243,12 @@ func (i *Integrations) Sync(s *api.WebsocketSession, reqID string, req *apiproto
 	}
 
 	go func() {
-		err := i.syncService.SyncIntegration(userID, req.Id, req.Force)
+		err := i.syncService.SyncIntegration(userID, req.Id, req.Force, req.PsuHeaders)
 		if err != nil {
 			i.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
-			return
+		} else {
+			i.handler.SendResponse(s, reqID, &apiproto.Empty{}, true)
 		}
-		i.handler.SendResponse(s, reqID, &apiproto.GenericID{Id: req.Id}, true)
 	}()
 }
 
@@ -820,7 +820,7 @@ func (g *IntegrationsGoCardless) Institutions(s *api.WebsocketSession, reqID str
 	}
 
 	ctx := context.Background()
-	token, err := g.gcService.GetAccessToken(ctx, config.SecretID, config.SecretKey)
+	token, _, err := g.gcService.GetAccessToken(ctx, config.SecretID, config.SecretKey)
 	if err != nil {
 		g.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return
@@ -872,7 +872,7 @@ func (g *IntegrationsGoCardless) Link(s *api.WebsocketSession, reqID string, req
 	}
 
 	ctx := context.Background()
-	token, err := g.gcService.GetAccessToken(ctx, config.SecretID, config.SecretKey)
+	token, _, err := g.gcService.GetAccessToken(ctx, config.SecretID, config.SecretKey)
 	if err != nil {
 		g.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
 		return

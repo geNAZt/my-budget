@@ -269,18 +269,23 @@ func (s *EnableBankingService) GetBalances(ctx context.Context, token string, ac
 	return *resp.JSON200.Balances, nil
 }
 
-func (s *EnableBankingService) GetTransactions(ctx context.Context, token string, accountID string, dateFrom string) ([]enablebanking.Transaction, error) {
+func (s *EnableBankingService) GetTransactions(ctx context.Context, token string, accountID string, dateFrom string, psuHeaders map[string]string, strategy string) ([]enablebanking.Transaction, *http.Response, error) {
 	client, err := s.getClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var allTransactions []enablebanking.Transaction
 	var continuationKey *string
+	var lastResp *http.Response
 
 	for {
 		params := &enablebanking.GetAccountTransactionsParams{
 			ContinuationKey: continuationKey,
+		}
+
+		if strategy != "" {
+			params.TransactionFetchingStrategy = &strategy
 		}
 
 		if dateFrom != "" && continuationKey == nil {
@@ -291,14 +296,19 @@ func (s *EnableBankingService) GetTransactions(ctx context.Context, token string
 
 		resp, err := client.GetAccountTransactionsWithResponse(ctx, accountID, params, func(ctx context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", "Bearer "+token)
+			for k, v := range psuHeaders {
+				req.Header.Set(k, v)
+			}
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
+		lastResp = resp.HTTPResponse
+
 		if resp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch transactions (Status %d): %s", resp.StatusCode(), string(resp.Body))
+			return nil, lastResp, fmt.Errorf("failed to fetch transactions (Status %d): %s", resp.StatusCode(), string(resp.Body))
 		}
 
 		if resp.JSON200 != nil && resp.JSON200.Transactions != nil {
@@ -312,5 +322,5 @@ func (s *EnableBankingService) GetTransactions(ctx context.Context, token string
 		continuationKey = resp.JSON200.ContinuationKey
 	}
 
-	return allTransactions, nil
+	return allTransactions, lastResp, nil
 }

@@ -65,10 +65,12 @@ func (p *Provider) ServiceType() string {
 	return "TRADING212"
 }
 
-func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) integration.SyncResult {
+func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, psuHeaders map[string]string) integration.SyncResult {
 	correlationID := service.CorrelationIDFromContext(ctx)
 	userID := i.UserID
 	now := time.Now()
+
+	var backoffUntil *time.Time
 
 	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, i.ID)
 	if err != nil {
@@ -187,7 +189,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			t212Resp, err := p.t212.GetTransactions(ctx, config.ApiKey, config.ApiSecret, 50, cursor)
 			if err != nil {
 				log.Printf("[SYNC] Trading 212 transaction fetch failed: %v", err)
-				return integration.SyncResult{Error: err}
+				return integration.SyncResult{Error: err, BackoffUntil: backoffUntil}
+			}
+
+			// Check for rate limit
+			if bu := p.t212.ExtractRateLimit(t212Resp.HTTPResponse); bu != nil {
+				backoffUntil = bu
+				log.Printf("[SYNC] Trading 212 rate limit reached. Backing off until %v", bu)
 			}
 
 			if t212Resp == nil || t212Resp.JSON200 == nil || t212Resp.JSON200.Items == nil {
@@ -559,24 +567,23 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		}
 	}
 
-	// 5. Update fake 1-hour rate limit backoff and record last synced time on successfully synced virtual accounts
+	// 5. Update record last synced time on successfully synced virtual accounts
 	if config.AccountsMetadata == nil {
 		config.AccountsMetadata = make(map[string]*domain.AccountMeta)
 	}
 
-	backoffUntil := time.Now().Add(1 * time.Hour)
 	nowSync := time.Now().UTC()
 
 	configChanged := false
 	if !isCashExcluded && !isCashBackedOff {
 		if meta, ok := config.AccountsMetadata["T212_CASH"]; ok && meta != nil {
-			meta.BackoffUntil = &backoffUntil
+			meta.BackoffUntil = backoffUntil
 			meta.LastSyncedAt = &nowSync
 			meta.Balance = cashBalance
 			configChanged = true
 		} else {
 			config.AccountsMetadata["T212_CASH"] = &domain.AccountMeta{
-				Alias: "Cash", Enabled: true, BackoffUntil: &backoffUntil, LastSyncedAt: &nowSync, Balance: cashBalance,
+				Alias: "Cash", Enabled: true, BackoffUntil: backoffUntil, LastSyncedAt: &nowSync, Balance: cashBalance,
 			}
 			configChanged = true
 		}
@@ -584,13 +591,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 
 	if !isPortfolioExcluded && !isPortfolioBackedOff {
 		if meta, ok := config.AccountsMetadata["T212_PORTFOLIO"]; ok && meta != nil {
-			meta.BackoffUntil = &backoffUntil
+			meta.BackoffUntil = backoffUntil
 			meta.LastSyncedAt = &nowSync
 			meta.Balance = portfolioBalance
 			configChanged = true
 		} else {
 			config.AccountsMetadata["T212_PORTFOLIO"] = &domain.AccountMeta{
-				Alias: "Portfolio", Enabled: true, BackoffUntil: &backoffUntil, LastSyncedAt: &nowSync, Balance: portfolioBalance,
+				Alias: "Portfolio", Enabled: true, BackoffUntil: backoffUntil, LastSyncedAt: &nowSync, Balance: portfolioBalance,
 			}
 			configChanged = true
 		}
@@ -612,7 +619,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	}
 
 	i.CachedBalance = totalValue
-	return integration.SyncResult{DiscoveredCount: newCount}
+	return integration.SyncResult{
+		DiscoveredCount: newCount,
+		BackoffUntil:    backoffUntil,
+	}
 }
 
 func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {

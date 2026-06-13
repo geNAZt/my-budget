@@ -707,6 +707,7 @@ message GCLinkResponse {
 message IntegrationSyncRequest {
   string id = 1;
   bool force = 2;
+  map<string, string> psu_headers = 3;
 }
 
 message IntegrationAccountsRequest {

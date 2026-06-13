@@ -29,10 +29,10 @@ func (s *GoCardlessService) getClient(ctx context.Context) (*gocardless.ClientWi
 	return gocardless.NewClientWithResponses("https://bankaccountdata.gocardless.com", gocardless.WithHTTPClient(httpClient))
 }
 
-func (s *GoCardlessService) GetAccessToken(ctx context.Context, id, key string) (string, error) {
+func (s *GoCardlessService) GetAccessToken(ctx context.Context, id, key string) (string, *http.Response, error) {
 	client, err := s.getClient(ctx)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	resp, err := client.ObtainNewAccessrefreshTokenPairWithResponse(ctx, gocardless.JWTObtainPairRequest{
@@ -40,28 +40,28 @@ func (s *GoCardlessService) GetAccessToken(ctx context.Context, id, key string) 
 		SecretKey: key,
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	if resp.StatusCode() == http.StatusTooManyRequests {
-		return "", s.parseRateLimitError(resp.Body)
+		return "", resp.HTTPResponse, s.parseRateLimitError(resp.Body)
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("gocardless auth failed (Status %d): %s", resp.StatusCode(), string(resp.Body))
+		return "", resp.HTTPResponse, fmt.Errorf("gocardless auth failed (Status %d): %s", resp.StatusCode(), string(resp.Body))
 	}
 
 	if resp.JSON200 == nil || resp.JSON200.Access == nil {
-		return "", fmt.Errorf("gocardless auth response missing access token")
+		return "", resp.HTTPResponse, fmt.Errorf("gocardless auth response missing access token")
 	}
 
-	return *resp.JSON200.Access, nil
+	return *resp.JSON200.Access, resp.HTTPResponse, nil
 }
 
-func (s *GoCardlessService) GetTransactions(ctx context.Context, accountID string, token string, dateFrom string) (*gocardless.AccountTransactions, error) {
+func (s *GoCardlessService) GetTransactions(ctx context.Context, accountID string, token string, dateFrom string) (*gocardless.AccountTransactions, *http.Response, error) {
 	client, err := s.getClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	params := &gocardless.RetrieveAccountTransactionsParams{}
@@ -76,18 +76,18 @@ func (s *GoCardlessService) GetTransactions(ctx context.Context, accountID strin
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if resp.StatusCode() == http.StatusTooManyRequests {
-		return nil, s.parseRateLimitError(resp.Body)
+		return nil, resp.HTTPResponse, s.parseRateLimitError(resp.Body)
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch transactions (Status %d): %s", resp.StatusCode(), string(resp.Body))
+		return nil, resp.HTTPResponse, fmt.Errorf("failed to fetch transactions (Status %d): %s", resp.StatusCode(), string(resp.Body))
 	}
 
-	return resp.JSON200, nil
+	return resp.JSON200, resp.HTTPResponse, nil
 }
 
 func (s *GoCardlessService) GetRequisition(ctx context.Context, requisitionID string, token string) (*gocardless.Requisition, error) {
@@ -229,6 +229,30 @@ func (s *GoCardlessService) GetBalances(ctx context.Context, accountID string, t
 	}
 
 	return resp.JSON200, nil
+}
+
+func (s *GoCardlessService) ExtractRateLimit(resp *http.Response) *time.Time {
+	if resp == nil {
+		return nil
+	}
+
+	remaining := resp.Header.Get("HTTP_X_RATELIMIT_REMAINING")
+	reset := resp.Header.Get("HTTP_X_RATELIMIT_RESET")
+
+	if remaining == "" || reset == "" {
+		return nil
+	}
+
+	rem, _ := strconv.Atoi(remaining)
+	res, _ := strconv.ParseInt(reset, 10, 64)
+
+	// GoCardless is usually strict, if we have 0 or 1 left, back off until reset
+	if rem <= 1 {
+		t := time.Unix(res, 0)
+		return &t
+	}
+
+	return nil
 }
 
 func (s *GoCardlessService) parseRateLimitError(body []byte) error {

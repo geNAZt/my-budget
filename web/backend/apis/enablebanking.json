@@ -240,6 +240,11 @@
             "name": "continuation_key",
             "in": "query",
             "schema": { "type": "string" }
+          },
+          {
+            "name": "transaction_fetching_strategy",
+            "in": "query",
+            "schema": { "type": "string" }
           }
         ],
         "responses": {

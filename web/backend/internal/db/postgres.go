@@ -415,6 +415,7 @@ func InitDB(dsn string) (*sql.DB, error) {
         sync_interval_seconds INTEGER DEFAULT 21600,
         last_error TEXT,
         cached_balance DOUBLE PRECISION DEFAULT 0,
+        backoff_until TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id)
@@ -923,6 +924,9 @@ func migrate(db *sql.DB) {
 	}
 	if !hasColumn(db, "integrations", "cached_balance") {
 		db.Exec("ALTER TABLE integrations ADD COLUMN cached_balance DOUBLE PRECISION DEFAULT 0")
+	}
+	if !hasColumn(db, "integrations", "backoff_until") {
+		db.Exec("ALTER TABLE integrations ADD COLUMN backoff_until TIMESTAMP")
 	}
 
 	// Transaction Pools

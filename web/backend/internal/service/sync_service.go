@@ -498,8 +498,13 @@ func (s *SyncService) SyncAll() {
 	log.Printf("[SYNC] Syncing %d active integrations...", len(integrations))
 
 	for _, i := range integrations {
+		if i.BackoffUntil != nil && i.BackoffUntil.After(time.Now()) {
+			log.Printf("[SYNC] Skipping %s (Backoff until %v)", i.Name, i.BackoffUntil)
+			continue
+		}
+
 		log.Printf("[SYNC] Starting scheduled sync for %s (User: %s)...", i.Name, i.UserID)
-		s.SyncIntegration(i.UserID, i.ID, false)
+		s.SyncIntegration(i.UserID, i.ID, false, nil)
 	}
 
 	s.ReconcileBlockedFunds()
@@ -507,13 +512,19 @@ func (s *SyncService) SyncAll() {
 	s.TraceMoneyMovementChains()
 }
 
-func (s *SyncService) SyncIntegration(userID string, integrationID string, force bool) error {
+func (s *SyncService) SyncIntegration(userID string, integrationID string, force bool, psuHeaders map[string]string) error {
 	integration, err := s.integrationRepo.GetByID(userID, integrationID)
 	if err != nil || integration == nil {
 		return fmt.Errorf("integration not found")
 	}
 
 	correlationID := uuid.New().String()
+
+	if integration.BackoffUntil != nil && integration.BackoffUntil.After(time.Now()) && !force {
+		log.Printf("[SYNC][%s] Skipping %s due to backoff until %v", correlationID, integration.Name, integration.BackoffUntil)
+		return nil
+	}
+
 	log.Printf("[SYNC][%s] Dispatching sync for %s (%s)...", correlationID, integration.Name, integration.ServiceType)
 
 	provider := s.integrationRegistry.Get(integration.ServiceType)
@@ -522,7 +533,7 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 	}
 
 	ctx := ContextWithCorrelationID(context.Background(), correlationID)
-	res := provider.Sync(ctx, integration, force)
+	res := provider.Sync(ctx, integration, force, psuHeaders)
 
 	if res.Error == nil {
 		s.eventBus.Publish(context.Background(), bus.TopicSyncFinished, bus.SyncFinishedPayload{
@@ -535,10 +546,15 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 	}
 
 	if res.Error != nil {
+		if res.BackoffUntil != nil {
+			integration.BackoffUntil = res.BackoffUntil
+			_ = s.integrationRepo.Save(userID, integration)
+		}
+
 		return s.handleSyncError(userID, integration, res.Error)
 	}
 
-	return s.finalizeSync(userID, integration, integration.CachedBalance)
+	return s.finalizeSync(userID, integration, integration.CachedBalance, res.BackoffUntil)
 }
 
 func (s *SyncService) GetMasterKey(userID string, integrationID string) ([]byte, error) {
@@ -596,12 +612,13 @@ func (s *SyncService) handleSyncError(userID string, i *domain.Integration, err 
 	return err
 }
 
-func (s *SyncService) finalizeSync(userID string, i *domain.Integration, balance float64) error {
+func (s *SyncService) finalizeSync(userID string, i *domain.Integration, balance float64, backoffUntil *time.Time) error {
 	now := time.Now().UTC()
 	i.LastSyncAt = &now
 	i.Status = "ACTIVE"
 	i.LastError = ""
 	i.CachedBalance = balance
+	i.BackoffUntil = backoffUntil
 	return s.integrationRepo.Save(userID, i)
 }
 

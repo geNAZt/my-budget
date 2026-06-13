@@ -10,6 +10,7 @@ import (
 type SyncResult struct {
 	DiscoveredCount int
 	Error           error
+	BackoffUntil    *time.Time
 }
 
 type DecryptedTxInfo struct {
@@ -41,7 +42,7 @@ type TransactionMetadata struct {
 
 type Provider interface {
 	ServiceType() string
-	Sync(ctx context.Context, integration *domain.Integration, force bool) SyncResult
+	Sync(ctx context.Context, integration *domain.Integration, force bool, psuHeaders map[string]string) SyncResult
 	ParseTransaction(decryptedData []byte, accountID string) (TransactionMetadata, error)
 	GetAccounts(userID string, integration *domain.Integration) ([]Account, error)
 }

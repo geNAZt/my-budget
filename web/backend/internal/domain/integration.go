@@ -15,6 +15,7 @@ type Integration struct {
 	CachedBalance       float64
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	BackoffUntil        *time.Time
 }
 
 type AccountMeta struct {

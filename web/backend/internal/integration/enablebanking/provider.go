@@ -56,9 +56,11 @@ func (p *Provider) ServiceType() string {
 	return "ENABLEBANKING"
 }
 
-func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) integration.SyncResult {
+func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, psuHeaders map[string]string) integration.SyncResult {
 	correlationID := service.CorrelationIDFromContext(ctx)
 	userID := i.UserID
+
+	var backoffUntil *time.Time
 
 	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, i.ID)
 	if err != nil {
@@ -230,15 +232,25 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			}
 		}
 
-		ebTxs, err := p.enableBanking.GetTransactions(ctx, token, accID, dateFrom)
-		if handleRateLimit(err) {
-			continue
+		strategy := ""
+		if force {
+			strategy = "longest"
 		}
 
+		ebTxs, txResp, err := p.enableBanking.GetTransactions(ctx, token, accID, dateFrom, psuHeaders, strategy)
 		if err != nil {
+			if strings.Contains(err.Error(), "ASPSP_RATE_LIMIT_EXCEEDED") {
+				log.Printf("[SYNC] Rate limit hit on transactions fetch for account %s: %v", accID, err)
+				backoff := now.Add(24 * time.Hour)
+				backoffUntil = &backoff
+				p.recordAccountBackoff(userID, i, masterKey, &config, accID, backoff)
+				continue
+			}
 			log.Printf("[SYNC] Enable Banking transaction fetch failed for account %s: %v", accID, err)
 			continue
 		}
+
+		_ = txResp // used for rate limit extraction if needed later
 
 		for _, t := range ebTxs {
 			// Parse using the new robust logic
@@ -335,7 +347,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	}
 
 	i.CachedBalance = totalBalance
-	return integration.SyncResult{DiscoveredCount: newCount}
+	return integration.SyncResult{
+		DiscoveredCount: newCount,
+		BackoffUntil:    backoffUntil,
+	}
 }
 
 func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {
@@ -527,6 +542,43 @@ func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (int
 	}
 
 	return meta, nil
+}
+
+func (p *Provider) recordAccountBackoff(
+	userID string,
+	i *domain.Integration,
+	masterKey []byte,
+	config *struct {
+		ApplicationID    string                         `json:"application_id"`
+		PrivateKey       string                         `json:"private_key"`
+		SessionID        string                         `json:"session_id"`
+		AccountIDs       []string                       `json:"account_ids"`
+		LegacyAccountIDs []string                       `json:"accounts"`
+		AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+	},
+	accID string,
+	retryAfter time.Time,
+) {
+	if config.AccountsMetadata == nil {
+		config.AccountsMetadata = make(map[string]*domain.AccountMeta)
+	}
+
+	meta, ok := config.AccountsMetadata[accID]
+	if !ok || meta == nil {
+		config.AccountsMetadata[accID] = &domain.AccountMeta{
+			Alias:        "Account " + accID,
+			Enabled:      true,
+			BackoffUntil: &retryAfter,
+		}
+	} else {
+		meta.BackoffUntil = &retryAfter
+	}
+
+	updatedJSON, _ := json.Marshal(config)
+	newEncrypted, _ := p.cryptoService.Encrypt(masterKey, updatedJSON)
+	i.EncryptedConfig = base64.StdEncoding.EncodeToString(newEncrypted)
+
+	p.integrationRepo.Save(userID, i)
 }
 
 func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration) ([]integration.Account, error) {

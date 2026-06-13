@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/pkg/apis/trading212"
 )
@@ -13,6 +15,30 @@ type Trading212Service struct {
 
 func NewTrading212Service() *Trading212Service {
 	return &Trading212Service{}
+}
+
+func (s *Trading212Service) ExtractRateLimit(resp *http.Response) *time.Time {
+	if resp == nil {
+		return nil
+	}
+
+	remaining := resp.Header.Get("x-ratelimit-remaining")
+	reset := resp.Header.Get("x-ratelimit-reset")
+
+	if remaining == "" || reset == "" {
+		return nil
+	}
+
+	rem, _ := strconv.Atoi(remaining)
+	res, _ := strconv.ParseInt(reset, 10, 64)
+
+	// If we have less than 5 requests left, back off until reset
+	if rem < 5 {
+		t := time.Unix(res, 0)
+		return &t
+	}
+
+	return nil
 }
 
 func (s *Trading212Service) getClient(ctx context.Context, apiKey, apiSecret string) (*trading212.ClientWithResponses, error) {

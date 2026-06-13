@@ -55,9 +55,11 @@ func (p *Provider) ServiceType() string {
 	return "GOCARDLESS"
 }
 
-func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) integration.SyncResult {
+func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, psuHeaders map[string]string) integration.SyncResult {
 	correlationID := service.CorrelationIDFromContext(ctx)
 	userID := i.UserID
+
+	var backoffUntil *time.Time
 
 	masterKey, err := p.masterKeyProvider.GetMasterKey(userID, i.ID)
 	if err != nil {
@@ -91,9 +93,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 		}
 	}
 
-	token, err := p.gocardless.GetAccessToken(ctx, config.SecretID, config.SecretKey)
+	token, tokenResp, err := p.gocardless.GetAccessToken(ctx, config.SecretID, config.SecretKey)
 	if err != nil {
 		return integration.SyncResult{Error: err}
+	}
+
+	if bu := p.gocardless.ExtractRateLimit(tokenResp); bu != nil {
+		backoffUntil = bu
 	}
 
 	if len(config.AccountIDs) == 0 || i.Status == "AWAITING_AUTH" {
@@ -254,31 +260,35 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 			}
 		}
 
-		result, err := p.gocardless.GetTransactions(ctx, accID, token, dateFrom)
+		result, txResp, err := p.gocardless.GetTransactions(ctx, accID, token, dateFrom)
 		if err != nil {
 			if re, ok := err.(*service.RateLimitError); ok {
 				log.Printf("[SYNC] Rate limit hit on transactions fetch for account %s: %v", accID, err)
 				p.recordAccountBackoff(userID, i, masterKey, &config, accID, re.RetryAfter)
+				if backoffUntil == nil || re.RetryAfter.After(*backoffUntil) {
+					backoffUntil = &re.RetryAfter
+				}
 				continue
 			}
 			log.Printf("[SYNC] Failed to fetch transactions for account %s: %v", accID, err)
 			continue
 		}
 
-		// Set 6h cooldown rate limit and last successful sync time
+		if bu := p.gocardless.ExtractRateLimit(txResp); bu != nil {
+			backoffUntil = bu
+		}
+
+		// Set last successful sync time
 		if config.AccountsMetadata == nil {
 			config.AccountsMetadata = make(map[string]*domain.AccountMeta)
 		}
 		nowSync := time.Now().UTC()
-		nextSync := nowSync.Add(6 * time.Hour)
 		if meta, ok := config.AccountsMetadata[accID]; ok && meta != nil {
-			meta.BackoffUntil = &nextSync
 			meta.LastSyncedAt = &nowSync
 		} else {
 			config.AccountsMetadata[accID] = &domain.AccountMeta{
 				Alias:        "Account " + accID,
 				Enabled:      true,
-				BackoffUntil: &nextSync,
 				LastSyncedAt: &nowSync,
 			}
 		}
@@ -447,7 +457,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool) 
 	}
 
 	i.CachedBalance = totalBalance
-	return integration.SyncResult{DiscoveredCount: newCount}
+	return integration.SyncResult{
+		DiscoveredCount: newCount,
+		BackoffUntil:    backoffUntil,
+	}
 }
 
 func (p *Provider) ParseTransaction(decryptedData []byte, accountID string) (integration.TransactionMetadata, error) {

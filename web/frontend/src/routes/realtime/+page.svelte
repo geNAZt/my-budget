@@ -515,10 +515,18 @@
         if (syncingMap[id]) return;
         syncingMap[id] = true;
         try {
+            const psuHeaders: Record<string, string> = {
+                "Psu-Ip-Address": "127.0.0.1",
+                "Psu-User-Agent": navigator.userAgent,
+                "Psu-Referer": window.location.href,
+                "Psu-Accept": "application/json",
+                "Psu-Accept-Language": navigator.language,
+            };
+
             const [, err] = await wsCall(
                 "integrations::sync",
                 IntegrationSyncRequestSchema,
-                { id, force: true },
+                { id, force: true, psuHeaders },
                 [GenericIDSchema],
             ).one();
             if (err) throw err;

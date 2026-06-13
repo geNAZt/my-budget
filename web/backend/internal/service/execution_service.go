@@ -132,7 +132,7 @@ func (s *ExecutionService) SyncIntegration(userID string, integrationID string) 
 	if s.syncService == nil {
 		return fmt.Errorf("sync service not configured in execution service")
 	}
-	return s.syncService.SyncIntegration(userID, integrationID, true)
+	return s.syncService.SyncIntegration(userID, integrationID, true, nil)
 }
 
 func (s *ExecutionService) GetMasterKeyForUser(user *domain.User, integrationID string) ([]byte, error) {
@@ -326,7 +326,7 @@ func (s *ExecutionService) handleRpcRequest(req *executionpb.RpcRequest) {
 			}
 			if err := json.Unmarshal(req.ParamsJson, &params); err == nil {
 				if s.syncService != nil {
-					errSync := s.syncService.SyncIntegration(ctx.UserID, params.IntegrationID, true)
+					errSync := s.syncService.SyncIntegration(ctx.UserID, params.IntegrationID, true, nil)
 					if errSync != nil {
 						errStr = fmt.Sprintf("sync failed: %v", errSync)
 					} else {
