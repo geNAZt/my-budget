@@ -218,7 +218,7 @@
         if (filterAmountValue !== null) {
             const limit = filterAmountValue;
             list = list.filter((t) => {
-                const amt = Math.abs(getTxAmount(t));
+                const amt = getTxAmount(t);
                 switch (filterAmountOperator) {
                     case ">":
                         return amt > limit;
