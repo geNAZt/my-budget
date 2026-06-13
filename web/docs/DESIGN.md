@@ -183,3 +183,13 @@ To prevent booked (finalized/posted) bank transactions that happen to contain th
    UPDATE bank_transactions SET is_deleted = FALSE, internal_status = '' WHERE is_deleted = TRUE AND internal_status = 'EXPIRED_REJECTION';
    ```
 
+## 12. Enhanced Alias-Based Auto-Linking for Internal Transfers
+
+To ensure transactions representing internal transfers between a user's accounts are correctly linked when one side contains an empty or differing description, we implement an alias-based matching strategy.
+
+### Design Details
+1. **Alias Map Generation**: On auto-linking, we parse the `AccountsMetadata` from decrypted integration configs to construct a map of `AccountID` to `Alias` (account name).
+2. **Description Heuristics**: Two candidate transactions with opposite amounts and within a 96-hour window are matched if:
+   - Their descriptions are exactly equal (case-insensitive, trimmed).
+   - OR, one transaction description contains the alias of the other transaction's account (case-insensitive, requiring alias length >= 3).
+3. **Execution**: The auto-linking logic updates both transactions' `linked_transaction_id`, sets `is_link_confirmed = TRUE`, and assigns `source_account_id` and `destination_account_id` respectively.

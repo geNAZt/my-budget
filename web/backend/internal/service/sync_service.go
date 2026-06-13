@@ -250,6 +250,7 @@ func (s *SyncService) AutoLinkInternalTransfers() {
 	users, _ := s.userRepo.ListAll()
 	for _, user := range users {
 		ibanMap := make(map[string]string)
+		aliasMap := make(map[string]string)
 		integrations, _ := s.integrationRepo.List(user.ID)
 		mikCache := make(map[string][]byte)
 
@@ -264,9 +265,14 @@ func (s *SyncService) AutoLinkInternalTransfers() {
 					}
 					if err := json.Unmarshal(configBytes, &config); err == nil {
 						for accID, meta := range config.AccountsMetadata {
-							if meta != nil && meta.IBAN != "" {
-								cleanIBAN := strings.ReplaceAll(strings.ToUpper(meta.IBAN), " ", "")
-								ibanMap[cleanIBAN] = accID
+							if meta != nil {
+								if meta.IBAN != "" {
+									cleanIBAN := strings.ReplaceAll(strings.ToUpper(meta.IBAN), " ", "")
+									ibanMap[cleanIBAN] = accID
+								}
+								if meta.Alias != "" {
+									aliasMap[accID] = strings.TrimSpace(meta.Alias)
+								}
 							}
 						}
 					}
@@ -366,7 +372,24 @@ func (s *SyncService) AutoLinkInternalTransfers() {
 						continue
 					}
 
-					if math.Abs(genTx.Amount+otherGenTx.Amount) < 0.01 && strings.TrimSpace(otherGenTx.Description) == cleanDesc {
+					match := false
+					d1 := strings.ToLower(cleanDesc)
+					d2 := strings.ToLower(strings.TrimSpace(otherGenTx.Description))
+
+					if d1 == d2 && d1 != "" {
+						match = true
+					} else {
+						aliasTx := strings.ToLower(aliasMap[tx.AccountID])
+						aliasOther := strings.ToLower(aliasMap[other.AccountID])
+
+						if len(aliasOther) >= 3 && d1 != "" && strings.Contains(d1, aliasOther) {
+							match = true
+						} else if len(aliasTx) >= 3 && d2 != "" && strings.Contains(d2, aliasTx) {
+							match = true
+						}
+					}
+
+					if math.Abs(genTx.Amount+otherGenTx.Amount) < 0.01 && match {
 						diff := tx.CreatedAt.Sub(other.CreatedAt)
 						if diff < 0 {
 							diff = -diff
