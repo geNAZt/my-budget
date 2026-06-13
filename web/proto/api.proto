@@ -771,3 +771,19 @@ message SystemLogChunk {
   string line = 1;
   repeated string lines = 2;
 }
+
+message ContainerInfo {
+  string id = 1;
+  string name = 2;
+  string state = 3;
+  string status = 4;
+}
+
+message ContainerList {
+  repeated ContainerInfo containers = 1;
+}
+
+message SystemLogRequest {
+  string container_id = 1;
+}
+

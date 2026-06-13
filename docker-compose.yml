@@ -21,6 +21,8 @@ services:
     volumes:
       - ./web/data:/app/data:Z
       - ./logs:/app/logs:Z
+      - /var/run/docker.sock:/var/run/docker.sock
+
     develop:
       watch:
         - action: rebuild

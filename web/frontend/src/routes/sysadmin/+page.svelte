@@ -2,6 +2,7 @@
     import { onMount, onDestroy } from "svelte";
     import { wsCall } from "$lib/utils/ws_fetch";
     import * as api from "$lib/gen/api_pb.js";
+    import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import { 
         Terminal, 
         Search, 
@@ -24,6 +25,9 @@
     let autoScroll = $state(true);
     let subscription: any = null;
 
+    let containers = $state<{ id: string; name: string }[]>([]);
+    let selectedContainerId = $state<string>("current");
+
     $effect(() => {
         if (autoScroll && terminalElement && logs.length > 0) {
             terminalElement.scrollTop = terminalElement.scrollHeight;
@@ -31,6 +35,7 @@
     });
 
     onMount(async () => {
+        await loadContainers();
         startStreaming();
     });
 
@@ -38,19 +43,58 @@
         stopStreaming();
     });
 
+    async function loadContainers() {
+        try {
+            const [list, err] = await wsCall(
+                "system::containers",
+                null,
+                null,
+                [api.ContainerListSchema]
+            ).one();
+            if (err) {
+                console.error("[SYSADMIN] Failed to load containers:", err);
+                containers = [
+                    { id: "current", name: "Current Process (Backend)" }
+                ];
+                return;
+            }
+            if (list && list.containers && list.containers.length > 0) {
+                containers = [
+                    { id: "current", name: "Current Process (Backend)" },
+                    ...list.containers.map((c: any) => ({
+                        id: c.id,
+                        name: `${c.name} (${c.state})`
+                    }))
+                ];
+            } else {
+                containers = [
+                    { id: "current", name: "Current Process (Backend)" }
+                ];
+            }
+        } catch (err) {
+            console.error("[SYSADMIN] Failed to load containers:", err);
+            containers = [
+                { id: "current", name: "Current Process (Backend)" }
+            ];
+        }
+    }
+
     async function startStreaming() {
         if (subscription) return;
         
         const iter = wsCall(
             "system::logs",
-            api.EmptySchema,
-            {},
+            api.SystemLogRequestSchema,
+            { containerId: selectedContainerId },
             [api.SystemLogChunkSchema]
         ).many();
 
         subscription = iter;
 
         for await (const [chunk, err] of iter) {
+            if (subscription !== iter) {
+                break;
+            }
             if (err) {
                 console.error("[SYSADMIN] Log stream error:", err);
                 break;
@@ -66,10 +110,13 @@
     }
 
     function stopStreaming() {
-        // ws_fetch doesn't explicitly support canceling a generator yet,
-        // but it will stop when the session is closed or another request with same ID starts.
-        // For now, we rely on the component destruction and the backend checking s.IsClosed().
         subscription = null;
+    }
+
+    function handleContainerChange() {
+        stopStreaming();
+        clearLogs();
+        startStreaming();
     }
 
     function clearLogs() {
@@ -77,11 +124,11 @@
     }
 
     function downloadLogs() {
-        const blob = new Blob([logs.join("")], { type: "text/plain" });
+        const blob = new Blob([logs.join("\n")], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `wealthengine-logs-${new Date().toISOString()}.txt`;
+        a.download = `wealthengine-logs-${selectedContainerId}-${new Date().toISOString()}.txt`;
         a.click();
         URL.revokeObjectURL(url);
     }
@@ -120,6 +167,17 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
+                {#if containers.length > 0}
+                    <div class="w-64">
+                        <SearchableDropdown
+                            placeholder="SELECT CONTAINER..."
+                            options={containers.map(c => ({ id: c.id, label: c.name }))}
+                            bind:value={selectedContainerId}
+                            onchange={handleContainerChange}
+                        />
+                    </div>
+                {/if}
+
                 <div class="relative group">
                     <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
                     <input 

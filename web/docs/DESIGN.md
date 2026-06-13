@@ -147,3 +147,25 @@ To prevent duplicate transactions when banking APIs (such as the GoCardless/Nord
    - If not, we check the composite key. We maintain a count of how many times we've seen this composite key in the current sync loop.
    - If the current loop count is less than the count of existing identical transactions in the database, we assume this is a matching transaction whose ID changed. We optionally update its external ID to keep it in sync and skip inserting a duplicate.
    - If the current loop count is greater than or equal to the count of matching database transactions, we treat it as a new transaction and insert it.
+
+## 10. Container Log Streaming & Sysadmin Diagnostics Selector
+
+To enable live diagnostic log monitoring for all running Docker containers in the application's stack (e.g. backend, db, frontend, tunnel, watchtower), we implement a container selector and live log streamer using the Docker Unix socket.
+
+### Backend Implementation
+1. **Docker Unix Socket Access**: Connect directly to `/var/run/docker.sock` via a Unix domain socket HTTP client.
+2. **Container Retrieval (`system::containers`)**:
+   - Query `GET /containers/json` to fetch all containers.
+   - Parse results into a list of container details: `ContainerInfo` containing `ID`, `Name`, `State`, and `Status`.
+3. **Multi-Source Log Streaming (`system::logs`)**:
+   - Accept a `SystemLogRequest` containing `container_id`.
+   - If `container_id` is empty or `"current"`, fall back to streaming the local Go backend process logs captured via `LogService`.
+   - Otherwise, stream logs from the selected container using `GET /containers/{id}/logs?stdout=1&stderr=1&follow=1&tail=200`.
+   - Demultiplex the Docker log frame format (8-byte header: byte 0 = stream type, bytes 4-7 = message length) to stream text lines cleanly.
+
+### Frontend Implementation
+1. **Container Selector**:
+   - Use the `SearchableDropdown` component to allow users to select which container logs they want to view.
+   - Include a default option for "Current Process" to preserve local/standard diagnostics logs.
+2. **Dynamic Streaming Reconnection**:
+   - Re-establish the websocket log stream (`system::logs`) with the new `container_id` when the user changes the selected container.
