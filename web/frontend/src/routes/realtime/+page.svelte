@@ -56,6 +56,8 @@
         User,
         CreditCard,
         Hash,
+        ArrowUp,
+        ArrowDown,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import BudgetSheet from "$lib/components/BudgetSheet.svelte";
@@ -101,6 +103,26 @@
     let activeIntegrationIDs = $state<string[]>(
         getStored("realtime_activeIntegrationIDs", []),
     );
+
+    // Sorting
+    let sortKey = $state<"date" | "amount" | "description" | "receiver">(
+        getStored("realtime_sortKey", "date"),
+    );
+    let sortDirection = $state<"asc" | "desc">(
+        getStored("realtime_sortDirection", "desc"),
+    );
+
+    function toggleSort(key: "date" | "amount" | "description" | "receiver") {
+        if (sortKey === key) {
+            sortDirection = sortDirection === "asc" ? "desc" : "asc";
+        } else {
+            sortKey = key;
+            sortDirection = "desc";
+            if (key === "description" || key === "receiver") {
+                sortDirection = "asc";
+            }
+        }
+    }
 
     // Filters
     let filterStartDate = $state(getStored("realtime_filterStartDate", ""));
@@ -250,11 +272,32 @@
             list = list.filter((t) => !t.isLinkConfirmed);
         }
 
-        return [...list].sort(
-            (a, b) =>
-                new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime(),
-        );
+        return [...list].sort((a, b) => {
+            let valA: any, valB: any;
+            switch (sortKey) {
+                case "amount":
+                    valA = getTxAmount(a);
+                    valB = getTxAmount(b);
+                    break;
+                case "description":
+                    valA = getTxDescription(a).toLowerCase();
+                    valB = getTxDescription(b).toLowerCase();
+                    break;
+                case "receiver":
+                    valA = getTxPeer(a).toLowerCase();
+                    valB = getTxPeer(b).toLowerCase();
+                    break;
+                case "date":
+                default:
+                    valA = new Date(a.createdAt).getTime();
+                    valB = new Date(b.createdAt).getTime();
+                    break;
+            }
+
+            if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+            if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+            return 0;
+        });
     });
 
     const filteredTransactionsBalance = $derived(
@@ -409,6 +452,8 @@
                 "realtime_filterAmountOperator",
                 filterAmountOperator,
             );
+            localStorage.setItem("realtime_sortKey", sortKey);
+            localStorage.setItem("realtime_sortDirection", sortDirection);
         }
     });
 
@@ -1559,6 +1604,41 @@
 
                 {#if viewMode === "LEDGER"}
                     <div class="glass-card p-10 space-y-8">
+                        <div class="flex items-center gap-6 px-5 py-4 bg-slate-50/50 rounded-2xl mb-6 border border-slate-100/50">
+                            <div class="flex-1 flex items-center gap-4">
+                                <button onclick={() => toggleSort('description')} class="flex items-center gap-2 group outline-none">
+                                    <span class="text-[10px] font-black uppercase tracking-[0.2em] {sortKey === 'description' ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}">Description</span>
+                                    {#if sortKey === 'description'}
+                                        {@const Icon = sortDirection === 'asc' ? ArrowUp : ArrowDown}
+                                        <Icon class="w-3 h-3 text-indigo-600" />
+                                    {/if}
+                                </button>
+                                <button onclick={() => toggleSort('date')} class="flex items-center gap-2 group outline-none">
+                                    <span class="text-[10px] font-black uppercase tracking-[0.2em] {sortKey === 'date' ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}">Date</span>
+                                    {#if sortKey === 'date'}
+                                        {@const Icon = sortDirection === 'asc' ? ArrowUp : ArrowDown}
+                                        <Icon class="w-3 h-3 text-indigo-600" />
+                                    {/if}
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-8">
+                                <button onclick={() => toggleSort('amount')} class="flex items-center gap-2 group outline-none">
+                                    {#if sortKey === 'amount'}
+                                        {@const Icon = sortDirection === 'asc' ? ArrowUp : ArrowDown}
+                                        <Icon class="w-3 h-3 text-indigo-600" />
+                                    {/if}
+                                    <span class="text-[10px] font-black uppercase tracking-[0.2em] {sortKey === 'amount' ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}">Amount</span>
+                                </button>
+                                <button onclick={() => toggleSort('receiver')} class="flex items-center gap-2 group outline-none">
+                                    {#if sortKey === 'receiver'}
+                                        {@const Icon = sortDirection === 'asc' ? ArrowUp : ArrowDown}
+                                        <Icon class="w-3 h-3 text-indigo-600" />
+                                    {/if}
+                                    <span class="text-[10px] font-black uppercase tracking-[0.2em] {sortKey === 'receiver' ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}">Receiver</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="space-y-4">
                             {#each filteredTransactions as tx, i (tx.id)}
                                 {@const currentTxDate = new Date(
@@ -1580,7 +1660,7 @@
                                           })
                                         : null}
                                 {@const showDateSeparator =
-                                    i === 0 || currentTxDate !== prevTxDate}
+                                    sortKey === 'date' && (i === 0 || currentTxDate !== prevTxDate)}
 
                                 {#if showDateSeparator}
                                     <div
