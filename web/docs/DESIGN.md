@@ -178,4 +178,8 @@ To prevent booked (finalized/posted) bank transactions that happen to contain th
 1. **Status Check**: When parsing transactions, the provider checks the `status` field.
 2. **Pending Rejection Rule**: A transaction with the `UPCT` sub-code is only marked as `PENDING_REJECTION` if its status is **not** `"BOOK"` (or `"BOOKED"`). If the status is `"BOOK"`, it is treated as a standard finalized booked transaction and not as a pending hold.
 3. **Fallback Struct Extension**: Add the `Status *string` field to the minimal fallback unmarshal structure to ensure it is always captured.
+4. **Data Recovery Migration**: On backend startup, we run an automatic DB query to restore any transactions that were previously wrongly soft-deleted and marked as `EXPIRED_REJECTION` due to the bug:
+   ```sql
+   UPDATE bank_transactions SET is_deleted = FALSE, internal_status = '' WHERE is_deleted = TRUE AND internal_status = 'EXPIRED_REJECTION';
+   ```
 

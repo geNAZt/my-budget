@@ -1078,6 +1078,13 @@ func migrate(db *sql.DB) {
 	MigrateRulesToGlobal(db)
 	MigrateVirtualAccountsToMulti(db)
 	NormalizeJSONColumns(db)
+
+	// Restore any bank transactions that were wrongly auto-deleted due to the UPCT pending rejection bug
+	if _, err := db.Exec("UPDATE bank_transactions SET is_deleted = FALSE, internal_status = '' WHERE is_deleted = TRUE AND internal_status = 'EXPIRED_REJECTION'"); err != nil {
+		log.Printf("[DB Warning] Failed to restore wrongly expired bank transactions: %v", err)
+	} else {
+		log.Printf("[DB] Restored wrongly expired bank transactions (UPCT bug fix).")
+	}
 }
 
 func MigrateRulesToGlobal(db *sql.DB) {
