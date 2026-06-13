@@ -18,6 +18,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: web/backend/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache-dependency-path: web/backend/execution_engine/package-lock.json
+
+      - name: Install Tools
+        run: |
+          go install github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@v2.1.0
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
+          # Install buf
+          BIN="/usr/local/bin"
+          VERSION="1.32.1"
+          sudo curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-$(uname -s)-$(uname -m)" -o "${BIN}/buf"
+          sudo chmod +x "${BIN}/buf"
+
+      - name: Generate and Build
+        run: |
+          cd web/backend
+          go generate ./...
+          CGO_ENABLED=0 go build -o ../main ./cmd/api
+
+      - name: Build execution engine
+        run: |
+          cd web/backend/execution_engine
+          npm ci --omit=dev
+
       - name: Lowercase repository owner
         run: |
           echo "OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -36,9 +69,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./web
-          file: ./web/backend/Dockerfile
+          file: ./web/backend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-backend:latest
+          # We don't need complex Docker caching anymore since we build on the runner
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -51,6 +85,31 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install buf
+        run: |
+          BIN="/usr/local/bin"
+          VERSION="1.32.1"
+          sudo curl -sSL "https://github.com/bufbuild/buf/releases/download/v${VERSION}/buf-$(uname -s)-$(uname -m)" -o "${BIN}/buf"
+          sudo chmod +x "${BIN}/buf"
+
+      - name: Build Frontend
+        run: |
+          cd web/frontend
+          npm ci
+          npm run build
+
+      - name: Prepare production node_modules
+        run: |
+          cd web/frontend
+          rm -rf node_modules
+          npm ci --omit=dev
 
       - name: Lowercase repository owner
         run: |
@@ -70,7 +129,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./web
-          file: ./web/frontend/Dockerfile
+          file: ./web/frontend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-frontend:latest
           cache-from: type=gha

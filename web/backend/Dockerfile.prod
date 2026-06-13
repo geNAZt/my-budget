@@ -1,0 +1,16 @@
+# Simple production runtime for Backend
+FROM alpine:latest
+
+# Install Node.js, ca-certificates, tzdata, and postgresql-client
+RUN apk add --no-cache nodejs ca-certificates tzdata postgresql-client
+
+WORKDIR /app
+
+# Copy the pre-built artifacts
+COPY main .
+COPY data ./data
+COPY backend/execution_engine ./execution_engine
+
+EXPOSE 8080
+
+CMD ["./main"]
