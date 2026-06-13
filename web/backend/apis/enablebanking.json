@@ -242,7 +242,7 @@
             "schema": { "type": "string" }
           },
           {
-            "name": "transaction_fetching_strategy",
+            "name": "strategy",
             "in": "query",
             "schema": { "type": "string" }
           }

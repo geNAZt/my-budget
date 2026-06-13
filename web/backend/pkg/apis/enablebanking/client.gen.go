@@ -117,10 +117,10 @@ type bearerAuthContextKey string
 
 // GetAccountTransactionsParams defines parameters for GetAccountTransactions.
 type GetAccountTransactionsParams struct {
-	DateFrom                    *openapi_types.Date `form:"date_from,omitempty" json:"date_from,omitempty"`
-	DateTo                      *openapi_types.Date `form:"date_to,omitempty" json:"date_to,omitempty"`
-	ContinuationKey             *string             `form:"continuation_key,omitempty" json:"continuation_key,omitempty"`
-	TransactionFetchingStrategy *string             `form:"transaction_fetching_strategy,omitempty" json:"transaction_fetching_strategy,omitempty"`
+	DateFrom        *openapi_types.Date `form:"date_from,omitempty" json:"date_from,omitempty"`
+	DateTo          *openapi_types.Date `form:"date_to,omitempty" json:"date_to,omitempty"`
+	ContinuationKey *string             `form:"continuation_key,omitempty" json:"continuation_key,omitempty"`
+	Strategy        *string             `form:"strategy,omitempty" json:"strategy,omitempty"`
 }
 
 // GetAspspsParams defines parameters for GetAspsps.
@@ -565,9 +565,9 @@ func NewGetAccountTransactionsRequest(server string, accountId string, params *G
 
 		}
 
-		if params.TransactionFetchingStrategy != nil {
+		if params.Strategy != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "transaction_fetching_strategy", *params.TransactionFetchingStrategy, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "strategy", *params.Strategy, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -1350,22 +1350,22 @@ func ParseGetSessionResponse(rsp *http.Response) (*GetSessionResponse, error) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

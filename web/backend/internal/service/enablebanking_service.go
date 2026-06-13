@@ -285,7 +285,7 @@ func (s *EnableBankingService) GetTransactions(ctx context.Context, token string
 		}
 
 		if strategy != "" {
-			params.TransactionFetchingStrategy = &strategy
+			params.Strategy = &strategy
 		}
 
 		if dateFrom != "" && continuationKey == nil {
