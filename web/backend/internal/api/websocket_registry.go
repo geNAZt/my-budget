@@ -27,6 +27,20 @@ func NewWSRegistry() *WSRegistry {
 	}
 }
 
+func toSnakeCase(s string) string {
+	var res strings.Builder
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			prev := s[i-1]
+			if (prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9') {
+				res.WriteRune('_')
+			}
+		}
+		res.WriteRune(r)
+	}
+	return strings.ToLower(res.String())
+}
+
 func (w *WSRegistry) Register(rcvr interface{}) {
 	val := reflect.ValueOf(rcvr)
 	// Start scanning from an empty string prefix
@@ -46,23 +60,49 @@ func (w *WSRegistry) registerRecursive(prefix string, val reflect.Value) {
 			continue
 		}
 
-		methodName := strings.ToLower(method.Name)
-		var fullRoute string
-		if prefix == "" {
-			// e.g. "auth::handshake"
-			structName := strings.ToLower(reflect.Indirect(val).Type().Name())
-			fullRoute = fmt.Sprintf("%s::%s", structName, methodName)
-		} else {
-			// e.g. "auth::register::begin"
-			fullRoute = fmt.Sprintf("%s::%s", prefix, methodName)
-		}
-
 		var respTyp reflect.Type
 		if methodTyp.NumOut() > 0 {
 			respTyp = methodTyp.Out(0)
 		}
 
-		w.addRoute(fullRoute, val, methodTyp.In(3), respTyp, method.Func)
+		methodNameLower := strings.ToLower(method.Name)
+		methodNameSnake := toSnakeCase(method.Name)
+
+		if prefix == "" {
+			structNameRaw := reflect.Indirect(val).Type().Name()
+			structNameLower := strings.ToLower(structNameRaw)
+			structNameSnake := toSnakeCase(structNameRaw)
+
+			// Generate all combinations of structName and methodName
+			routes := []string{
+				fmt.Sprintf("%s::%s", structNameLower, methodNameLower),
+			}
+			route2 := fmt.Sprintf("%s::%s", structNameLower, methodNameSnake)
+			if route2 != routes[0] {
+				routes = append(routes, route2)
+			}
+			route3 := fmt.Sprintf("%s::%s", structNameSnake, methodNameLower)
+			if route3 != routes[0] && route3 != route2 {
+				routes = append(routes, route3)
+			}
+			route4 := fmt.Sprintf("%s::%s", structNameSnake, methodNameSnake)
+			if route4 != routes[0] && route4 != route2 && route4 != route3 {
+				routes = append(routes, route4)
+			}
+
+			for _, route := range routes {
+				w.addRoute(route, val, methodTyp.In(3), respTyp, method.Func)
+			}
+		} else {
+			// prefix is already built as a lowercase path
+			route1 := fmt.Sprintf("%s::%s", prefix, methodNameLower)
+			route2 := fmt.Sprintf("%s::%s", prefix, methodNameSnake)
+
+			w.addRoute(route1, val, methodTyp.In(3), respTyp, method.Func)
+			if route2 != route1 {
+				w.addRoute(route2, val, methodTyp.In(3), respTyp, method.Func)
+			}
+		}
 	}
 
 	// 2. Drill down into nested struct pointers to establish sub-namespaces
