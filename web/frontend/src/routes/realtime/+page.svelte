@@ -93,6 +93,7 @@
     let mappedAccounts = $state<Record<string, any>>({});
     const allAccounts = $derived(allAccountsRaw);
     let isLoading = $state(true);
+    let now = $state(new Date());
     let syncingMap = $state<Record<string, boolean>>({});
     let viewMode = $state<"LEDGER" | "GROUPED" | "CHAINS" | "CONFIG">(
         getStored("realtime_viewMode", "LEDGER"),
@@ -761,8 +762,20 @@
     function formatTimeRemaining(backoffUntil: string | null) {
         if (!backoffUntil) return "Sync Ready";
         const until = new Date(backoffUntil);
-        if (until <= new Date()) return "Sync Ready";
-        return `Backoff: ${until.toLocaleTimeString()}`;
+        if (until <= now) return "Sync Ready";
+
+        const diff = until.getTime() - now.getTime();
+        const secs = Math.floor(diff / 1000);
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+
+        let parts = [];
+        if (h > 0) parts.push(`${h}h`);
+        if (m > 0 || h > 0) parts.push(`${m}m`);
+        parts.push(`${s}s`);
+
+        return `Backoff: ${parts.join(" ")}`;
     }
 
     function prevMonth() {
@@ -852,6 +865,10 @@
     onMount(() => {
         fetchData();
         const interval = setInterval(() => fetchData(true), 30000);
+        const clockInterval = setInterval(() => {
+            now = new Date();
+        }, 1000);
+
         const unsubSync = onWsEvent("sync.finished", SyncFinishedPayloadSchema, (data) => {
             console.log("[WS-EVENT] Sync finished in real time:", data);
             fetchData(true);
@@ -859,6 +876,7 @@
 
         return () => {
             clearInterval(interval);
+            clearInterval(clockInterval);
             unsubSync();
         };
     });

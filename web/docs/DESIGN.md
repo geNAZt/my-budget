@@ -119,7 +119,21 @@ To adhere to the user interface rules defined in `web/GEMINI.md` (Section 2.1), 
         })),
     ]);
     ```
-*   **Value Binding**: Bind the `SearchableDropdown` component directly to `target.expenseId` to synchronize updates seamlessly with the frontend model.
+- **Value Binding**: Bind the `SearchableDropdown` component directly to `target.expenseId` to synchronize updates seamlessly with the frontend model.
+
+## 9. Realtime Tracker Account Backoff Countdown Timer
+
+To improve visibility into the next available sync window, the static "backoff until" timestamp in the "Realtime -> Chains" view will be replaced with a live countdown timer showing the ETA (e.g., "in 5 minutes").
+
+### Implementation Details
+*   **Reactive Clock State**: Introduce a reactive `$state(new Date())` variable named `now` in `+page.svelte`.
+*   **Live Clock Update**: Use `setInterval` within `onMount` to update the `now` state every second. Ensure the interval is cleared on component unmount.
+*   **Countdown Logic**: Update the `formatTimeRemaining` function to calculate the difference between the `backoffUntil` timestamp and the current `now` state.
+*   **Visual Representation**:
+    *   If the backoff time has passed, display "Sync Ready."
+    *   Otherwise, display the remaining time in an H:M:S format (e.g., "Backoff: 02m 45s").
+    *   The Svelte reactivity system will ensure the countdown updates in real-time as `now` changes.
+
 
 ## 8. Occurrence-Based Transaction Deduplication for Bank Integrations
 
