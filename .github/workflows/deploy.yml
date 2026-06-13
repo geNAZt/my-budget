@@ -51,6 +51,9 @@ jobs:
           cd web/backend/execution_engine
           npm ci --omit=dev
 
+      - name: Remove .dockerignore
+        run: rm web/.dockerignore
+
       - name: Lowercase repository owner
         run: |
           echo "OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -110,6 +113,9 @@ jobs:
           cd web/frontend
           rm -rf node_modules
           npm ci --omit=dev
+
+      - name: Remove .dockerignore
+        run: rm web/.dockerignore
 
       - name: Lowercase repository owner
         run: |
