@@ -2057,12 +2057,39 @@ func parseLogFile(filePath string) ([]logTx, error) {
 }
 
 func findServerID() (string, error) {
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir != "" {
+		data, err := os.ReadFile(filepath.Join(dataDir, "server.id"))
+		if err == nil {
+			return strings.TrimSpace(string(data)), nil
+		}
+	}
+
+	dir, err := os.Getwd()
+	if err == nil {
+		for {
+			paths := []string{
+				filepath.Join(dir, "web/data/server.id"),
+				filepath.Join(dir, "data/server.id"),
+				filepath.Join(dir, "server.id"),
+				filepath.Join(dir, "app/data/server.id"),
+			}
+			for _, p := range paths {
+				data, err := os.ReadFile(p)
+				if err == nil {
+					return strings.TrimSpace(string(data)), nil
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
 	paths := []string{
 		"/app/data/server.id",
-		"web/data/server.id",
-		"data/server.id",
-		"./server.id",
-		"server.id",
 	}
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
@@ -2306,34 +2333,74 @@ func FixUPCTTransitions(db *sql.DB) error {
 			}
 
 			var amount float64
-			if amtVal, ok := rawMap["amount"].(float64); ok {
-				amount = amtVal
-			}
-			
 			var txDate time.Time
-			if dateStr, ok := rawMap["date"].(string); ok {
-				txDate, _ = time.Parse("2006-01-02", dateStr)
-				if txDate.IsZero() {
-					txDate, _ = time.Parse(time.RFC3339, dateStr)
+			var receiver string
+			var isPending bool
+
+			// 1. Try GenericTransaction format
+			if _, ok := rawMap["Amount"]; ok || rawMap["Peer"] != nil {
+				if amtVal, ok := rawMap["Amount"].(float64); ok {
+					amount = amtVal
 				}
-			}
-
-			receiver := ""
-			if recVal, ok := rawMap["receiver"].(string); ok {
-				receiver = recVal
-			}
-
-			subcode := ""
-			if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
-				if sc, ok := codeObj["sub_code"].(string); ok {
-					subcode = sc
+				if peerVal, ok := rawMap["Peer"].(string); ok {
+					receiver = peerVal
 				}
-			}
+				if createdVal, ok := rawMap["CreatedAt"].(string); ok {
+					txDate, _ = time.Parse(time.RFC3339, createdVal)
+				}
+				if statusVal, ok := rawMap["InternalStatus"].(string); ok {
+					if statusVal == "PENDING_REJECTION" {
+						isPending = true
+					}
+				}
+			} else {
+				// 2. Fallback to raw format
+				if amtVal, ok := rawMap["amount"].(float64); ok {
+					amount = amtVal
+				} else if amtObj, ok := rawMap["transaction_amount"].(map[string]interface{}); ok {
+					if amtStr, ok := amtObj["amount"].(string); ok {
+						fmt.Sscanf(amtStr, "%f", &amount)
+					}
+				}
+				
+				if creditDebit, ok := rawMap["credit_debit_indicator"].(string); ok && creditDebit == "DBIT" {
+					amount = -amount
+				}
 
-			isPending := (subcode == "UPCT")
-			if status, ok := rawMap["status"].(string); ok {
-				if status == "PENDING_REJECTION" || (status != "BOOK" && status != "BOOKED" && status != "booked" && status != "") {
+				if dateStr, ok := rawMap["date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				} else if dateStr, ok := rawMap["booking_date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				} else if dateStr, ok := rawMap["value_date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				}
+
+				if peerVal, ok := rawMap["receiver"].(string); ok {
+					receiver = peerVal
+				} else if creditor, ok := rawMap["creditor"].(map[string]interface{}); ok {
+					if name, ok := creditor["name"].(string); ok {
+						receiver = name
+					}
+				} else if debtor, ok := rawMap["debtor"].(map[string]interface{}); ok {
+					if name, ok := debtor["name"].(string); ok {
+						receiver = name
+					}
+				}
+
+				subcode := ""
+				if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
+					if sc, ok := codeObj["sub_code"].(string); ok {
+						subcode = sc
+					}
+				}
+
+				if subcode == "UPCT" {
 					isPending = true
+				}
+				if status, ok := rawMap["status"].(string); ok {
+					if status == "PENDING_REJECTION" || (status != "BOOK" && status != "BOOKED" && status != "booked" && status != "") {
+						isPending = true
+					}
 				}
 			}
 
