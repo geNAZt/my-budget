@@ -144,6 +144,18 @@
     let startX = $state(0);
     let scrollLeft = $state(0);
 
+    // Sub-asset resizing states
+    let isResizingSubAsset = $state(false);
+    let resizingSubAssetData = $state<{
+        asset: any;
+        sa: any;
+        side: 'start' | 'end';
+        originalStartIdx: number;
+        originalEndIdx: number;
+        currentStartIdx: number;
+        currentEndIdx: number;
+    } | null>(null);
+
     // Hover highlight states for link tracing
     let hoveredEntityId = $state<string | null>(null);
     let hoveredEntityType = $state<string | null>(null);
@@ -587,6 +599,158 @@
         } catch (err: any) {
             console.error("Failed to run timeline projection", err);
             error = err.message;
+        } finally {
+            isProjecting = false;
+        }
+    }
+
+    // --- Sub-Asset Resizing Handlers ---
+    function startResizingSubAsset(e: MouseEvent, asset: any, sa: any, side: 'start' | 'end') {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        const saSpan = getAssetColSpan(sa.startDate, sa.endDate);
+        if (!saSpan.visible) return;
+
+        resizingSubAssetData = {
+            asset,
+            sa,
+            side,
+            originalStartIdx: saSpan.startIdx,
+            originalEndIdx: saSpan.endIdx,
+            currentStartIdx: saSpan.startIdx,
+            currentEndIdx: saSpan.endIdx
+        };
+        isResizingSubAsset = true;
+
+        window.addEventListener('mousemove', handleSubAssetResizeMove);
+        window.addEventListener('mouseup', handleSubAssetResizeEnd);
+    }
+
+    function handleSubAssetResizeMove(e: MouseEvent) {
+        if (!isResizingSubAsset || !resizingSubAssetData || !timelineScrollContainer) return;
+
+        const rect = timelineScrollContainer.getBoundingClientRect();
+        const scrollOffset = timelineScrollContainer.scrollLeft;
+        const relativeX = e.clientX - rect.left + scrollOffset;
+        
+        // Month width is 256px
+        let newIdx = Math.floor(relativeX / 256);
+        newIdx = Math.max(0, Math.min(newIdx, months.length - 1));
+
+        if (resizingSubAssetData.side === 'start') {
+            resizingSubAssetData.currentStartIdx = Math.min(newIdx, resizingSubAssetData.originalEndIdx);
+        } else {
+            resizingSubAssetData.currentEndIdx = Math.max(newIdx, resizingSubAssetData.originalStartIdx);
+        }
+    }
+
+    async function handleSubAssetResizeEnd() {
+        if (!isResizingSubAsset || !resizingSubAssetData) return;
+
+        const { asset, sa, currentStartIdx, currentEndIdx, originalStartIdx, originalEndIdx } = resizingSubAssetData;
+        
+        window.removeEventListener('mousemove', handleSubAssetResizeMove);
+        window.removeEventListener('mouseup', handleSubAssetResizeEnd);
+        
+        isResizingSubAsset = false;
+
+        if (currentStartIdx !== originalStartIdx || currentEndIdx !== originalEndIdx) {
+            const startDate = months[currentStartIdx].date;
+            const endDate = months[currentEndIdx].date;
+            
+            // Calculate new monthly amount
+            const monthSpan = currentEndIdx - currentStartIdx + 1;
+            const targetValue = Number(sa.targetValue) || 0;
+            const newAmountPerMonth = monthSpan > 0 ? targetValue / monthSpan : targetValue;
+
+            // Update the sub-asset in the local state first for immediate UI feedback
+            const av = getActiveVersion(asset);
+            const subAssets = av?.subAssets || [];
+            const targetSa = subAssets.find((s: any) => s.id === sa.id);
+            if (targetSa) {
+                targetSa.startDate = startDate;
+                targetSa.endDate = endDate;
+                targetSa.amountPerMonth = newAmountPerMonth;
+            }
+
+            // Save to backend
+            await persistAssetChanges(asset);
+        }
+
+        resizingSubAssetData = null;
+    }
+
+    async function persistAssetChanges(asset: any) {
+        isProjecting = true;
+        try {
+            const av = getActiveVersion(asset);
+            
+            // We need to map it correctly for the backend
+            const payload = {
+                id: asset.id || "",
+                name: asset.name,
+                poolId: asset.poolId || "",
+                accountIds: asset.accountIds || [],
+                linkToScenarios: asset.linkToScenarios || [],
+                activeVersion: {
+                    id: av.id || "",
+                    assetId: av.assetId || "",
+                    type: av.type || "STOCKS",
+                    targetValue: parseFloat(av.targetValue) || 0,
+                    dumpingLoanId: av.dumpingLoanId || "",
+                    stopModificationId: av.stopModificationId || "",
+                    interestRate: parseFloat(av.interestRate) || 0,
+                    interestInterval: av.interestInterval || "YEARLY",
+                    amountPerMonth: parseFloat(av.amountPerMonth) || 0,
+                    remainderStartDate: av.remainderStartDate || "",
+                    startDate: av.startDate || "",
+                    endDate: av.endDate || "",
+                    etfConfig: (av.etfConfig || []).map((t: any) => ({
+                        tracker: t.tracker || "",
+                        historicalTracker: t.historicalTracker || "",
+                        conversionTracker: t.conversionTracker || "",
+                        historyProvider: t.historyProvider || "",
+                        percentage: parseFloat(t.percentage) || 0,
+                        ter: parseFloat(t.ter) || 0,
+                        stitchingSegments: (t.stitchingSegments || []).map((seg: any) => ({
+                            provider: seg.provider || "",
+                            lookupTicker: seg.lookupTicker || "",
+                            conversionTracker: seg.conversionTracker || "",
+                        })),
+                    })),
+                    penalties: (av.penalties || []).map((p: any) => ({
+                        name: p.name || "",
+                        triggerType: p.triggerType || "",
+                        percentage: parseFloat(p.percentage) || 0,
+                    })),
+                    subAssets: (av.subAssets || []).map((s: any) => ({
+                        id: s.id || "",
+                        name: s.name || "",
+                        targetValue: Number(s.targetValue) || 0,
+                        amountPerMonth: Number(s.amountPerMonth) || 0,
+                        isRemainderConsumer: !!s.isRemainderConsumer,
+                        remainderStartDate: s.remainderStartDate || "",
+                        dumpingLoanId: s.dumpingLoanId || "",
+                        startDate: s.startDate || "",
+                        endDate: s.endDate || "",
+                        earliestDumpDate: s.earliestDumpDate || "",
+                        expenseId: s.expenseId || "",
+                    }))
+                }
+            };
+
+            await wsCall("assets::save", AssetSchema, payload, [AssetSchema]).one();
+            
+            // Re-fetch Assets and run projection
+            const [asResp] = await wsCall("assets::list", null, null, [AssetListSchema]).one();
+            if (asResp) {
+                allAssets = asResp.assets ?? [];
+            }
+            await runProjection();
+        } catch (err: any) {
+            console.error("Failed to persist asset changes", err);
+            error = "Failed to save changes: " + err.message;
         } finally {
             isProjecting = false;
         }
@@ -2288,21 +2452,39 @@
                                                     {/each}
                                                     
                                                     {#if saSpan.visible}
+                                                        {@const isThisResizing = isResizingSubAsset && resizingSubAssetData?.sa.id === sa.id}
+                                                        {@const displayStartIdx = (isThisResizing && resizingSubAssetData) ? resizingSubAssetData.currentStartIdx : saSpan.startIdx}
+                                                        {@const displayEndIdx = (isThisResizing && resizingSubAssetData) ? resizingSubAssetData.currentEndIdx : saSpan.endIdx}
                                                         {@const saHasLink = sa.dumpingLoanId || sa.expenseId}
                                                         <button
                                                             onclick={() => openAssetDetails(asset)}
                                                             onmouseenter={() => { hoveredEntityId = sa.id; hoveredEntityType = "SUB_ASSET"; }}
                                                             onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                                            class="absolute top-2.5 bottom-2.5 rounded-xl bg-gradient-to-r from-teal-500/60 to-cyan-500/60 text-white font-bold text-[10px] px-3 flex items-center justify-between shadow-sm border border-white/10 hover:scale-[1.01] active:scale-[0.99] transition-all text-left {getHighlightClasses(sa.id, 'SUB_ASSET')}"
-                                                            style="left: {saSpan.startIdx * 256 + 16}px; width: {(saSpan.endIdx - saSpan.startIdx + 1) * 256 - 32}px;"
+                                                            class="absolute top-2.5 bottom-2.5 rounded-xl bg-gradient-to-r from-teal-500/60 to-cyan-500/60 text-white font-bold text-[10px] px-3 flex items-center justify-between shadow-sm border border-white/10 hover:scale-[1.01] active:scale-[0.99] transition-all text-left {getHighlightClasses(sa.id, 'SUB_ASSET')} {isThisResizing ? 'z-50 ring-2 ring-cyan-400 scale-[1.02]' : ''}"
+                                                            style="left: {displayStartIdx * 256 + 16}px; width: {(displayEndIdx - displayStartIdx + 1) * 256 - 32}px;"
                                                         >
-                                                            <span class="truncate flex items-center gap-1">
+                                                            <!-- Resize Handles -->
+                                                            <div 
+                                                                class="absolute left-0 top-0 bottom-0 w-4 cursor-col-resize z-10 group/handle flex items-center justify-center"
+                                                                onmousedown={(e) => startResizingSubAsset(e, asset, sa, 'start')}
+                                                            >
+                                                                <div class="w-1.5 h-4 bg-white/30 rounded-full group-hover/handle:bg-white/60 transition-colors"></div>
+                                                            </div>
+                                                            
+                                                            <div 
+                                                                class="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 group/handle flex items-center justify-center"
+                                                                onmousedown={(e) => startResizingSubAsset(e, asset, sa, 'end')}
+                                                            >
+                                                                <div class="w-1.5 h-4 bg-white/30 rounded-full group-hover/handle:bg-white/60 transition-colors"></div>
+                                                            </div>
+
+                                                            <span class="truncate flex items-center gap-1 pl-1.5">
                                                                 {#if saHasLink}
                                                                     <Link2 class="w-3 h-3 text-white/90 shrink-0" />
                                                                 {/if}
                                                                 <span class="truncate">{sa.name}</span>
                                                             </span>
-                                                            <span class="font-black font-sans">Target: {formatCurrency(sa.targetValue)}</span>
+                                                            <span class="font-black font-sans pr-1.5">Target: {formatCurrency(sa.targetValue)}</span>
                                                         </button>
                                                     {/if}
                                                 </div>
