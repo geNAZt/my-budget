@@ -161,6 +161,20 @@
     let assetSaveError = $state<string | null>(null);
     let simulatedYields = $state<Record<string, number>>({});
 
+    // Collapsible sections
+    let assetsCollapsed = $state(false);
+    let loansCollapsed = $state(false);
+    let collapsedAssetIds = $state<string[]>([]);
+
+    function toggleAssetSubAssets(assetId: string, event: MouseEvent) {
+        event.stopPropagation();
+        if (collapsedAssetIds.includes(assetId)) {
+            collapsedAssetIds = collapsedAssetIds.filter(id => id !== assetId);
+        } else {
+            collapsedAssetIds = [...collapsedAssetIds, assetId];
+        }
+    }
+
     // Auto Optimization recommendations
     let isOptimizing = $state(false);
     let optimizationResults = $state<any[] | null>(null);
@@ -1984,56 +1998,106 @@
                             <div class="h-20 border-b border-slate-100 dark:border-slate-800 flex items-center px-6 font-black text-xs uppercase tracking-wider text-slate-400">
                                 Variable Expenses
                             </div>
-                            {#each activeAssets as asset}
-                                {@const hasLink = getActiveVersion(asset)?.dumpingLoanId || (getActiveVersion(asset)?.subAssets || []).some((sa: any) => sa.dumpingLoanId || sa.expenseId)}
-                                <div 
-                                    onmouseenter={() => { hoveredEntityId = getID(asset); hoveredEntityType = "ASSET"; }}
-                                    onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                    class="h-16 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-850 {getHighlightClasses(getID(asset), 'ASSET')}"
-                                >
-                                    <button
-                                        onclick={() => openAssetDetails(asset)}
-                                        class="text-xs font-black text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1.5 truncate max-w-[180px]"
-                                    >
-                                        <Layers class="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                        {#if hasLink}
-                                            <Link2 class="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                        {/if}
-                                        <span class="truncate">{getName(asset)}</span>
-                                    </button>
-                                    <button onclick={() => openAssetDetails(asset)} class="text-slate-350 hover:text-indigo-600 transition-colors shrink-0">
-                                        <Edit3 class="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                
-                                {#each getSubAssets(asset).filter((sa: any) => isEntityActive(sa.id || '', 'SUB_ASSET')) as sa}
-                                    {@const saHasLink = sa.dumpingLoanId || sa.expenseId}
+
+                            <button 
+                                onclick={() => assetsCollapsed = !assetsCollapsed}
+                                class="h-12 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 font-black text-xs uppercase tracking-wider text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-900/50 transition-colors cursor-pointer group shrink-0"
+                            >
+                                <span class="flex items-center gap-2">
+                                    <Layers class="w-3.5 h-3.5" />
+                                    Assets
+                                </span>
+                                {#if assetsCollapsed}
+                                    <ChevronRight class="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                                {:else}
+                                    <ChevronDown class="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                                {/if}
+                            </button>
+
+                            {#if !assetsCollapsed}
+                                {#each activeAssets as asset}
+                                    {@const hasLink = getActiveVersion(asset)?.dumpingLoanId || (getActiveVersion(asset)?.subAssets || []).some((sa: any) => sa.dumpingLoanId || sa.expenseId)}
                                     <div 
-                                        onmouseenter={() => { hoveredEntityId = sa.id; hoveredEntityType = "SUB_ASSET"; }}
+                                        onmouseenter={() => { hoveredEntityId = getID(asset); hoveredEntityType = "ASSET"; }}
                                         onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                        class="h-12 border-b border-slate-100 dark:border-slate-850 flex items-center px-6 pl-10 bg-slate-50/20 dark:bg-slate-900/10 {getHighlightClasses(sa.id, 'SUB_ASSET')}"
+                                        class="h-16 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 bg-white dark:bg-slate-850 {getHighlightClasses(getID(asset), 'ASSET')}"
                                     >
-                                        <button
-                                            onclick={() => openAssetDetails(asset)}
-                                            class="text-[11px] font-bold text-slate-400 hover:text-cyan-500 transition-colors flex items-center gap-1.5 truncate max-w-[180px] text-left"
-                                        >
-                                            <Link2 class="w-3 h-3 text-cyan-400 shrink-0" />
-                                            {#if saHasLink}
-                                                <Link2 class="w-3 h-3 text-cyan-500 shrink-0" />
+                                        <div class="flex items-center gap-2 overflow-hidden">
+                                            {#if getSubAssets(asset).length > 0}
+                                                <button 
+                                                    onclick={(e) => toggleAssetSubAssets(getID(asset), e)}
+                                                    class="text-slate-300 hover:text-indigo-500 transition-colors p-0.5 shrink-0"
+                                                >
+                                                    {#if collapsedAssetIds.includes(getID(asset))}
+                                                        <ChevronRight class="w-3.5 h-3.5" />
+                                                    {:else}
+                                                        <ChevronDown class="w-3.5 h-3.5" />
+                                                    {/if}
+                                                </button>
                                             {/if}
-                                            <span class="truncate">{sa.name}</span>
+                                            <button
+                                                onclick={() => openAssetDetails(asset)}
+                                                class="text-xs font-black text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1.5 truncate max-w-[160px]"
+                                            >
+                                                <Layers class="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                                {#if hasLink}
+                                                    <Link2 class="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                                {/if}
+                                                <span class="truncate">{getName(asset)}</span>
+                                            </button>
+                                        </div>
+                                        <button onclick={() => openAssetDetails(asset)} class="text-slate-350 hover:text-indigo-600 transition-colors shrink-0">
+                                            <Edit3 class="w-3.5 h-3.5" />
                                         </button>
                                     </div>
+                                    
+                                    {#if !collapsedAssetIds.includes(getID(asset))}
+                                        {#each getSubAssets(asset).filter((sa: any) => isEntityActive(sa.id || '', 'SUB_ASSET')) as sa}
+                                            {@const saHasLink = sa.dumpingLoanId || sa.expenseId}
+                                            <div 
+                                                onmouseenter={() => { hoveredEntityId = sa.id; hoveredEntityType = "SUB_ASSET"; }}
+                                                onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
+                                                class="h-12 border-b border-slate-100 dark:border-slate-850 flex items-center px-6 pl-10 bg-slate-50/20 dark:bg-slate-900/10 {getHighlightClasses(sa.id, 'SUB_ASSET')}"
+                                            >
+                                                <button
+                                                    onclick={() => openAssetDetails(asset)}
+                                                    class="text-[11px] font-bold text-slate-400 hover:text-cyan-500 transition-colors flex items-center gap-1.5 truncate max-w-[180px] text-left"
+                                                >
+                                                    <Link2 class="w-3 h-3 text-cyan-400 shrink-0" />
+                                                    {#if saHasLink}
+                                                        <Link2 class="w-3 h-3 text-cyan-500 shrink-0" />
+                                                    {/if}
+                                                    <span class="truncate">{sa.name}</span>
+                                                </button>
+                                            </div>
+                                        {/each}
+                                    {/if}
                                 {/each}
-                            {/each}
+                            {/if}
 
-                            {#each activeLoans as loan}
-                                {@const hasLink = activeAssets.some(a => getActiveVersion(a)?.dumpingLoanId === getID(loan) || getActiveVersion(a)?.subAssets?.some((sa: any) => sa.dumpingLoanId === getID(loan)))}
-                                <div 
-                                    onmouseenter={() => { hoveredEntityId = getID(loan); hoveredEntityType = "LOAN"; }}
-                                    onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                    class="h-16 border-b border-slate-100 dark:border-slate-800 flex items-center px-6 bg-white dark:bg-slate-850 {getHighlightClasses(getID(loan), 'LOAN')}"
-                                >
+                            <button 
+                                onclick={() => loansCollapsed = !loansCollapsed}
+                                class="h-12 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 font-black text-xs uppercase tracking-wider text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-900/50 transition-colors cursor-pointer group shrink-0"
+                            >
+                                <span class="flex items-center gap-2">
+                                    <CreditCard class="w-3.5 h-3.5" />
+                                    Loans
+                                </span>
+                                {#if loansCollapsed}
+                                    <ChevronRight class="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                                {:else}
+                                    <ChevronDown class="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                                {/if}
+                            </button>
+
+                            {#if !loansCollapsed}
+                                {#each activeLoans as loan}
+                                    {@const hasLink = activeAssets.some(a => getActiveVersion(a)?.dumpingLoanId === getID(loan) || getActiveVersion(a)?.subAssets?.some((sa: any) => sa.dumpingLoanId === getID(loan)))}
+                                    <div 
+                                        onmouseenter={() => { hoveredEntityId = getID(loan); hoveredEntityType = "LOAN"; }}
+                                        onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
+                                        class="h-16 border-b border-slate-100 dark:border-slate-800 flex items-center px-6 bg-white dark:bg-slate-850 {getHighlightClasses(getID(loan), 'LOAN')}"
+                                    >
                                     <div class="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate max-w-[180px]">
                                         <CreditCard class="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                         {#if hasLink}
@@ -2042,7 +2106,8 @@
                                         <span class="truncate">{getName(loan)}</span>
                                     </div>
                                 </div>
-                            {/each}
+                                {/each}
+                            {/if}
                         </div>
 
                         <!-- Horizontally scrollable Gantt track -->
@@ -2135,99 +2200,117 @@
                                 </div>
 
                                 <!-- Assets & Sub-assets horizontal bars mapping -->
-                                {#each activeAssets as asset}
-                                    {@const actualAssetEnd = getActualEndIndex(asset)}
-                                    {@const span = getAssetColSpan(getActiveVersion(asset)?.startDate || "", getActiveVersion(asset)?.endDate || "", actualAssetEnd)}
-                                    <!-- Asset row -->
-                                    <div class="h-16 border-b border-slate-100 dark:border-slate-800 flex bg-white dark:bg-slate-900 relative">
-                                        {#each months as month}
-                                            <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
-                                        {/each}
-                                        
-                                        {#if span.visible}
-                                            {@const hasLink = getActiveVersion(asset)?.dumpingLoanId || (getActiveVersion(asset)?.subAssets || []).some((sa: any) => sa.dumpingLoanId || sa.expenseId)}
-                                            <button
-                                                onclick={() => openAssetDetails(asset)}
-                                                onmouseenter={() => { hoveredEntityId = getID(asset); hoveredEntityType = "ASSET"; }}
-                                                onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                                class="absolute top-3 bottom-3 rounded-2xl bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-pink-500/80 text-white font-black text-xs px-4 flex items-center justify-between shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all {getHighlightClasses(getID(asset), 'ASSET')}"
-                                                style="left: {span.startIdx * 256 + 8}px; width: {(span.endIdx - span.startIdx + 1) * 256 - 16}px;"
-                                            >
-                                                <span class="truncate flex items-center gap-1.5">
-                                                    {#if hasLink}
-                                                        <Link2 class="w-3.5 h-3.5 text-white/90 shrink-0" />
-                                                    {/if}
-                                                    <span class="truncate">{getName(asset)} ({getInterestRate(asset)}%)</span>
-                                                </span>
-                                                <span class="text-[10px] font-black bg-white/20 px-2.5 py-0.5 rounded-full select-none">
-                                                    {formatCurrency(getBalance(asset))}
-                                                </span>
-                                            </button>
-                                        {/if}
-                                    </div>
-
-                                    <!-- Sub-asset rows -->
-                                    {#each getSubAssets(asset).filter((sa: any) => isEntityActive(sa.id || '', 'SUB_ASSET')) as sa}
-                                        {@const actualSubAssetEnd = getActualEndIndex(asset, sa)}
-                                        {@const saSpan = getAssetColSpan(sa.startDate, sa.endDate, actualSubAssetEnd)}
-                                        <div class="h-12 border-b border-slate-100 dark:border-slate-850 flex bg-slate-50/10 dark:bg-slate-900/10 relative">
+                                <div class="h-12 border-b border-slate-100 dark:border-slate-800 flex bg-slate-50/50 dark:bg-slate-900/50 relative">
+                                    {#each months as month}
+                                        <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
+                                    {/each}
+                                </div>
+                                
+                                {#if !assetsCollapsed}
+                                    {#each activeAssets as asset}
+                                        {@const actualAssetEnd = getActualEndIndex(asset)}
+                                        {@const span = getAssetColSpan(getActiveVersion(asset)?.startDate || "", getActiveVersion(asset)?.endDate || "", actualAssetEnd)}
+                                        <!-- Asset row -->
+                                        <div class="h-16 border-b border-slate-100 dark:border-slate-800 flex bg-white dark:bg-slate-900 relative">
                                             {#each months as month}
                                                 <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
                                             {/each}
                                             
-                                            {#if saSpan.visible}
-                                                {@const saHasLink = sa.dumpingLoanId || sa.expenseId}
+                                            {#if span.visible}
+                                                {@const hasLink = getActiveVersion(asset)?.dumpingLoanId || (getActiveVersion(asset)?.subAssets || []).some((sa: any) => sa.dumpingLoanId || sa.expenseId)}
                                                 <button
                                                     onclick={() => openAssetDetails(asset)}
-                                                    onmouseenter={() => { hoveredEntityId = sa.id; hoveredEntityType = "SUB_ASSET"; }}
+                                                    onmouseenter={() => { hoveredEntityId = getID(asset); hoveredEntityType = "ASSET"; }}
                                                     onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                                    class="absolute top-2.5 bottom-2.5 rounded-xl bg-gradient-to-r from-teal-500/60 to-cyan-500/60 text-white font-bold text-[10px] px-3 flex items-center justify-between shadow-sm border border-white/10 hover:scale-[1.01] active:scale-[0.99] transition-all text-left {getHighlightClasses(sa.id, 'SUB_ASSET')}"
-                                                    style="left: {saSpan.startIdx * 256 + 16}px; width: {(saSpan.endIdx - saSpan.startIdx + 1) * 256 - 32}px;"
+                                                    class="absolute top-3 bottom-3 rounded-2xl bg-gradient-to-r from-indigo-500/80 via-purple-500/80 to-pink-500/80 text-white font-black text-xs px-4 flex items-center justify-between shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all {getHighlightClasses(getID(asset), 'ASSET')}"
+                                                    style="left: {span.startIdx * 256 + 8}px; width: {(span.endIdx - span.startIdx + 1) * 256 - 16}px;"
                                                 >
-                                                    <span class="truncate flex items-center gap-1">
-                                                        {#if saHasLink}
-                                                            <Link2 class="w-3 h-3 text-white/90 shrink-0" />
+                                                    <span class="truncate flex items-center gap-1.5">
+                                                        {#if hasLink}
+                                                            <Link2 class="w-3.5 h-3.5 text-white/90 shrink-0" />
                                                         {/if}
-                                                        <span class="truncate">{sa.name}</span>
+                                                        <span class="truncate">{getName(asset)} ({getInterestRate(asset)}%)</span>
                                                     </span>
-                                                    <span class="font-black font-sans">Target: {formatCurrency(sa.targetValue)}</span>
+                                                    <span class="text-[10px] font-black bg-white/20 px-2.5 py-0.5 rounded-full select-none">
+                                                        {formatCurrency(getBalance(asset))}
+                                                    </span>
                                                 </button>
                                             {/if}
                                         </div>
+
+                                        <!-- Sub-asset rows -->
+                                        {#if !collapsedAssetIds.includes(getID(asset))}
+                                            {#each getSubAssets(asset).filter((sa: any) => isEntityActive(sa.id || '', 'SUB_ASSET')) as sa}
+                                                {@const actualSubAssetEnd = getActualEndIndex(asset, sa)}
+                                                {@const saSpan = getAssetColSpan(sa.startDate, sa.endDate, actualSubAssetEnd)}
+                                                <div class="h-12 border-b border-slate-100 dark:border-slate-850 flex bg-slate-50/10 dark:bg-slate-900/10 relative">
+                                                    {#each months as month}
+                                                        <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
+                                                    {/each}
+                                                    
+                                                    {#if saSpan.visible}
+                                                        {@const saHasLink = sa.dumpingLoanId || sa.expenseId}
+                                                        <button
+                                                            onclick={() => openAssetDetails(asset)}
+                                                            onmouseenter={() => { hoveredEntityId = sa.id; hoveredEntityType = "SUB_ASSET"; }}
+                                                            onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
+                                                            class="absolute top-2.5 bottom-2.5 rounded-xl bg-gradient-to-r from-teal-500/60 to-cyan-500/60 text-white font-bold text-[10px] px-3 flex items-center justify-between shadow-sm border border-white/10 hover:scale-[1.01] active:scale-[0.99] transition-all text-left {getHighlightClasses(sa.id, 'SUB_ASSET')}"
+                                                            style="left: {saSpan.startIdx * 256 + 16}px; width: {(saSpan.endIdx - saSpan.startIdx + 1) * 256 - 32}px;"
+                                                        >
+                                                            <span class="truncate flex items-center gap-1">
+                                                                {#if saHasLink}
+                                                                    <Link2 class="w-3 h-3 text-white/90 shrink-0" />
+                                                                {/if}
+                                                                <span class="truncate">{sa.name}</span>
+                                                            </span>
+                                                            <span class="font-black font-sans">Target: {formatCurrency(sa.targetValue)}</span>
+                                                        </button>
+                                                    {/if}
+                                                </div>
+                                            {/each}
+                                        {/if}
                                     {/each}
-                                {/each}
+                                {/if}
 
                                 <!-- Loans horizontal bars mapping -->
-                                {#each activeLoans as loan}
-                                    {@const actualLoanEnd = getLoanActualEndIndex(loan)}
-                                    {@const span = getLoanColSpan(loan, actualLoanEnd)}
-                                    <!-- Loan row -->
-                                    <div class="h-16 border-b border-slate-100 dark:border-slate-800 flex bg-white dark:bg-slate-900 relative">
-                                        {#each months as month}
-                                            <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
-                                        {/each}
-                                        
-                                        {#if span.visible}
-                                            {@const hasLink = activeAssets.some(a => getActiveVersion(a)?.dumpingLoanId === getID(loan) || getActiveVersion(a)?.subAssets?.some((sa: any) => sa.dumpingLoanId === getID(loan)))}
-                                            <div
-                                                onmouseenter={() => { hoveredEntityId = getID(loan); hoveredEntityType = "LOAN"; }}
-                                                onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
-                                                class="absolute top-3 bottom-3 rounded-2xl bg-gradient-to-r from-rose-500/80 via-pink-500/80 to-purple-500/80 text-white font-black text-xs px-4 flex items-center justify-between shadow-md select-none {getHighlightClasses(getID(loan), 'LOAN')}"
-                                                style="left: {span.startIdx * 256 + 8}px; width: {(span.endIdx - span.startIdx + 1) * 256 - 16}px;"
-                                            >
-                                                <span class="truncate flex items-center gap-1.5">
-                                                    {#if hasLink}
-                                                        <Link2 class="w-3.5 h-3.5 text-white/90 shrink-0" />
-                                                    {/if}
-                                                    <span class="truncate">{getName(loan)} ({getInterestRate(loan)}%)</span>
-                                                </span>
-                                                <span class="text-[10px] font-black bg-white/20 px-2.5 py-0.5 rounded-full">
-                                                    {formatCurrency(getBalance(loan))}
-                                                </span>
-                                            </div>
-                                        {/if}
-                                    </div>
-                                {/each}
+                                <div class="h-12 border-b border-slate-100 dark:border-slate-800 flex bg-slate-50/50 dark:bg-slate-900/50 relative">
+                                    {#each months as month}
+                                        <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
+                                    {/each}
+                                </div>
+
+                                {#if !loansCollapsed}
+                                    {#each activeLoans as loan}
+                                        {@const actualLoanEnd = getLoanActualEndIndex(loan)}
+                                        {@const span = getLoanColSpan(loan, actualLoanEnd)}
+                                        <!-- Loan row -->
+                                        <div class="h-16 border-b border-slate-100 dark:border-slate-800 flex bg-white dark:bg-slate-900 relative">
+                                            {#each months as month}
+                                                <div class="w-64 shrink-0 border-r border-slate-100/30 dark:border-slate-800/30 h-full"></div>
+                                            {/each}
+                                            
+                                            {#if span.visible}
+                                                {@const hasLink = activeAssets.some(a => getActiveVersion(a)?.dumpingLoanId === getID(loan) || getActiveVersion(a)?.subAssets?.some((sa: any) => sa.dumpingLoanId === getID(loan)))}
+                                                <div
+                                                    onmouseenter={() => { hoveredEntityId = getID(loan); hoveredEntityType = "LOAN"; }}
+                                                    onmouseleave={() => { hoveredEntityId = null; hoveredEntityType = null; }}
+                                                    class="absolute top-3 bottom-3 rounded-2xl bg-gradient-to-r from-rose-500/80 via-pink-500/80 to-purple-500/80 text-white font-black text-xs px-4 flex items-center justify-between shadow-md select-none {getHighlightClasses(getID(loan), 'LOAN')}"
+                                                    style="left: {span.startIdx * 256 + 8}px; width: {(span.endIdx - span.startIdx + 1) * 256 - 16}px;"
+                                                >
+                                                    <span class="truncate flex items-center gap-1.5">
+                                                        {#if hasLink}
+                                                            <Link2 class="w-3.5 h-3.5 text-white/90 shrink-0" />
+                                                        {/if}
+                                                        <span class="truncate">{getName(loan)} ({getInterestRate(loan)}%)</span>
+                                                    </span>
+                                                    <span class="text-[10px] font-black bg-white/20 px-2.5 py-0.5 rounded-full">
+                                                        {formatCurrency(getBalance(loan))}
+                                                    </span>
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                {/if}
 
                             </div>
                         </div>
