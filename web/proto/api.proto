@@ -841,4 +841,10 @@ message SyncRunDetailsResponse {
   repeated SyncRawLogFile raw_logs = 7;
 }
 
+message SystemStatus {
+  string frontend_version = 1;
+  string backend_version = 2;
+  string watchtower_status = 3; // "green", "yellow", "red", "yellow-blinking"
+}
+
 

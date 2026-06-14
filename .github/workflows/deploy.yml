@@ -75,6 +75,8 @@ jobs:
           file: ./web/backend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-backend:latest
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
           # We don't need complex Docker caching anymore since we build on the runner
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -106,7 +108,7 @@ jobs:
         run: |
           cd web/frontend
           npm ci
-          npm run build
+          VITE_GIT_COMMIT=${{ github.sha }} npm run build
 
       - name: Prepare production node_modules
         run: |
@@ -138,5 +140,7 @@ jobs:
           file: ./web/frontend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-frontend:latest
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

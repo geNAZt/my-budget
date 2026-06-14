@@ -6,6 +6,9 @@ RUN apk add --no-cache nodejs ca-certificates tzdata postgresql-client
 
 WORKDIR /app
 
+ARG GIT_COMMIT
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # Copy the pre-built artifacts
 COPY main .
 RUN mkdir -p data

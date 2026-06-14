@@ -156,6 +156,18 @@ export function connect(): Promise<void> {
           }
           return;
         }
+
+        // --- 2. TRY GLOBAL EVENT DETECTION ---
+        const eventMsg = tryProtoParse(api.EventWrapperSchema, rawData);
+        if (eventMsg && eventMsg.event) {
+          const listeners = eventListeners.get(eventMsg.event);
+          if (listeners) {
+            for (const listener of listeners) {
+              listener(eventMsg.data);
+            }
+          }
+          return;
+        }
       } catch (err) {
         console.error("[WS] General incoming message processing failed:", err);
       }

@@ -36,6 +36,7 @@
     import { upgradeSecurityKey } from "$lib/utils/auth.svelte";
     import { fade, slide } from "svelte/transition";
     import { initWebSocketFetch } from "$lib/utils/ws_fetch";
+    import VersionStatus from "$lib/components/VersionStatus.svelte";
 
     let { children } = $props();
 
@@ -293,6 +294,8 @@
         >
             {@render children()}
         </main>
+
+        <VersionStatus />
 
         <!-- Recovery Lockdown Overlay -->
         {#if isRecovery}

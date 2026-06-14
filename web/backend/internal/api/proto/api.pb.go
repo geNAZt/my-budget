@@ -8043,6 +8043,69 @@ func (x *SyncRunDetailsResponse) GetRawLogs() []*SyncRawLogFile {
 	return nil
 }
 
+type SystemStatus struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	FrontendVersion  string `protobuf:"bytes,1,opt,name=frontend_version,json=frontendVersion,proto3" json:"frontend_version,omitempty"`
+	BackendVersion   string `protobuf:"bytes,2,opt,name=backend_version,json=backendVersion,proto3" json:"backend_version,omitempty"`
+	WatchtowerStatus string `protobuf:"bytes,3,opt,name=watchtower_status,json=watchtowerStatus,proto3" json:"watchtower_status,omitempty"` // "green", "yellow", "red", "yellow-blinking"
+}
+
+func (x *SystemStatus) Reset() {
+	*x = SystemStatus{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[107]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SystemStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SystemStatus) ProtoMessage() {}
+
+func (x *SystemStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[107]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SystemStatus.ProtoReflect.Descriptor instead.
+func (*SystemStatus) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{107}
+}
+
+func (x *SystemStatus) GetFrontendVersion() string {
+	if x != nil {
+		return x.FrontendVersion
+	}
+	return ""
+}
+
+func (x *SystemStatus) GetBackendVersion() string {
+	if x != nil {
+		return x.BackendVersion
+	}
+	return ""
+}
+
+func (x *SystemStatus) GetWatchtowerStatus() string {
+	if x != nil {
+		return x.WatchtowerStatus
+	}
+	return ""
+}
+
 var File_api_proto protoreflect.FileDescriptor
 
 var file_api_proto_rawDesc = []byte{
@@ -9197,12 +9260,21 @@ var file_api_proto_rawDesc = []byte{
 	0x69, 0x6f, 0x6e, 0x73, 0x12, 0x2e, 0x0a, 0x08, 0x72, 0x61, 0x77, 0x5f, 0x6c, 0x6f, 0x67, 0x73,
 	0x18, 0x07, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x79, 0x6e,
 	0x63, 0x52, 0x61, 0x77, 0x4c, 0x6f, 0x67, 0x46, 0x69, 0x6c, 0x65, 0x52, 0x07, 0x72, 0x61, 0x77,
-	0x4c, 0x6f, 0x67, 0x73, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61, 0x7a, 0x74, 0x2f, 0x6d, 0x79, 0x2d, 0x62, 0x75, 0x64,
-	0x67, 0x65, 0x74, 0x2d, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x2f, 0x62,
-	0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f,
-	0x61, 0x70, 0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x4c, 0x6f, 0x67, 0x73, 0x22, 0x8f, 0x01, 0x0a, 0x0c, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x53,
+	0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x29, 0x0a, 0x10, 0x66, 0x72, 0x6f, 0x6e, 0x74, 0x65, 0x6e,
+	0x64, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0f, 0x66, 0x72, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x64, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+	0x12, 0x27, 0x0a, 0x0f, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x5f, 0x76, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x62, 0x61, 0x63, 0x6b, 0x65,
+	0x6e, 0x64, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x2b, 0x0a, 0x11, 0x77, 0x61, 0x74,
+	0x63, 0x68, 0x74, 0x6f, 0x77, 0x65, 0x72, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x03,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x77, 0x61, 0x74, 0x63, 0x68, 0x74, 0x6f, 0x77, 0x65, 0x72,
+	0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x42, 0x43, 0x5a, 0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61, 0x7a, 0x74, 0x2f, 0x6d, 0x79, 0x2d, 0x62,
+	0x75, 0x64, 0x67, 0x65, 0x74, 0x2d, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x2f, 0x77, 0x65, 0x62,
+	0x2f, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61,
+	0x6c, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x33,
 }
 
 var (
@@ -9217,7 +9289,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 114)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 115)
 var file_api_proto_goTypes = []interface{}{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Empty)(nil),                       // 1: api.Empty
@@ -9326,13 +9398,14 @@ var file_api_proto_goTypes = []interface{}{
 	(*SyncRunInfoForTx)(nil),            // 104: api.SyncRunInfoForTx
 	(*SyncRawLogFile)(nil),              // 105: api.SyncRawLogFile
 	(*SyncRunDetailsResponse)(nil),      // 106: api.SyncRunDetailsResponse
-	nil,                                 // 107: api.YieldMap.YieldsEntry
-	nil,                                 // 108: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 109: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 110: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 111: api.Scenario.EtfParamsEntry
-	nil,                                 // 112: api.SubExpense.MetadataEntry
-	nil,                                 // 113: api.IntegrationSyncRequest.PsuHeadersEntry
+	(*SystemStatus)(nil),                // 107: api.SystemStatus
+	nil,                                 // 108: api.YieldMap.YieldsEntry
+	nil,                                 // 109: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 110: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 111: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 112: api.Scenario.EtfParamsEntry
+	nil,                                 // 113: api.SubExpense.MetadataEntry
+	nil,                                 // 114: api.IntegrationSyncRequest.PsuHeadersEntry
 }
 var file_api_proto_depIdxs = []int32{
 	10,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -9341,10 +9414,10 @@ var file_api_proto_depIdxs = []int32{
 	21,  // 3: api.IntegrationList.integrations:type_name -> api.Integration
 	23,  // 4: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	20,  // 5: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	107, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	108, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	109, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	110, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	108, // 6: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	109, // 7: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	110, // 8: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	111, // 9: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	28,  // 10: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	28,  // 11: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	28,  // 12: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -9354,7 +9427,7 @@ var file_api_proto_depIdxs = []int32{
 	29,  // 16: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	32,  // 17: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
 	34,  // 18: api.Scenario.entities:type_name -> api.ScenarioEntity
-	111, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	112, // 19: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	36,  // 20: api.ScenarioList.scenarios:type_name -> api.Scenario
 	38,  // 21: api.ETFTracker.stitching_segments:type_name -> api.HistoryStitchingSegment
 	40,  // 22: api.TrackerChart.points:type_name -> api.TrackerChartPoint
@@ -9373,7 +9446,7 @@ var file_api_proto_depIdxs = []int32{
 	52,  // 35: api.BillVersion.slices:type_name -> api.TimeSlice
 	56,  // 36: api.Bill.active_version:type_name -> api.BillVersion
 	57,  // 37: api.BillList.bills:type_name -> api.Bill
-	112, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
+	113, // 38: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
 	52,  // 39: api.ExpenseVersion.slices:type_name -> api.TimeSlice
 	59,  // 40: api.ExpenseVersion.sub_expenses:type_name -> api.SubExpense
 	60,  // 41: api.Expense.active_version:type_name -> api.ExpenseVersion
@@ -9387,7 +9460,7 @@ var file_api_proto_depIdxs = []int32{
 	71,  // 49: api.TransactionRuleList.rules:type_name -> api.TransactionRule
 	75,  // 50: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
 	80,  // 51: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
-	113, // 52: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
+	114, // 52: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
 	91,  // 53: api.UserProfile.authenticators:type_name -> api.UserAuthenticator
 	97,  // 54: api.ContainerList.containers:type_name -> api.ContainerInfo
 	100, // 55: api.SyncRunList.runs:type_name -> api.SyncRun
@@ -10692,6 +10765,18 @@ func file_api_proto_init() {
 				return nil
 			}
 		}
+		file_api_proto_msgTypes[107].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SystemStatus); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -10699,7 +10784,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_api_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   114,
+			NumMessages:   115,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

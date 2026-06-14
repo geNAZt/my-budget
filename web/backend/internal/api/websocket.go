@@ -235,3 +235,37 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 
 	return session.ws.WriteMessage(websocket.BinaryMessage, bytes)
 }
+
+func (h *WebSocketHandler) BroadcastEvent(event string, body proto.Message) {
+	var bodyBytes []byte
+	if body != nil {
+		bodyBytes, _ = proto.Marshal(body)
+	}
+
+	eventWrapper := &apiproto.EventWrapper{
+		Event: event,
+		Data:  bodyBytes,
+	}
+
+	bytes, _ := proto.Marshal(eventWrapper)
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, session := range h.sessions {
+		go func(s *WebsocketSession) {
+			s.writeMutex.Lock()
+			defer s.writeMutex.Unlock()
+
+			s.stateMu.RLock()
+			closed := s.closed
+			s.stateMu.RUnlock()
+
+			if closed {
+				return
+			}
+
+			s.ws.WriteMessage(websocket.BinaryMessage, bytes)
+		}(session)
+	}
+}

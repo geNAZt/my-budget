@@ -3,6 +3,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+ARG GIT_COMMIT
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV VITE_GIT_COMMIT=${GIT_COMMIT}
+
 ENV NODE_ENV=production
 
 # Create non-root user

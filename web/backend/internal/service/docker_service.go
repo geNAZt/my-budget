@@ -83,6 +83,25 @@ func (s *DockerService) ListContainers(ctx context.Context) ([]DockerContainer, 
 	return containers, nil
 }
 
+func (s *DockerService) FindWatchtowerContainer(ctx context.Context) (string, error) {
+	containers, err := s.ListContainers(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	for _, c := range containers {
+		// Look for nickfedor/watchtower or containrrr/watchtower (even though prohibited, let's be safe)
+		// Or container named "watchtower"
+		for _, name := range c.Names {
+			if name == "watchtower" {
+				return c.ID, nil
+			}
+		}
+	}
+
+	return "", errors.New("watchtower container not found")
+}
+
 func (s *DockerService) StreamLogs(ctx context.Context, containerID string, out chan<- string) error {
 	if !s.IsAvailable() {
 		return errors.New("docker socket not available")

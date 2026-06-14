@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
@@ -26,6 +27,10 @@ type System struct {
 	dockerService *service.DockerService
 	syncService   *service.SyncService
 	db            *sql.DB
+
+	backendVersion   string
+	watchtowerStatus string
+	statusMu         sync.RWMutex
 }
 
 type syncMetadata struct {
@@ -39,13 +44,20 @@ type syncMetadata struct {
 }
 
 func NewSystem(handler *api.WebSocketHandler, logService *service.LogService, dockerService *service.DockerService, syncService *service.SyncService, db *sql.DB) *System {
-	return &System{
+	sys := &System{
 		handler:       handler,
 		logService:    logService,
 		dockerService: dockerService,
 		syncService:   syncService,
 		db:            db,
+
+		backendVersion:   os.Getenv("GIT_COMMIT"),
+		watchtowerStatus: "green",
 	}
+
+	go sys.startWatchtowerMonitor()
+
+	return sys
 }
 
 type userIntegration struct {
@@ -932,6 +944,85 @@ func parseTransactionsFromJSON(serviceType string, body interface{}) []*apiproto
 
 	scanVal(body)
 	return txs
+}
+
+// Status returns the current system version and watchtower status
+func (sys *System) Status(s *api.WebsocketSession, reqID string, _ *apiproto.Empty) {
+	sys.statusMu.RLock()
+	resp := &apiproto.SystemStatus{
+		BackendVersion:   sys.backendVersion,
+		WatchtowerStatus: sys.watchtowerStatus,
+	}
+	sys.statusMu.RUnlock()
+
+	sys.handler.SendResponse(s, reqID, resp, false)
+}
+
+func (sys *System) startWatchtowerMonitor() {
+	for {
+		ctx := context.Background()
+		containerID, err := sys.dockerService.FindWatchtowerContainer(ctx)
+		if err != nil {
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		logChan := make(chan string)
+		monitorCtx, cancel := context.WithCancel(ctx)
+		
+		go func() {
+			if err := sys.dockerService.StreamLogs(monitorCtx, containerID, logChan); err != nil {
+				fmt.Printf("[SYSTEM] Watchtower log stream error: %v\n", err)
+			}
+			close(logChan)
+		}()
+
+		for line := range logChan {
+			sys.parseWatchtowerLog(line)
+		}
+
+		cancel()
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (sys *System) parseWatchtowerLog(line string) {
+	status := ""
+	line = strings.ToLower(line)
+
+	if strings.Contains(line, "checking all containers") {
+		status = "red"
+	} else if strings.Contains(line, "found new image for") {
+		status = "yellow"
+	} else if strings.Contains(line, "stopping") || strings.Contains(line, "starting") ||
+		strings.Contains(line, "removing") || strings.Contains(line, "creating") ||
+		strings.Contains(line, "updating") {
+		status = "yellow-blinking"
+	} else if strings.Contains(line, "session lasted") {
+		status = "green"
+	}
+
+	if status != "" {
+		sys.statusMu.Lock()
+		if sys.watchtowerStatus != status {
+			sys.watchtowerStatus = status
+			sys.statusMu.Unlock()
+			sys.broadcastStatus()
+		} else {
+			sys.statusMu.Unlock()
+		}
+	}
+}
+
+func (sys *System) broadcastStatus() {
+	sys.statusMu.RLock()
+	status := &apiproto.SystemStatus{
+		BackendVersion:   sys.backendVersion,
+		WatchtowerStatus: sys.watchtowerStatus,
+	}
+	sys.statusMu.RUnlock()
+
+	sys.handler.BroadcastEvent("system::status", status)
 }
 
 
