@@ -138,6 +138,12 @@
     let dragOverWaterfallIndex = $state<number | null>(null);
     let activeDragOverMonthStr = $state<string | null>(null);
 
+    // Drag to scroll states
+    let timelineScrollContainer = $state<HTMLElement | null>(null);
+    let isDraggingTimeline = $state(false);
+    let startX = $state(0);
+    let scrollLeft = $state(0);
+
     // Hover highlight states for link tracing
     let hoveredEntityId = $state<string | null>(null);
     let hoveredEntityType = $state<string | null>(null);
@@ -173,6 +179,29 @@
         } else {
             collapsedAssetIds = [...collapsedAssetIds, assetId];
         }
+    }
+
+    function handleTimelineMouseDown(e: MouseEvent) {
+        if (!timelineScrollContainer) return;
+        isDraggingTimeline = true;
+        startX = e.pageX - timelineScrollContainer.offsetLeft;
+        scrollLeft = timelineScrollContainer.scrollLeft;
+    }
+
+    function handleTimelineMouseLeave() {
+        isDraggingTimeline = false;
+    }
+
+    function handleTimelineMouseUp() {
+        isDraggingTimeline = false;
+    }
+
+    function handleTimelineMouseMove(e: MouseEvent) {
+        if (!isDraggingTimeline || !timelineScrollContainer) return;
+        e.preventDefault();
+        const x = e.pageX - timelineScrollContainer.offsetLeft;
+        const walk = (x - startX) * 1.5; // multiplier for faster scroll
+        timelineScrollContainer.scrollLeft = scrollLeft - walk;
     }
 
     // Auto Optimization recommendations
@@ -2111,11 +2140,21 @@
                         </div>
 
                         <!-- Horizontally scrollable Gantt track -->
-                        <div class="flex-1 overflow-x-auto custom-scrollbar bg-white dark:bg-slate-900">
+                        <div 
+                            bind:this={timelineScrollContainer}
+                            class="flex-1 overflow-x-auto custom-scrollbar bg-white dark:bg-slate-900"
+                        >
                             <div class="relative flex flex-col min-w-max">
                                 
                                 <!-- Top Month Axis headers with Net Remainder -->
-                                <div class="h-24 border-b border-slate-100 dark:border-slate-800 flex bg-slate-50/30 dark:bg-slate-900/20">
+                                <div 
+                                    onmousedown={handleTimelineMouseDown}
+                                    onmouseleave={handleTimelineMouseLeave}
+                                    onmouseup={handleTimelineMouseUp}
+                                    onmousemove={handleTimelineMouseMove}
+                                    role="presentation"
+                                    class="h-24 border-b border-slate-100 dark:border-slate-800 flex bg-slate-50/30 dark:bg-slate-900/20 cursor-grab active:cursor-grabbing"
+                                >
                                     {#each months as month}
                                         <div class="w-64 shrink-0 flex flex-col items-center justify-center border-r border-slate-100/50 dark:border-slate-800/50 relative px-4 select-none">
                                             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
