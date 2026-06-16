@@ -251,7 +251,23 @@ func (t *AuditingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil {
 		log.Printf("[AUDIT][%s] %s %s FAILED: %v", correlationID, req.Method, redactURL(req.URL), err)
 	} else if resp != nil {
-		log.Printf("[AUDIT][%s] %s %s [%s]", correlationID, req.Method, redactURL(req.URL), resp.Status)
+		rateLimitInfo := ""
+		// Look for common rate limit headers
+		for k, v := range resp.Header {
+			kl := strings.ToLower(k)
+			if strings.Contains(kl, "ratelimit-remaining") || strings.Contains(kl, "ratelimit-limit") || strings.Contains(kl, "ratelimit-reset") {
+				if rateLimitInfo != "" {
+					rateLimitInfo += ", "
+				}
+				rateLimitInfo += fmt.Sprintf("%s: %s", k, strings.Join(v, ","))
+			}
+		}
+
+		if rateLimitInfo != "" {
+			log.Printf("[AUDIT][%s] %s %s [%s] (RateLimit: %s)", correlationID, req.Method, redactURL(req.URL), resp.Status, rateLimitInfo)
+		} else {
+			log.Printf("[AUDIT][%s] %s %s [%s]", correlationID, req.Method, redactURL(req.URL), resp.Status)
+		}
 	}
 
 	// Ensure the logs folder exists
