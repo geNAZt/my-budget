@@ -7,7 +7,7 @@
         TransactionRuleListSchema,
         IntegrationAccountListSchema,
         IntegrationSyncRequestSchema,
-        GenericIDSchema,
+        EmptySchema,
         TransactionDeleteRequestSchema,
         TransactionUnlinkRequestSchema,
         TransactionLinkRequestSchema,
@@ -571,7 +571,7 @@
                 "integrations::sync",
                 IntegrationSyncRequestSchema,
                 { id, force: true, psuHeaders },
-                [GenericIDSchema],
+                [EmptySchema],
             ).one();
             if (err) throw err;
             await fetchData(true);

@@ -96,7 +96,7 @@ export function connect(): Promise<void> {
         if (streamMsg) {
           const req = requests.get(streamMsg.id);
           if (req) {
-            if (streamMsg.data && streamMsg.data.length > 0) {
+            if (streamMsg.data) {
               let decodedPayload: any = null;
               let parseSuccessful = false;
 
@@ -113,7 +113,7 @@ export function connect(): Promise<void> {
               }
 
               // Robust fallback: brute-force try parsing against all exported schemas in api
-              if (!parseSuccessful) {
+              if (!parseSuccessful && streamMsg.data.length > 0) {
                 for (const key of Object.keys(api)) {
                   if (key.endsWith("Schema") && key !== "ErrorSchema" && key !== "WSResponseSchema") {
                     const schema = (api as any)[key];
@@ -137,16 +137,16 @@ export function connect(): Promise<void> {
                 }
               }
 
-              // Fallback to text decoding if no schema could structurally match the chunk
-              if (!parseSuccessful) {
+              if (parseSuccessful) {
+                req.onNext(decodedPayload);
+              } else if (streamMsg.data.length > 0) {
+                // Fallback to text decoding if no schema could structurally match the chunk
                 requests.delete(streamMsg.id);
                 req.onError(
                   new Error("No matching schema found for stream chunk"),
                 );
                 return;
               }
-
-              req.onNext(decodedPayload);
             }
 
             if (streamMsg.done) {

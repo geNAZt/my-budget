@@ -248,6 +248,12 @@ func (t *AuditingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	resp, err := base.RoundTrip(req)
 	endTime := time.Now()
 
+	if err != nil {
+		log.Printf("[AUDIT][%s] %s %s FAILED: %v", correlationID, req.Method, redactURL(req.URL), err)
+	} else if resp != nil {
+		log.Printf("[AUDIT][%s] %s %s [%s]", correlationID, req.Method, redactURL(req.URL), resp.Status)
+	}
+
 	// Ensure the logs folder exists
 	logDir := getLogDir(correlationID)
 	if errMk := os.MkdirAll(logDir, 0755); errMk != nil {
