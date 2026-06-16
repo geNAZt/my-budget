@@ -344,7 +344,7 @@
         })),
     );
 
-    const displayIntegrations = $derived(integrations);
+    const displayIntegrations = $derived([...integrations].sort((a, b) => (a.integrationName || "").localeCompare(b.integrationName || "")));
 
     const calendarDays = $derived.by(() => {
         const days = [];
@@ -528,7 +528,7 @@
                 const key = `${acc.integrationId}:${acc.id}`;
                 uniqueAccountsMap.set(key, acc);
             }
-            allAccountsRaw = Array.from(uniqueAccountsMap.values());
+            allAccountsRaw = Array.from(uniqueAccountsMap.values()).sort((a, b) => a.id.localeCompare(b.id));
 
             const accountsArr = allAccountsRaw.map((acc: any) => {
                 if (!acc.iban) {
