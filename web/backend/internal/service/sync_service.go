@@ -592,6 +592,12 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 	ctx := ContextWithCorrelationID(context.Background(), correlationID)
 	res := provider.Sync(ctx, integration, force, psuHeaders)
 
+	if res.BackoffUntil != nil {
+		log.Printf("[SYNC][%s] Provider %s is rate limited until %v", correlationID, integration.Name, res.BackoffUntil)
+	} else {
+		log.Printf("[SYNC][%s] Provider %s is NOT rate limited", correlationID, integration.Name)
+	}
+
 	if res.Error == nil {
 		writeMetaUpdate("COMPLETED", "")
 		s.ReconcilePendingDuplicates(userID, integrationID, res.FetchedExternalIDs)
