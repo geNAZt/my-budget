@@ -324,6 +324,13 @@
     }
 
     function handleKeyDown(event: KeyboardEvent) {
+        if (event.key === "Escape") {
+            selectedMonthIndex = null;
+            showConfig = false;
+            showScopeModal = false;
+            showDeleteConfirm = false;
+            return;
+        }
         if (selectedMonthIndex === null) return;
         if (event.key === "ArrowLeft") {
             if (selectedMonthIndex > 0) {
@@ -333,8 +340,6 @@
             if (selectedMonthIndex < projectionResult.months.length - 1) {
                 selectedMonthIndex++;
             }
-        } else if (event.key === "Escape") {
-            selectedMonthIndex = null;
         }
     }
 

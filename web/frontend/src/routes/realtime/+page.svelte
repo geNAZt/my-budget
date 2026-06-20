@@ -934,6 +934,20 @@
     });
 </script>
 
+<svelte:window onkeydown={(e) => {
+    if (e.key === 'Escape') {
+        showTransactionEdit = false;
+        showRawData = false;
+        showChainEditor = false;
+        showRuleArchitect = false;
+        showIntegrationWizard = false;
+        showDatePopover = false;
+        showPoolsPopover = false;
+        showChainsPopover = false;
+        showAmountPopover = false;
+    }
+}} />
+
 <svelte:head>
     <title>Realtime Tracker — BudgetScript</title>
 </svelte:head>

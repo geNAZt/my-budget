@@ -1296,6 +1296,12 @@ var migrations = []Migration{
 			return FixUPCTTransitions(db)
 		},
 	},
+	{
+		ID: "024_fix_upct_posd_transitions_from_all_logs",
+		Run: func(db *sql.DB) error {
+			return FixUPCTTransitionsV3(db)
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {
@@ -2485,3 +2491,278 @@ func FixUPCTTransitions(db *sql.DB) error {
 
 	return nil
 }
+
+func FixUPCTTransitionsV3(db *sql.DB) error {
+	log.Printf("[DB] Running UPCT -> POSD transition migration V3...")
+
+	serverID, err := findServerID()
+	if err != nil {
+		log.Printf("[DB Warning] Skipping UPCT migration V3: %v", err)
+		return nil
+	}
+
+	logsDir := os.Getenv("LOGS_DIR")
+	if logsDir == "" {
+		logsDir = "/app/logs"
+		if _, err := os.Stat(logsDir); os.IsNotExist(err) {
+			if _, err := os.Stat("web/logs"); err == nil {
+				logsDir = "web/logs"
+			} else if _, err := os.Stat("logs"); err == nil {
+				logsDir = "logs"
+			}
+		}
+	}
+	logsDir = filepath.Join(logsDir, "sync_runs")
+
+	// 1. Scan all folders under logs/sync_runs to build a map of UPCT external IDs
+	upctRefs := make(map[string]bool)
+	syncRunDirs, err := os.ReadDir(logsDir)
+	if err == nil {
+		for _, d := range syncRunDirs {
+			if d.IsDir() {
+				dirPath := filepath.Join(logsDir, d.Name())
+				entries, err := os.ReadDir(dirPath)
+				if err == nil {
+					for _, entry := range entries {
+						if !entry.IsDir() && strings.HasSuffix(entry.Name(), "_resp.json") {
+							txs, err := parseLogFile(filepath.Join(dirPath, entry.Name()))
+							if err == nil {
+								for _, tx := range txs {
+									if tx.IsPending || tx.SubCode == "UPCT" {
+										upctRefs[tx.Ref] = true
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	} else {
+		log.Printf("[DB Warning] Could not read logsDir %s: %v", logsDir, err)
+	}
+
+	type dbIntegration struct {
+		ID     string
+		UserID string
+	}
+	rows, err := db.Query("SELECT id, user_id FROM integrations")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var integrations []dbIntegration
+	for rows.Next() {
+		var i dbIntegration
+		if err := rows.Scan(&i.ID, &i.UserID); err == nil {
+			integrations = append(integrations, i)
+		}
+	}
+
+	for _, integration := range integrations {
+		mik, err := getIntegrationMasterKey(db, serverID, integration.UserID, integration.ID)
+		if err != nil {
+			log.Printf("[DB Warning] Failed to get master key for integration %s: %v", integration.ID, err)
+			continue
+		}
+
+		type dbTx struct {
+			ID            string
+			ExternalID    string
+			EncryptedData string
+		}
+		rowsTx, err := db.Query("SELECT id, external_id, encrypted_data FROM bank_transactions WHERE integration_id = $1 AND is_deleted = FALSE", integration.ID)
+		if err != nil {
+			continue
+		}
+
+		var txList []dbTx
+		for rowsTx.Next() {
+			var t dbTx
+			if err := rowsTx.Scan(&t.ID, &t.ExternalID, &t.EncryptedData); err == nil {
+				txList = append(txList, t)
+			}
+		}
+		rowsTx.Close()
+
+		type parsedTx struct {
+			dbID       string
+			externalID string
+			amount     float64
+			receiver   string
+			date       time.Time
+			isPending  bool
+		}
+
+		var decryptedTxs []parsedTx
+		for _, t := range txList {
+			decrypted, err := decryptTransactionData(serverID, t.EncryptedData, mik)
+			if err != nil {
+				continue
+			}
+
+			var rawMap map[string]interface{}
+			if err := json.Unmarshal(decrypted, &rawMap); err != nil {
+				continue
+			}
+
+			var amount float64
+			var txDate time.Time
+			var receiver string
+			var isPending bool
+
+			// 1. Try GenericTransaction format
+			if _, ok := rawMap["Amount"]; ok || rawMap["Peer"] != nil {
+				if amtVal, ok := rawMap["Amount"].(float64); ok {
+					amount = amtVal
+				}
+				if peerVal, ok := rawMap["Peer"].(string); ok {
+					receiver = peerVal
+				}
+				if createdVal, ok := rawMap["CreatedAt"].(string); ok {
+					txDate, _ = time.Parse(time.RFC3339, createdVal)
+				}
+				if statusVal, ok := rawMap["InternalStatus"].(string); ok {
+					if statusVal == "PENDING_REJECTION" {
+						isPending = true
+					}
+				}
+			} else {
+				// 2. Fallback to raw format
+				if amtVal, ok := rawMap["amount"].(float64); ok {
+					amount = amtVal
+				} else if amtObj, ok := rawMap["transaction_amount"].(map[string]interface{}); ok {
+					if amtStr, ok := amtObj["amount"].(string); ok {
+						fmt.Sscanf(amtStr, "%f", &amount)
+					}
+				}
+				
+				if creditDebit, ok := rawMap["credit_debit_indicator"].(string); ok && creditDebit == "DBIT" {
+					amount = -amount
+				}
+
+				if dateStr, ok := rawMap["date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				} else if dateStr, ok := rawMap["booking_date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				} else if dateStr, ok := rawMap["value_date"].(string); ok {
+					txDate, _ = time.Parse("2006-01-02", dateStr)
+				}
+
+				if peerVal, ok := rawMap["receiver"].(string); ok {
+					receiver = peerVal
+				} else if creditor, ok := rawMap["creditor"].(map[string]interface{}); ok {
+					if name, ok := creditor["name"].(string); ok {
+						receiver = name
+					}
+				} else if debtor, ok := rawMap["debtor"].(map[string]interface{}); ok {
+					if name, ok := debtor["name"].(string); ok {
+						receiver = name
+					}
+				}
+
+				subcode := ""
+				if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
+					if sc, ok := codeObj["sub_code"].(string); ok {
+						subcode = sc
+					}
+				}
+
+				if subcode == "UPCT" {
+					isPending = true
+				}
+				if status, ok := rawMap["status"].(string); ok {
+					if status == "PENDING_REJECTION" || (status != "BOOK" && status != "BOOKED" && status != "booked" && status != "") {
+						isPending = true
+					}
+				}
+			}
+
+			// If the external ID matches any parsed UPCT/pending transaction from any historical log, set it as pending!
+			rawExtID := t.ExternalID
+			if idx := strings.Index(rawExtID, "_"); idx != -1 {
+				rawExtID = rawExtID[idx+1:]
+			}
+			if upctRefs[rawExtID] || upctRefs[t.ExternalID] {
+				isPending = true
+			}
+
+			decryptedTxs = append(decryptedTxs, parsedTx{
+				dbID:       t.ID,
+				externalID: t.ExternalID,
+				amount:     amount,
+				receiver:   receiver,
+				date:       txDate,
+				isPending:  isPending,
+			})
+		}
+
+		normalizeName := func(name string) string {
+			name = strings.ToLower(name)
+			var sb strings.Builder
+			for _, r := range name {
+				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+					sb.WriteRune(r)
+				}
+			}
+			return sb.String()
+		}
+
+		for _, pTx := range decryptedTxs {
+			if !pTx.isPending {
+				continue
+			}
+
+			for _, other := range decryptedTxs {
+				if other.dbID == pTx.dbID || other.isPending {
+					continue
+				}
+
+				diff := other.date.Sub(pTx.date)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff.Hours() > 72.0 {
+					continue
+				}
+
+				diffAmt := other.amount - pTx.amount
+				if diffAmt < 0 {
+					diffAmt = -diffAmt
+				}
+				if diffAmt >= 0.01 {
+					continue
+				}
+
+				n1 := normalizeName(pTx.receiver)
+				n2 := normalizeName(other.receiver)
+				isSimilar := false
+				if n1 == n2 || (n1 != "" && n2 != "" && (strings.Contains(n1, n2) || strings.Contains(n2, n1))) {
+					isSimilar = true
+				} else if strings.Contains(n1, "paypal") && strings.Contains(n2, "paypal") {
+					isSimilar = true
+				} else if strings.Contains(n1, "amzn") && strings.Contains(n2, "amzn") {
+					isSimilar = true
+				} else if strings.Contains(n1, "amazon") && strings.Contains(n2, "amazon") {
+					isSimilar = true
+				} else if strings.Contains(n1, "lidl") && strings.Contains(n2, "lidl") {
+					isSimilar = true
+				}
+
+				if isSimilar {
+					log.Printf("[DB MIGRATION V3] Soft-deleting transitioned pending duplicate transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) matching finalized %s.",
+						pTx.dbID, pTx.externalID, pTx.amount, pTx.receiver, other.dbID)
+					_, err = db.Exec("UPDATE bank_transactions SET is_deleted = TRUE, internal_status = 'EXPIRED_REJECTION' WHERE id = $1", pTx.dbID)
+					if err != nil {
+						log.Printf("[DB MIGRATION V3 Warning] Failed to delete transaction: %v", err)
+					}
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+

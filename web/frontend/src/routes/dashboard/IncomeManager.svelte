@@ -306,6 +306,13 @@
     });
 </script>
 
+<svelte:window onkeydown={(e) => {
+    if (e.key === 'Escape') {
+        showAddModal = false;
+        showDeleteConfirm = false;
+    }
+}} />
+
 <div class="space-y-8">
     <!-- Header -->
     <div

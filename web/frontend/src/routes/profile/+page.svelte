@@ -166,6 +166,12 @@
     }
 </script>
 
+<svelte:window onkeydown={(e) => {
+    if (e.key === 'Escape') {
+        showNewToken = false;
+    }
+}} />
+
 <div class="min-h-screen bg-slate-50/50 pb-20 pt-8 px-4 md:px-8">
     <div class="max-w-4xl mx-auto space-y-8">
         <!-- Header -->

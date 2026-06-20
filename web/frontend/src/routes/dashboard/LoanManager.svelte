@@ -291,6 +291,13 @@
     });
 </script>
 
+<svelte:window onkeydown={(e) => {
+    if (e.key === 'Escape') {
+        showAddModal = false;
+        showDeleteConfirm = false;
+    }
+}} />
+
 <div class="space-y-8">
     <div
         class="flex flex-col md:flex-row md:items-center justify-between gap-6"

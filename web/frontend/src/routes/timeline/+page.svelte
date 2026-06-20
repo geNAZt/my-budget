@@ -1894,6 +1894,13 @@
     onMount(fetchAllData);
 </script>
 
+<svelte:window onkeydown={(e) => {
+    if (e.key === 'Escape') {
+        showExpenseModal = false;
+        showAssetModal = false;
+    }
+}} />
+
 <svelte:head>
     <title>Interactive Gantt Timeline — BudgetScript</title>
 </svelte:head>

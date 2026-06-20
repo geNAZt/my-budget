@@ -229,3 +229,13 @@ To allow administrators to audit bank/integration synchronization processes and 
    - A modern, high-density dashboard following the project's glassmorphism style.
    - Filters runs by integration, lists them with counts/timestamps, parses transactions, and offers raw JSON inspect/linkage views.
 
+## 15. Modal Escape Key Dismissal & UPCT/POSD Transaction Deduplication
+
+### Modal Escape Key Closure
+- In all Svelte 5 components implementing modal dialogs, we will register a global keydown handler using `<svelte:window onkeydown={...} />`.
+- When the "Escape" key is pressed, we will dismiss any active modal by setting the respective `$state` visibility flags (e.g. `showAddModal`, `showDeleteConfirm`, etc.) to `false`.
+
+### UPCT/POSD Transaction Deduplication & Linking
+- **EnableBanking Provider mapping update**: In `web/backend/internal/integration/enablebanking/provider.go`, we will classify all transactions with the sub-code `"UPCT"` as pending unconditionally, setting `InternalStatus = "PENDING_REJECTION"`.
+- **Deduplication Reconcile Logic update**: In `web/backend/internal/service/sync_service.go`, the reconciliation flow will bypass the `fetchedExternalIDs` check when a matching finalized transaction is found. This ensures that the unconfirmed (UPCT) duplicate is immediately soft-deleted upon the arrival of its finalized counterpart.
+- **Database Migration for Existing Transactions**: We will write a new database migration (`024_fix_upct_posd_transitions_from_all_logs`) in `postgres.go` to scan all historical sync logs under `logs/sync_runs`, identify any transactions that were originally marked as `"UPCT"`, update their database status to `"PENDING_REJECTION"`, and run a reconciliation pass to soft-delete them if a matching finalized version already exists.

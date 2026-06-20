@@ -1361,7 +1361,9 @@ func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID st
 		} else {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(data, &rawMap); err == nil {
-				if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
+				if statusVal, ok := rawMap["InternalStatus"].(string); ok && statusVal == "PENDING_REJECTION" {
+					isPending = true
+				} else if codeObj, ok := rawMap["bank_transaction_code"].(map[string]interface{}); ok {
 					if subCode, ok := codeObj["sub_code"].(string); ok && subCode == "UPCT" {
 						isPending = true
 					}
@@ -1389,10 +1391,6 @@ func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID st
 
 	for _, pTx := range decryptedTxs {
 		if !pTx.isPending {
-			continue
-		}
-
-		if fetchedExternalIDs[pTx.tx.ExternalID] {
 			continue
 		}
 
@@ -1429,7 +1427,7 @@ func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID st
 			}
 
 			if isSimilar {
-				log.Printf("[RECONCILE] Soft deleting duplicate pending transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) because it is no longer returned by the bank and matching finalized transaction %s (ExternalID: %s) exists.",
+				log.Printf("[RECONCILE] Soft deleting duplicate pending transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) because matching finalized transaction %s (ExternalID: %s) exists.",
 					pTx.tx.ID, pTx.tx.ExternalID, pTx.meta.Amount, pTx.meta.Receiver, other.tx.ID, other.tx.ExternalID)
 				s.transactionRepo.Delete(userID, pTx.tx.ID)
 				break
