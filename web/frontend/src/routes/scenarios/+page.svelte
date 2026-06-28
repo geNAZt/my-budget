@@ -323,11 +323,12 @@
         });
     }
 
-    function isCurrentMonth(dateStr: string) {
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
+    function isCurrentMonth(month: { periodStart?: string; periodEnd?: string }) {
+        if (!month?.periodStart || !month?.periodEnd) return false;
+        const start = new Date(month.periodStart);
+        const end = new Date(month.periodEnd);
         const now = new Date();
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        return now >= start && now <= end;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -1115,12 +1116,12 @@
                                                 {#each projectionResult.months as month, index}
                                                     <tr
                                                         onclick={() => selectedMonthIndex = index}
-                                                        class="transition-all cursor-pointer group {isCurrentMonth(month.date) ? 'bg-orange-500/10 dark:bg-orange-500/15 hover:bg-orange-500/20 dark:hover:bg-orange-500/25 border-l-4 border-l-orange-500' : 'hover:bg-indigo-50/30 active:bg-indigo-50/60'}"
+                                                        class="transition-all cursor-pointer group {isCurrentMonth(month) ? 'bg-orange-500/10 dark:bg-orange-500/15 hover:bg-orange-500/20 dark:hover:bg-orange-500/25 border-l-4 border-l-orange-500' : 'hover:bg-indigo-50/30 active:bg-indigo-50/60'}"
                                                     >
                                                         <td class="px-6 py-4 text-slate-950 dark:text-white font-black">
-                                                            <span class={isCurrentMonth(month.date) ? "text-orange-600 dark:text-orange-400 font-extrabold flex items-center gap-1.5" : "group-hover:text-indigo-600 transition-colors"}>
+                                                            <span class={isCurrentMonth(month) ? "text-orange-600 dark:text-orange-400 font-extrabold flex items-center gap-1.5" : "group-hover:text-indigo-600 transition-colors"}>
                                                                 {formatDate(month.date)}
-                                                                {#if isCurrentMonth(month.date)}
+                                                                {#if isCurrentMonth(month)}
                                                                     <span class="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 rounded text-[9px] uppercase tracking-wider font-extrabold">Current</span>
                                                                 {/if}
                                                             </span>
