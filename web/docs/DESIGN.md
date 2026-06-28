@@ -239,3 +239,15 @@ To allow administrators to audit bank/integration synchronization processes and 
 - **EnableBanking Provider mapping update**: In `web/backend/internal/integration/enablebanking/provider.go`, we will classify all transactions with the sub-code `"UPCT"` as pending unconditionally, setting `InternalStatus = "PENDING_REJECTION"`.
 - **Deduplication Reconcile Logic update**: In `web/backend/internal/service/sync_service.go`, the reconciliation flow will bypass the `fetchedExternalIDs` check when a matching finalized transaction is found. This ensures that the unconfirmed (UPCT) duplicate is immediately soft-deleted upon the arrival of its finalized counterpart.
 - **Database Migration for Existing Transactions**: We will write a new database migration (`024_fix_upct_posd_transitions_from_all_logs`) in `postgres.go` to scan all historical sync logs under `logs/sync_runs`, identify any transactions that were originally marked as `"UPCT"`, update their database status to `"PENDING_REJECTION"`, and run a reconciliation pass to soft-delete them if a matching finalized version already exists.
+
+## 16. Past Month Scenario Visibility & Current Month Highlighting
+
+### Backend Start Date Resolution
+- Currently, when running scenario projections, if the configured `scenario.StartDate` is in the past, the backend forces the projection starting date `now` to be the current system time `time.Now()`. This prevents users from viewing historical or already gone months that are part of the projection period.
+- We will modify `web/backend/internal/service/projection_service.go` in `RunWithLimit` to use `scenario.StartDate.UTC()` as the projection base date, regardless of whether it is in the past or future. This ensures that the simulation runs from the configured start date onwards.
+
+### Frontend Current Month Highlighting
+- In the scenario projection view (`web/frontend/src/routes/scenarios/+page.svelte`), each month returned by the simulation is rendered as a row in the months table.
+- We will implement an `isCurrentMonth` checker that parses each month's date and compares it with the current real-world date (year and month).
+- For the row representing the current month, we will apply premium highlighting styles coherent with the theme: an orange background tint (e.g. `bg-orange-500/10` or `bg-amber-500/10` with matching border styling) to visually set it apart.
+

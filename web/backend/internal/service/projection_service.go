@@ -1117,10 +1117,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 	now := time.Now().UTC()
 	if scenario.StartDate != nil {
-		scenarioStart := scenario.StartDate.UTC()
-		if scenarioStart.After(now) {
-			now = scenarioStart
-		}
+		now = scenario.StartDate.UTC()
 	}
 	startDate := projectionMonthForDate(now, monthStartDay, loc)
 
