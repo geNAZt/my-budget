@@ -249,5 +249,5 @@ To allow administrators to audit bank/integration synchronization processes and 
 ### Frontend Current Month Highlighting
 - In the scenario projection view (`web/frontend/src/routes/scenarios/+page.svelte`), each month returned by the simulation is rendered as a row in the months table.
 - We will implement an `isCurrentMonth` checker that takes the `month` object and checks if the current real-world date (`new Date()`) falls between its `periodStart` and `periodEnd` bounds. This naturally respects the configured start day (e.g. 26th).
-- For the row representing the current month, we will apply premium highlighting styles coherent with the theme: an orange background tint (e.g. `bg-orange-500/10` or `bg-amber-500/15` with matching border styling) to visually set it apart.
+- For the row representing the current month, we will apply premium highlighting styles coherent with the theme: an orange background tint (e.g. `bg-orange-500/10` or `bg-orange-500/15` with matching left border and text color) to visually set it apart.
 
