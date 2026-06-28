@@ -251,3 +251,7 @@ To allow administrators to audit bank/integration synchronization processes and 
 - We will implement an `isCurrentMonth` checker that takes the `month` object and checks if the current real-world date (`new Date()`) falls between its `periodStart` and `periodEnd` bounds. This naturally respects the configured start day (e.g. 26th).
 - For the row representing the current month, we will apply premium highlighting styles coherent with the theme: an orange background tint (e.g. `bg-orange-500/10` or `bg-orange-500/15` with matching left border and text color) to visually set it apart.
 
+### Dashboard Current Month Resolution
+- The main dashboard loads the active scenario's current budget sheet by running a projection limit of 1 month. Since the projection starting date can now be in the past (based on `scenario.StartDate`), a limit of 1 would return the historical starting month instead of the current month.
+- We modified `web/frontend/src/routes/dashboard/+page.svelte` to dynamically compute the number of projection months required from the scenario's start date to the current month, passing the correct `projectionMonths` to the WebSocket projection service call and selecting the current month sheet out of the returned stream.
+

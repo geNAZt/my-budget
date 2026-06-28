@@ -53,10 +53,21 @@
 
             const currentPrefix = `${labelYear}-${String(labelMonth).padStart(2, "0")}`;
 
+            let projectionMonths = 1;
+            if (scenario?.startDate) {
+                const start = new Date(scenario.startDate);
+                const diffYears = labelYear - start.getFullYear();
+                const diffMonths = labelMonth - (start.getMonth() + 1);
+                const totalDiff = diffYears * 12 + diffMonths;
+                if (totalDiff > 0) {
+                    projectionMonths = totalDiff + 1;
+                }
+            }
+
             const callResult = wsCall(
                 "scenarios::projection",
                 ScenarioSchema,
-                { id: scenarioId, projectionMonths: 1 },
+                { id: scenarioId, projectionMonths },
                 [
                     ProjectionMonthSchema,
                     YieldMapSchema,
