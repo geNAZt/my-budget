@@ -171,6 +171,8 @@
     let fundingAssetId = $state<string>("");
     let fundingSubAssetCreated = $state(false);
     let fundingMessage = $state<string | null>(null);
+    let fundingRemainderConsumer = $state(false);
+
 
     // Detail Modal for clicked Asset
     let showAssetModal = $state(false);
@@ -940,7 +942,9 @@
             if (targetAsset && targetSubAssetIdx !== -1) {
                 const av = getActiveVersion(targetAsset);
                 const monthsLeft = Math.max(1, getMonthsBetween(new Date().toISOString(), newDueDate));
-                const amountNeededPerMonth = (expense.activeVersion?.amount || 0) / monthsLeft;
+                const targetSub = av.subAssets[targetSubAssetIdx];
+                const isRemainder = !!targetSub?.isRemainderConsumer;
+                const amountNeededPerMonth = isRemainder ? 0 : ((expense.activeVersion?.amount || 0) / monthsLeft);
                 
                 // Deep copy and update sub-asset
                 const updatedSubAssets = (av.subAssets || []).map((sa: any, idx: number) => {
@@ -1001,6 +1005,7 @@
                                 startDate: s.startDate || "",
                                 endDate: s.endDate || "",
                                 earliestDumpDate: s.earliestDumpDate || "",
+                                expenseId: s.expenseId || "",
                             })),
                         },
                     },
@@ -1152,6 +1157,21 @@
         fundingSubAssetCreated = false;
         fundingMessage = null;
         fundingAssetId = activeAssets.length > 0 ? getID(activeAssets[0]) : "";
+
+        // Check if there is an existing sub-asset linked to this expense that is a remainder consumer
+        let hasRemainderConsumer = false;
+        for (const asset of allAssets) {
+            const subAssets = getSubAssets(asset);
+            for (const sa of subAssets) {
+                if (sa.expenseId === selectedExpenseObj.id && sa.isRemainderConsumer) {
+                    hasRemainderConsumer = true;
+                    fundingAssetId = getID(asset);
+                    break;
+                }
+            }
+        }
+        fundingRemainderConsumer = hasRemainderConsumer;
+
         showExpenseModal = true;
     }
 
@@ -1177,8 +1197,10 @@
         fundingSubAssetCreated = false;
         fundingMessage = null;
         fundingAssetId = activeAssets.length > 0 ? getID(activeAssets[0]) : "";
+        fundingRemainderConsumer = false;
         showExpenseModal = true;
     }
+
 
     async function toggleExpenseFlexibility() {
         if (!selectedExpenseObj) return;
@@ -1297,8 +1319,16 @@
         const selectedAsset = allAssets.find(a => getID(a) === fundingAssetId);
         if (!selectedAsset) return;
 
+        // If funding via remainder, ensure the expense name has " (Flexible)"
+        if (fundingRemainderConsumer && !isFlexibleExpense(selectedExpenseObj.name)) {
+            const newName = cleanExpenseName(selectedExpenseObj.name) + " (Flexible)";
+            selectedExpenseObj.name = newName;
+            isFlexExpenseState = true;
+            await updateExpenseDetails(selectedExpenseObj, newName, selectedExpenseObj.activeVersion?.dueDate || "");
+        }
+
         const monthsLeft = Math.max(1, getMonthsBetween(new Date().toISOString(), selectedExpenseObj.activeVersion?.dueDate || ""));
-        const amountNeededPerMonth = selectedExpenseObj.activeVersion!.amount / monthsLeft;
+        const amountNeededPerMonth = fundingRemainderConsumer ? 0 : (selectedExpenseObj.activeVersion!.amount / monthsLeft);
 
         // Generate SubAsset
         const newSubAsset = {
@@ -1306,7 +1336,7 @@
             name: `${cleanExpenseName(selectedExpenseObj.name)} Fund`,
             targetValue: selectedExpenseObj.activeVersion!.amount,
             amountPerMonth: amountNeededPerMonth,
-            isRemainderConsumer: false,
+            isRemainderConsumer: fundingRemainderConsumer,
             startDate: new Date().toISOString().substring(0, 7) + "-01T00:00:00Z",
             endDate: selectedExpenseObj.activeVersion?.dueDate || "",
             dumpingLoanId: "",
@@ -1320,6 +1350,7 @@
             activeVersion.interestRate = simulatedYields[selectedAsset.id];
         }
         const existingSubAssets = activeVersion.subAssets || [];
+
 
         // Build Payload
         const payloadSubAssets = [
@@ -1527,6 +1558,7 @@
                             startDate: s.startDate || "",
                             endDate: s.endDate || "",
                             earliestDumpDate: s.earliestDumpDate || "",
+                            expenseId: s.expenseId || "",
                         })),
                     },
                 },
@@ -2778,7 +2810,7 @@
                             </div>
                         {:else}
                             {@const monthsLeft = Math.max(1, getMonthsBetween(new Date().toISOString(), selectedExpenseObj.activeVersion?.dueDate || ""))}
-                            {@const monthlyRate = selectedExpenseObj.activeVersion!.amount / monthsLeft}
+                            {@const monthlyRate = fundingRemainderConsumer ? 0 : (selectedExpenseObj.activeVersion!.amount / monthsLeft)}
 
                             <div class="grid grid-cols-2 gap-4 text-center">
                                 <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border dark:border-slate-700">
@@ -2796,16 +2828,32 @@
                                     No investment assets found. Please create an asset first.
                                 </div>
                             {:else}
-                                <div class="space-y-1.5">
-                                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Select Target Asset Account</span>
-                                    <select
-                                        bind:value={fundingAssetId}
-                                        class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-bold outline-none text-slate-700 focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
-                                    >
-                                        {#each activeAssets as asset}
-                                            <option value={getID(asset)}>{getName(asset)}</option>
-                                        {/each}
-                                    </select>
+                                <div class="space-y-4">
+                                    <div class="space-y-1.5">
+                                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Select Target Asset Account</span>
+                                        <select
+                                            bind:value={fundingAssetId}
+                                            class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm font-bold outline-none text-slate-700 focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
+                                        >
+                                            {#each activeAssets as asset}
+                                                <option value={getID(asset)}>{getName(asset)}</option>
+                                            {/each}
+                                        </select>
+                                    </div>
+
+                                    <div class="p-4 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-2xl flex items-center justify-between gap-4">
+                                        <div class="space-y-0.5">
+                                            <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Fund via Asset Remainder</span>
+                                            <span class="text-[10px] text-slate-400 leading-normal block">
+                                                Uses monthly scenario remainder. Enables flexible target date (triggers when fully funded).
+                                            </span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            bind:checked={fundingRemainderConsumer}
+                                            class="w-5 h-5 accent-indigo-600 rounded-lg cursor-pointer"
+                                        />
+                                    </div>
                                 </div>
 
                                 <button

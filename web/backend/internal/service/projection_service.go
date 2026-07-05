@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -208,6 +209,7 @@ type subAssetState struct {
 	endDate             *time.Time
 	earliestDumpDate    *time.Time
 	isClosed            bool
+	expenseID           *string
 }
 
 type assetState struct {
@@ -1343,6 +1345,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					startDate:           sa.StartDate,
 					endDate:             sa.EndDate,
 					earliestDumpDate:    sa.EarliestDumpDate,
+					expenseID:           sa.ExpenseID,
 				})
 			}
 		}
@@ -2010,21 +2013,71 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					}
 				}
 			} else {
-				uDue := v.DueDate.UTC()
-				start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
-				if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
-					month.Expenses += v.Amount
-					log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, v.Amount)
-					month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
-						Name:       e.Name,
-						EntityName: e.Name,
-						Amount:     v.Amount,
-						AccountIDs: e.AccountIDs,
-						PoolID:     e.PoolID,
-					})
+				isFlexibleRemainderConsumer := false
+				var matchingSubAsset *subAssetState
+				var matchingAsState *assetState
+
+				if strings.HasSuffix(e.Name, " (Flexible)") || strings.Contains(e.Name, "[Flex]") {
+					for _, as := range assetStates {
+						for _, sa := range as.subAssets {
+							if sa.expenseID != nil && *sa.expenseID == e.ID && sa.isRemainderConsumer {
+								isFlexibleRemainderConsumer = true
+								matchingSubAsset = sa
+								matchingAsState = as
+								break
+							}
+						}
+						if isFlexibleRemainderConsumer {
+							break
+						}
+					}
+				}
+
+				if isFlexibleRemainderConsumer {
+					if matchingSubAsset != nil && !matchingSubAsset.isClosed && matchingSubAsset.currentBalance >= v.Amount {
+						month.Expenses += v.Amount
+						log.Printf("[PROJECTION] Flexible Remainder Expense Triggered: %s, Amount: %.2f", e.Name, v.Amount)
+						month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
+							Name:       e.Name,
+							EntityName: e.Name,
+							Amount:     v.Amount,
+							AccountIDs: e.AccountIDs,
+							PoolID:     e.PoolID,
+						})
+
+						maxNetLeftover := calculateMaxNetForSubAsset(matchingAsState, matchingSubAsset)
+						grossPayout, netPayout := withdrawFromSubAsset(matchingAsState, matchingSubAsset.id, maxNetLeftover)
+						penaltyPaid := grossPayout - netPayout
+
+						log.Printf("[PROJECTION] Flexible Remainder Sub-Asset Payout: %s (%s), Gross: %.2f, Net: %.2f", matchingAsState.asset.Name, matchingSubAsset.name, grossPayout, netPayout)
+						month.Income += netPayout
+						month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
+							Name:       matchingAsState.asset.Name + " (" + matchingSubAsset.name + " Payout)",
+							EntityName: matchingAsState.asset.Name,
+							Amount:     netPayout,
+							Penalty:    penaltyPaid,
+							AccountIDs: matchingAsState.asset.AccountIDs,
+						})
+						matchingSubAsset.isClosed = true
+					}
+				} else {
+					uDue := v.DueDate.UTC()
+					start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
+					if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
+						month.Expenses += v.Amount
+						log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, v.Amount)
+						month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
+							Name:       e.Name,
+							EntityName: e.Name,
+							Amount:     v.Amount,
+							AccountIDs: e.AccountIDs,
+							PoolID:     e.PoolID,
+						})
+					}
 				}
 			}
 		}
+
 
 		// Initialize available funds
 		availableFunds := month.Income - month.Bills - month.Expenses
@@ -2391,6 +2444,21 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					if sa.isClosed || sa.endDate == nil {
 						continue
 					}
+					if sa.isRemainderConsumer {
+						linkedExpIsFlexible := false
+						if sa.expenseID != nil && *sa.expenseID != "" {
+							for _, e := range expenses {
+								if e.ID == *sa.expenseID && (strings.HasSuffix(e.Name, " (Flexible)") || strings.Contains(e.Name, "[Flex]")) {
+									linkedExpIsFlexible = true
+									break
+								}
+							}
+						}
+						if linkedExpIsFlexible {
+							continue
+						}
+					}
+
 					saEnd := sa.endDate.UTC()
 					if currentDate.Year() == saEnd.Year() && currentDate.Month() == saEnd.Month() {
 						log.Printf("[PROJECTION] SUB-ASSET PAYOUT DATE REACHED: %s (%s)", as.asset.Name, sa.name)

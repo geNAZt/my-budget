@@ -275,3 +275,24 @@ To allow administrators to audit bank/integration synchronization processes and 
   - In the realtime page's account list, if an account went in debit last month, we will display an eye-catching warning badge.
   - Hovering or clicking the warning will reveal a premium popover showing the rebalancing transactions, helping the user audit how the account was rebalanced.
 
+## 18. Flexible Remainder-Funded Expenses
+
+We introduce the ability to configure an expense to be funded dynamically using scenario remainder cash flow, which shifts the target date of the expense to whenever the sub-asset accumulates enough funds.
+
+### Design Details
+1. **Frontend Configuration ("Fund Later")**:
+   - In the expense details modal, the "Fund Later" tab is enhanced with a checkbox: "Fund via Asset Remainder".
+   - When checked, the "Monthly Savings Required" display shows €0,00 (no fixed rate required).
+   - Creating the funding plan creates a sub-asset with `isRemainderConsumer: true`, `amountPerMonth: 0`, and `expenseId: selectedExpenseObj.id`.
+   - The expense itself is automatically renamed to include ` (Flexible)` to ensure the target date is treated as flexible.
+2. **Backend Projection Engine Integration**:
+   - We check if an expense is flexible (name contains ` (Flexible)` or `[Flex]`) and is linked to an active remainder-consumer sub-asset.
+   - If so, the expense's default `DueDate` is ignored.
+   - During the projection months loop, if the associated sub-asset's `currentBalance` has accumulated enough funds to meet or exceed the expense's `amount`:
+     - The expense is triggered in that month (added to `month.Expenses`).
+     - The sub-asset is closed, and its balance is paid out to offset the expense (`month.Income += netPayout`).
+     - This preserves a clean vertical cash flow balance in the projection dashboard.
+   - In the regular sub-asset payout loop, remainder consumer sub-assets linked to flexible expenses are ignored to prevent premature payouts on their `endDate`.
+3. **Sub-Asset Mappings**:
+   - Ensure all sub-asset mappings (such as in `updateExpenseDetails` and asset saving) include the `expenseId` field.
+

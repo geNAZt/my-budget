@@ -2,6 +2,7 @@ package service
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -878,6 +879,149 @@ func TestSWRModificationMonthlyTrigger(t *testing.T) {
 		t.Errorf("Expected monthly SWR to trigger at 3.5M balance (withdrawal = %f, threshold = 10,000)", targetWithdrawalB)
 	}
 }
+
+func TestFlexibleRemainderFundedExpense(t *testing.T) {
+	// Setup a flexible expense
+	expID := "exp-vacation"
+	expense := domain.Expense{
+		ID:        expID,
+		Name:      "Vacation (Flexible)",
+		IsDeleted: false,
+		ActiveVersion: &domain.ExpenseVersion{
+			ID:        "exp-ver-vacation",
+			ExpenseID: expID,
+			Amount:     500.0,
+			DueDate:   time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	// Setup linked remainder consumer sub-asset
+	sa1 := &subAssetState{
+		id:                  "sa-vacation",
+		name:                "Vacation Fund",
+		currentBalance:      300.0,
+		targetValue:         "500",
+		amountPerMonth:      0,
+		isRemainderConsumer: true,
+		expenseID:           &expID,
+		isClosed:            false,
+	}
+
+	as := &assetState{
+		asset: domain.Asset{
+			ID: "asset-savings",
+			ActiveVersion: &domain.AssetVersion{
+				ID:   "asset-ver-savings",
+				Type: domain.AssetTypeStatic,
+			},
+		},
+		currentBalance: 300.0,
+		subAssets:      []*subAssetState{sa1},
+	}
+
+	// Test Case 1: Sub-asset balance (300) < expense amount (500).
+	// Expense should NOT trigger.
+	{
+		month := &domain.ProjectionMonth{
+			Breakdown: domain.MonthBreakdown{
+				Expenses: []domain.EntryBreakdown{},
+				Incomes:  []domain.EntryBreakdown{},
+			},
+		}
+
+		expensesList := []domain.Expense{expense}
+		assetStatesList := []*assetState{as}
+
+		for _, e := range expensesList {
+			v := e.ActiveVersion
+			isFlexibleRemainderConsumer := false
+			var matchingSubAsset *subAssetState
+
+			if strings.HasSuffix(e.Name, " (Flexible)") || strings.Contains(e.Name, "[Flex]") {
+				for _, asState := range assetStatesList {
+					for _, sa := range asState.subAssets {
+						if sa.expenseID != nil && *sa.expenseID == e.ID && sa.isRemainderConsumer {
+							isFlexibleRemainderConsumer = true
+							matchingSubAsset = sa
+							break
+						}
+					}
+					if isFlexibleRemainderConsumer {
+						break
+					}
+				}
+			}
+
+			if isFlexibleRemainderConsumer {
+				if matchingSubAsset != nil && !matchingSubAsset.isClosed && matchingSubAsset.currentBalance >= v.Amount {
+					month.Expenses += v.Amount
+					matchingSubAsset.isClosed = true
+				}
+			}
+		}
+
+		if month.Expenses > 0 {
+			t.Errorf("Expected expense not to trigger when sub-asset balance (300) is less than expense amount (500)")
+		}
+		if sa1.isClosed {
+			t.Errorf("Expected sub-asset not to close when expense is not triggered")
+		}
+	}
+
+	// Test Case 2: Sub-asset balance (550) >= expense amount (500).
+	// Expense SHOULD trigger, sub-asset should close.
+	{
+		sa1.currentBalance = 550.0
+		as.currentBalance = 550.0
+		sa1.isClosed = false
+
+		month := &domain.ProjectionMonth{
+			Breakdown: domain.MonthBreakdown{
+				Expenses: []domain.EntryBreakdown{},
+				Incomes:  []domain.EntryBreakdown{},
+			},
+		}
+
+		expensesList := []domain.Expense{expense}
+		assetStatesList := []*assetState{as}
+
+		for _, e := range expensesList {
+			v := e.ActiveVersion
+			isFlexibleRemainderConsumer := false
+			var matchingSubAsset *subAssetState
+
+			if strings.HasSuffix(e.Name, " (Flexible)") || strings.Contains(e.Name, "[Flex]") {
+				for _, asState := range assetStatesList {
+					for _, sa := range asState.subAssets {
+						if sa.expenseID != nil && *sa.expenseID == e.ID && sa.isRemainderConsumer {
+							isFlexibleRemainderConsumer = true
+							matchingSubAsset = sa
+							break
+						}
+					}
+					if isFlexibleRemainderConsumer {
+						break
+					}
+				}
+			}
+
+			if isFlexibleRemainderConsumer {
+				if matchingSubAsset != nil && !matchingSubAsset.isClosed && matchingSubAsset.currentBalance >= v.Amount {
+					month.Expenses += v.Amount
+					matchingSubAsset.isClosed = true
+				}
+			}
+		}
+
+		if month.Expenses != 500.0 {
+			t.Errorf("Expected expense of 500.0 to trigger, got %f", month.Expenses)
+		}
+		if !sa1.isClosed {
+			t.Errorf("Expected sub-asset to close when expense triggers")
+		}
+	}
+}
+
 
 
 
