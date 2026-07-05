@@ -312,4 +312,20 @@ To prevent large or long-term remainder-consumer sub-assets from blocking other 
    - We sort these priority groups in ascending order.
    - We iteratively distribute remainder to the highest priority group (using the even split logic if there are multiple sub-assets at the same priority). Any remaining funds cascade to the next priority groups.
 
+## 20. Asset Duplication in Dashboard
+
+To allow users to clone existing complex assets easily, we implement a single-click asset duplication feature in the dashboard asset manager.
+
+### Design Details
+1. **Frontend Action Button**:
+   - We add a "Duplicate" action button (using the Copy icon) alongside the edit/delete controls in the asset list card layout.
+2. **Duplication Business Logic**:
+   - A confirmation dialog is shown to verify intent.
+   - When confirmed, the client-side asset structure is decoded and deep-copied.
+   - The primary ID of the parent asset is replaced with a fresh client-side UUID, and ` (Copy)` is appended to its name.
+   - Each sub-asset listed under `activeVersion.subAssets` is also assigned a brand-new unique ID to prevent database constraint conflicts.
+   - We trigger the standard `assets::save` WebSocket API with the newly cloned object. The backend handles auto-generating a new version ID and writes the cloned penalties, ETF configs, and stitching segments to the database.
+   - The UI automatically refreshes to display the cloned asset.
+
+
 

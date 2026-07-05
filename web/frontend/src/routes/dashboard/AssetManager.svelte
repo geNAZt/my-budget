@@ -37,6 +37,7 @@
         Archive,
         Undo2,
         Pencil,
+        Copy,
         PieChart,
         CheckCircle2,
         AlertCircle,
@@ -449,6 +450,94 @@
         deleteAsset(mode);
     }
 
+    async function duplicateAsset(asset: any) {
+        if (!confirm(`Are you sure you want to duplicate "${asset.name}"?`)) {
+            return;
+        }
+
+        try {
+            const copiedAsset = decode(asset);
+
+            // Generate new IDs for the asset
+            copiedAsset.id = crypto.randomUUID();
+            copiedAsset.name = copiedAsset.name + " (Copy)";
+
+            // Update sub-asset IDs to be unique
+            if (copiedAsset.activeVersion && copiedAsset.activeVersion.subAssets) {
+                copiedAsset.activeVersion.subAssets = copiedAsset.activeVersion.subAssets.map((sa: any) => ({
+                    ...sa,
+                    id: crypto.randomUUID()
+                }));
+            }
+
+            const av = copiedAsset.activeVersion || {};
+            const [, err] = await wsCall(
+                "assets::save",
+                AssetSchema,
+                {
+                    id: copiedAsset.id,
+                    name: copiedAsset.name,
+                    poolId: copiedAsset.poolId || "",
+                    accountIds: copiedAsset.accountIds || [],
+                    linkToScenarios: copiedAsset.linkToScenarios || false,
+                    activeVersion: {
+                        id: "", // Let backend generate new version ID
+                        assetId: copiedAsset.id,
+                        type: av.type || "STOCKS",
+                        targetValue: parseFloat(av.targetValue) || 0,
+                        dumpingLoanId: av.dumpingLoanId || "",
+                        stopModificationId: av.stopModificationId || "",
+                        interestRate: parseFloat(av.interestRate) || 0,
+                        interestInterval: av.interestInterval || "YEARLY",
+                        amountPerMonth: parseFloat(av.amountPerMonth) || 0,
+                        remainderStartDate: av.remainderStartDate || "",
+                        startDate: av.startDate || "",
+                        endDate: av.endDate || "",
+                        etfConfig: (av.etfConfig || []).map((t: any) => ({
+                            tracker: t.tracker || "",
+                            historicalTracker: t.historicalTracker || "",
+                            conversionTracker: t.conversionTracker || "",
+                            historyProvider: t.historyProvider || "",
+                            percentage: parseFloat(t.percentage) || 0,
+                            ter: parseFloat(t.ter) || 0,
+                            stitchingSegments: (t.stitchingSegments || []).map((seg: any) => ({
+                                provider: seg.provider || "",
+                                lookupTicker: seg.lookupTicker || "",
+                                conversionTracker: seg.conversionTracker || "",
+                            })),
+                        })),
+                        penalties: (av.penalties || []).map((p: any) => ({
+                            name: p.name || "",
+                            triggerType: p.triggerType || "",
+                            percentage: parseFloat(p.percentage) || 0,
+                        })),
+                        subAssets: (av.subAssets || []).map((s: any) => ({
+                            id: s.id || "",
+                            name: s.name || "",
+                            targetValue: Number(s.targetValue) || 0,
+                            amountPerMonth: Number(s.amountPerMonth) || 0,
+                            isRemainderConsumer: !!s.isRemainderConsumer,
+                            remainderStartDate: s.remainderStartDate || "",
+                            dumpingLoanId: s.dumpingLoanId || "",
+                            startDate: s.startDate || "",
+                            endDate: s.endDate || "",
+                            earliestDumpDate: s.earliestDumpDate || "",
+                            expenseId: s.expenseId || "",
+                            remainderPriority: Number(s.remainderPriority) || 0,
+                        })),
+                    },
+                },
+                [AssetSchema]
+            ).one();
+
+            if (err) throw err;
+
+            await fetchData();
+        } catch (err: any) {
+            alert("Failed to duplicate asset: " + err.message);
+        }
+    }
+
     function editAsset(asset: Asset) {
         currentAsset = decode(asset);
         if (!currentAsset.accountIds) {
@@ -678,6 +767,13 @@
                                 title="Refine (New Version)"
                             >
                                 <Pencil class="w-4 h-4" />
+                            </button>
+                            <button
+                                onclick={() => duplicateAsset(asset)}
+                                class="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
+                                title="Duplicate Asset"
+                            >
+                                <Copy class="w-4 h-4" />
                             </button>
                             <button
                                 onclick={() => {
