@@ -181,6 +181,8 @@ message IntegrationAccount {
   string iban = 6;
   string backoff_until = 7;
   string tags = 8;
+  bool was_in_debit_last_month = 9;
+  repeated Transaction rebalancing_transactions = 10;
 }
 
 message IntegrationAccountList {

@@ -686,6 +686,25 @@ func (s *SyncService) finalizeSync(userID string, i *domain.Integration, balance
 	i.LastError = ""
 	i.CachedBalance = balance
 	i.BackoffUntil = backoffUntil
+
+	// Record account balance history
+	provider := s.integrationRegistry.Get(i.ServiceType)
+	if provider != nil {
+		accounts, err := provider.GetAccounts(userID, i)
+		if err == nil {
+			for _, acc := range accounts {
+				if acc.Enabled {
+					err := s.transactionRepo.SaveAccountBalanceHistory(userID, i.ID, acc.ID, acc.Balance, now)
+					if err != nil {
+						log.Printf("[SYNC] Failed to save account balance history for account %s: %v", acc.ID, err)
+					}
+				}
+			}
+		} else {
+			log.Printf("[SYNC] Failed to get accounts for balance history in finalizeSync: %v", err)
+		}
+	}
+
 	return s.integrationRepo.Save(userID, i)
 }
 

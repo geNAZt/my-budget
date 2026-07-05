@@ -255,3 +255,23 @@ To allow administrators to audit bank/integration synchronization processes and 
 - The main dashboard loads the active scenario's current budget sheet by running a projection limit of 1 month. Since the projection starting date can now be in the past (based on `scenario.StartDate`), a limit of 1 would return the historical starting month instead of the current month.
 - We modified `web/frontend/src/routes/dashboard/+page.svelte` to dynamically compute the number of projection months required from the scenario's start date to the current month, passing the correct `projectionMonths` to the WebSocket projection service call and selecting the current month sheet out of the returned stream.
 
+## 17. Day Header Transaction Balance & Account Balance History
+
+### 1. Day Header Transaction Balance
+- We will introduce a derived map `dayBalances` in `+page.svelte` that groups `filteredTransactions` by their formatted German date strings and sums their transaction amounts.
+- In the day header template (when `showDateSeparator` is true), we will display the sum of transactions for that day. We will style it as a badge using `tabular-nums` formatting and colors matching the balance (emerald for positive/zero, rose for negative).
+
+### 2. Account Balance History
+- **Database Schema**: A new migration `025_create_account_balance_history` will create `account_balance_history` to store account balances snapshot records with fields `id`, `user_id`, `integration_id`, `account_id`, `balance`, and `recorded_at`. We will create an index on `(account_id, recorded_at)`.
+- **Balance Snapshot on Sync**: Inside the Go backend's `finalizeSync` method, when an integration successfully completes synchronization, we will fetch the latest accounts using the provider and save snapshot records for each enabled account.
+
+### 3. Debit Status & Rebalancing Transactions
+- **Protobuf Extensions**: We will extend the `IntegrationAccount` message in `api.proto` with `was_in_debit_last_month` and `rebalancing_transactions`.
+- **Backend Resolution**: We will implement `ListByAccount` in `TransactionRepository` to query all active transactions for an account. In the accounts listing handler (`IntegrationsAccounts.List`), we will reconstruct the historical balance step-by-step retrospectively using the current balance and the transaction list.
+- **Debit/Rebalance Logic**:
+  - We will check if the account's balance fell below zero at any point during the previous calendar month.
+  - We will collect all incoming transactions (amount > 0) that occurred while the account was in debit to identify them as the rebalancing transactions.
+- **Frontend Display**:
+  - In the realtime page's account list, if an account went in debit last month, we will display an eye-catching warning badge.
+  - Hovering or clicking the warning will reveal a premium popover showing the rebalancing transactions, helping the user audit how the account was rebalanced.
+

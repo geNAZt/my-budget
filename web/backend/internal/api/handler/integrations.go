@@ -84,6 +84,7 @@ func NewIntegrations(
 			integrationRepo: integrations,
 			syncService:     syncService,
 			crypto:          crypto,
+			transactionRepo: txRepo,
 		},
 	}
 }
@@ -533,6 +534,7 @@ type IntegrationsAccounts struct {
 	integrationRepo *repository.IntegrationRepository
 	syncService     *service.SyncService
 	crypto          *crypto.CryptoService
+	transactionRepo *repository.TransactionRepository
 }
 
 func (a *IntegrationsAccounts) List(s *api.WebsocketSession, reqID string, req *apiproto.IntegrationAccountsRequest) {
@@ -576,6 +578,13 @@ func (a *IntegrationsAccounts) List(s *api.WebsocketSession, reqID string, req *
 			continue
 		}
 
+		// Load master key for this integration once
+		masterKey, _ := a.syncService.GetMasterKey(userID, integration.ID)
+		mikCache := map[string][]byte{}
+		if masterKey != nil {
+			mikCache[integration.ID] = masterKey
+		}
+
 		for _, acc := range accounts {
 			backoff := ""
 			if acc.BackoffUntil != nil {
@@ -584,15 +593,133 @@ func (a *IntegrationsAccounts) List(s *api.WebsocketSession, reqID string, req *
 
 			log.Printf("[WS] Account %s: Name=%s, Integration=%s (ID in loop: %s), Balance=%v, Enabled=%v", acc.ID, acc.Name, integration.Name, integration.ID, acc.Balance, acc.Enabled)
 
+			wasInDebitLastMonth := false
+			var rebalancingTransactions []*apiproto.Transaction
+
+			if acc.Enabled && masterKey != nil {
+				txs, err := a.transactionRepo.ListByAccount(userID, acc.ID)
+				if err == nil && len(txs) > 0 {
+					// We need to trace the balance backwards from the current balance.
+					// txs is sorted by created_at DESC (reverse chronological order).
+					// Calculate historical balance values before/after each transaction.
+					type step struct {
+						tx          domain.BankTransaction
+						amount      float64
+						createdAt   time.Time
+						balBefore   float64
+						balAfter    float64
+						description string
+						peer        string
+						peerIban    string
+					}
+					
+					var steps []step
+					currBal := acc.Balance
+					
+					for _, tx := range txs {
+						decrypted, err := a.syncService.DecryptTransaction(userID, &tx, mikCache, nil)
+						if err != nil {
+							continue
+						}
+						meta, err := provider.ParseTransaction(decrypted, tx.AccountID)
+						if err != nil {
+							continue
+						}
+						
+						steps = append(steps, step{
+							tx:          tx,
+							amount:      meta.Amount,
+							createdAt:   meta.CreatedAt,
+							balAfter:    currBal,
+							balBefore:   currBal - meta.Amount,
+							description: meta.Description,
+							peer:        meta.Receiver,
+							peerIban:    meta.ReceiverIBAN,
+						})
+						
+						currBal = currBal - meta.Amount
+					}
+					
+					// Define last month time boundaries:
+					now := time.Now().UTC()
+					lastMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, time.UTC)
+					lastMonthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+					
+					// Trace forward chronologically to check if balance was negative at any point in last month.
+					// Check balance at the start of last month (which is the balance before the first transaction after start, or the current balance if no transactions exist after it).
+					// To find the balance at start of last month, we can find the last step where createdAt <= lastMonthStart.
+					// If that step exists, its balAfter is the balance at lastMonthStart.
+					// If it doesn't, it means all transactions in steps are after lastMonthStart, so the balance before the oldest transaction (currBal after the loop above) is the starting balance.
+					startBal := currBal
+					for i := len(steps) - 1; i >= 0; i-- {
+						if steps[i].createdAt.Before(lastMonthStart) || steps[i].createdAt.Equal(lastMonthStart) {
+							startBal = steps[i].balAfter
+						}
+					}
+					
+					if startBal < 0 {
+						wasInDebitLastMonth = true
+					}
+					
+					// Check balance after/before each transaction during last month
+					for _, s := range steps {
+						if (s.createdAt.After(lastMonthStart) || s.createdAt.Equal(lastMonthStart)) && 
+							(s.createdAt.Before(lastMonthEnd) || s.createdAt.Equal(lastMonthEnd)) {
+							if s.balAfter < 0 || s.balBefore < 0 {
+								wasInDebitLastMonth = true
+							}
+						}
+					}
+					
+					// Collect rebalancing transactions (amount > 0 and balance before transaction < 0)
+					for i := len(steps) - 1; i >= 0; i-- {
+						s := steps[i]
+						if s.amount > 0 && s.balBefore < 0 {
+							// Check if it falls in last month or later
+							if s.createdAt.After(lastMonthStart) || s.createdAt.Equal(lastMonthStart) {
+								potentialLinkId := ""
+								if s.tx.LinkedTransactionID != nil {
+									potentialLinkId = *s.tx.LinkedTransactionID
+								}
+								
+								rebalancingTransactions = append(rebalancingTransactions, &apiproto.Transaction{
+									Id:                   s.tx.ID,
+									IntegrationId:        s.tx.IntegrationID,
+									AccountId:            s.tx.AccountID,
+									PoolIds:              s.tx.PoolIDs,
+									Amount:               s.amount,
+									Receiver:             s.peer,
+									ReceiverIban:         s.peerIban,
+									Description:          s.description,
+									CreatedAt:            s.createdAt.Format(time.RFC3339),
+									Tags:                 s.tx.Tags,
+									SourceAccountId:      s.tx.SourceAccountID,
+									DestinationAccountId: s.tx.DestinationAccountID,
+									IsLinkConfirmed:      s.tx.IsLinkConfirmed,
+									PotentialLinkId:      potentialLinkId,
+									DeniedDuplicateIds:   s.tx.DeniedDuplicateIDs,
+									ExternalId:           s.tx.ExternalID,
+									CorrelationId:        s.tx.CorrelationID,
+									InternalStatus:       s.tx.InternalStatus,
+									DuplicateKey:         fmt.Sprintf("%s|%.2f", s.createdAt.Format("2006-01-02"), math.Abs(s.amount)),
+								})
+							}
+						}
+					}
+				}
+			}
+
 			resp.Accounts = append(resp.Accounts, &apiproto.IntegrationAccount{
-				Id:            acc.ID,
-				Name:          acc.Name,
-				Balance:       acc.Balance,
-				IntegrationId: integration.ID,
-				Enabled:       acc.Enabled,
-				Iban:          acc.IBAN,
-				BackoffUntil:  backoff,
-				Tags:          acc.Tags,
+				Id:                     acc.ID,
+				Name:                   acc.Name,
+				Balance:                acc.Balance,
+				IntegrationId:          integration.ID,
+				Enabled:                acc.Enabled,
+				Iban:                   acc.IBAN,
+				BackoffUntil:           backoff,
+				Tags:                   acc.Tags,
+				WasInDebitLastMonth:    wasInDebitLastMonth,
+				RebalancingTransactions: rebalancingTransactions,
 			})
 		}
 	}

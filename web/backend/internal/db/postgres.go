@@ -1302,6 +1302,36 @@ var migrations = []Migration{
 			return FixUPCTTransitionsV3(db)
 		},
 	},
+	{
+		ID: "025_create_account_balance_history",
+		Run: func(db *sql.DB) error {
+			var exists bool
+			err := db.QueryRow("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'account_balance_history' AND table_schema = current_schema())").Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				_, err = db.Exec(`
+					CREATE TABLE account_balance_history (
+						id TEXT PRIMARY KEY,
+						user_id TEXT NOT NULL DEFAULT '',
+						integration_id TEXT NOT NULL DEFAULT '',
+						account_id TEXT NOT NULL DEFAULT '',
+						balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+						recorded_at TIMESTAMP NOT NULL,
+						FOREIGN KEY(user_id) REFERENCES users(id),
+						FOREIGN KEY(integration_id) REFERENCES integrations(id)
+					)
+				`)
+				if err != nil {
+					return err
+				}
+				_, err = db.Exec("CREATE INDEX idx_account_balance_history_acc_date ON account_balance_history (account_id, recorded_at)")
+				return err
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

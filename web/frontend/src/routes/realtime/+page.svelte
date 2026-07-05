@@ -186,6 +186,12 @@
     ];
     const dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
+    let expandedDebitAccountIds = $state<Record<string, boolean>>({});
+
+    function toggleAccountDebitView(accountId: string) {
+        expandedDebitAccountIds[accountId] = !expandedDebitAccountIds[accountId];
+    }
+
     // Rule Architect State
     let showRuleArchitect = $state(false);
     let showIntegrationWizard = $state(false);
@@ -303,6 +309,19 @@
     const filteredTransactionsBalance = $derived(
         filteredTransactions.reduce((acc, t) => acc + getTxAmount(t), 0),
     );
+
+    const dayBalances = $derived.by(() => {
+        const balances: Record<string, number> = {};
+        filteredTransactions.forEach((t) => {
+            const dateStr = new Date(t.createdAt).toLocaleDateString("de-DE", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+            });
+            balances[dateStr] = (balances[dateStr] || 0) + getTxAmount(t);
+        });
+        return balances;
+    });
 
     const groupedTransactions = $derived.by(() => {
         const groups: Record<
@@ -1677,21 +1696,29 @@
                                     sortKey === 'date' && (i === 0 || currentTxDate !== prevTxDate)}
 
                                 {#if showDateSeparator}
-                                    <div
-                                        class="flex items-center gap-4 pt-4 pb-2"
-                                    >
-                                        <div
-                                            class="h-px bg-slate-200 flex-1"
-                                        ></div>
-                                        <span
-                                            class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]"
-                                            >{currentTxDate}</span
-                                        >
-                                        <div
-                                            class="h-px bg-slate-200 flex-1"
-                                        ></div>
-                                    </div>
-                                {/if}
+                                     {@const dayBal = dayBalances[currentTxDate] || 0}
+                                     <div
+                                         class="flex items-center gap-4 pt-4 pb-2"
+                                     >
+                                         <div
+                                             class="h-px bg-slate-200 flex-1"
+                                         ></div>
+                                         <div class="flex items-center gap-3">
+                                             <span
+                                                 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]"
+                                                 >{currentTxDate}</span
+                                             >
+                                             <span
+                                                 class="text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums border {dayBal >= 0 ? 'bg-emerald-50/70 text-emerald-700 border-emerald-100' : 'bg-rose-50/70 text-rose-700 border-rose-100'}"
+                                             >
+                                                 {dayBal >= 0 ? '+' : ''}€{dayBal.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                             </span>
+                                         </div>
+                                         <div
+                                             class="h-px bg-slate-200 flex-1"
+                                         ></div>
+                                     </div>
+                                 {/if}
 
                                 {@const isHovered = tx.id === hoveredTxId}
                                 {@const isLinkTarget =
@@ -2091,42 +2118,76 @@
                                 </div>
                             {/if}
 
-                            <div class="space-y-3 mb-6">
                                 {#each allAccounts.filter((a) => a.integrationId?.toLowerCase() === i.integrationId?.toLowerCase() && a.enabled) as acc}
-                                    <div
-                                        class="flex items-center justify-between text-xs p-3 bg-slate-50/50 rounded-xl border border-slate-100"
-                                    >
+                                    <div class="space-y-2">
                                         <div
-                                            class="flex flex-col gap-1 truncate mr-2"
+                                            class="flex items-center justify-between text-xs p-3 bg-slate-50/50 rounded-xl border border-slate-100"
                                         >
-                                            <span
-                                                class="font-bold text-slate-800 truncate"
-                                                title={acc.name}
-                                                >{acc.name}</span
+                                            <div
+                                                class="flex flex-col gap-1 truncate mr-2"
                                             >
-                                            <span
-                                                class="text-[9px] font-black text-slate-400 uppercase tracking-widest"
+                                                <div class="flex items-center gap-2">
+                                                    <span
+                                                        class="font-bold text-slate-800 truncate"
+                                                        title={acc.name}
+                                                        >{acc.name}</span
+                                                    >
+                                                    {#if acc.wasInDebitLastMonth}
+                                                        <button 
+                                                            type="button"
+                                                            onclick={() => toggleAccountDebitView(acc.id)}
+                                                            class="text-[8px] font-black uppercase tracking-[0.1em] px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded-md border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-1 select-none cursor-pointer"
+                                                            title="Click to view rebalancing transactions"
+                                                        >
+                                                            ⚠️ Debit Last Month
+                                                        </button>
+                                                    {/if}
+                                                </div>
+                                                <span
+                                                    class="text-[9px] font-black text-slate-400 uppercase tracking-widest"
+                                                >
+                                                    {#if acc.iban}{acc.iban} •
+                                                    {/if}{formatTimeRemaining(
+                                                        acc.backoffUntil,
+                                                    )}</span
+                                                >
+                                            </div>
+                                            <div
+                                                class="font-black text-slate-900 shrink-0 tabular-nums"
                                             >
-                                                {#if acc.iban}{acc.iban} •
-                                                {/if}{formatTimeRemaining(
-                                                    acc.backoffUntil,
-                                                )}</span
-                                            >
+                                                €{acc.balance.toLocaleString(
+                                                    "de-DE",
+                                                    {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    },
+                                                )}
+                                            </div>
                                         </div>
-                                        <div
-                                            class="font-black text-slate-900 shrink-0 tabular-nums"
-                                        >
-                                            €{acc.balance.toLocaleString(
-                                                "de-DE",
-                                                {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                },
-                                            )}
-                                        </div>
+                                        {#if expandedDebitAccountIds[acc.id]}
+                                            <div class="p-3 bg-slate-50/80 rounded-xl border border-slate-200 mt-2 space-y-2 text-[10px] shadow-inner">
+                                                <div class="font-black text-slate-400 uppercase tracking-[0.15em] text-[9px] mb-1">Rebalancing Transactions</div>
+                                                {#if acc.rebalancingTransactions && acc.rebalancingTransactions.length > 0}
+                                                    <div class="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                                        {#each acc.rebalancingTransactions as rtx}
+                                                            <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 hover:border-indigo-300 transition-all">
+                                                                <div class="flex flex-col gap-0.5 truncate mr-2">
+                                                                    <span class="font-bold text-slate-700 truncate">{rtx.description || rtx.receiver || "Incoming Transfer"}</span>
+                                                                    <span class="text-[8px] text-slate-400 font-bold">{new Date(rtx.createdAt).toLocaleDateString("de-DE")}</span>
+                                                                </div>
+                                                                <span class="font-black text-emerald-600 shrink-0 tabular-nums">
+                                                                    +€{rtx.amount.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                </span>
+                                                            </div>
+                                                        {/each}
+                                                    </div>
+                                                {:else}
+                                                    <div class="text-slate-500 font-medium italic">No recent rebalancing transactions found.</div>
+                                                {/if}
+                                            </div>
+                                        {/if}
                                     </div>
                                 {/each}
-                            </div>
 
                             <div class="flex items-center gap-3">
                                 <button
