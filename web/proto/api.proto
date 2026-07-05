@@ -370,6 +370,7 @@ message SubAsset {
   string end_date = 9;
   string earliest_dump_date = 10;
   string expense_id = 11;
+  int32 remainder_priority = 12;
 }
 
 message AssetVersion {

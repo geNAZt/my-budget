@@ -88,6 +88,7 @@
         endDate: string | null;
         earliestDumpDate: string | null;
         expenseId: string | null;
+        remainderPriority: number;
     }
 
     interface AssetVersion {
@@ -410,6 +411,7 @@
                             endDate: s.endDate || "",
                             earliestDumpDate: s.earliestDumpDate || "",
                             expenseId: s.expenseId || "",
+                            remainderPriority: Number(s.remainderPriority) || 0,
                         })),
                     },
                 },
@@ -1279,6 +1281,7 @@
                                         endDate: null,
                                         earliestDumpDate: null,
                                         expenseId: null,
+                                        remainderPriority: 0,
                                     });
                                 }}
                                 class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
@@ -1548,23 +1551,37 @@
                                                     </label>
                                                 </div>
                                                 <div
-                                                    class="flex items-center gap-2"
+                                                    class="flex items-center gap-4 justify-between"
                                                 >
-                                                    <input
-                                                        type="checkbox"
-                                                        id="remainder_target_{target.id}"
-                                                        bind:checked={
-                                                            target.isRemainderConsumer
-                                                        }
-                                                        class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                    />
-                                                    <label
-                                                        for="remainder_target_{target.id}"
-                                                        class="text-[10px] font-bold text-slate-600 cursor-pointer"
-                                                    >
-                                                        Enable Remainder
-                                                        Consumption
-                                                    </label>
+                                                    <div class="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            id="remainder_target_{target.id}"
+                                                            bind:checked={
+                                                                target.isRemainderConsumer
+                                                            }
+                                                            class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        <label
+                                                            for="remainder_target_{target.id}"
+                                                            class="text-[10px] font-bold text-slate-600 cursor-pointer"
+                                                        >
+                                                            Enable Remainder
+                                                            Consumption
+                                                        </label>
+                                                    </div>
+                                                    {#if target.isRemainderConsumer}
+                                                        <div class="flex items-center gap-1.5 shrink-0">
+                                                            <span class="text-[9px] font-black uppercase text-slate-400">Prio</span>
+                                                            <input
+                                                                type="number"
+                                                                bind:value={target.remainderPriority}
+                                                                min="0"
+                                                                class="w-12 px-2 py-1 rounded-lg border border-slate-200 text-xs font-bold text-center outline-none text-slate-700 focus:border-indigo-500 bg-white"
+                                                                placeholder="0"
+                                                            />
+                                                        </div>
+                                                    {/if}
                                                 </div>
                                                 <div
                                                     class="flex items-center gap-2"

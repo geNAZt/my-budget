@@ -137,6 +137,7 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 			TargetValue:         strconv.FormatFloat(subAsset.TargetValue, 'f', -1, 64),
 			AmountPerMonth:      subAsset.AmountPerMonth,
 			IsRemainderConsumer: subAsset.IsRemainderConsumer,
+			RemainderPriority:   subAsset.RemainderPriority,
 		}
 
 		if subAsset.RemainderStartDate != "" {
@@ -309,6 +310,7 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 				TargetValue:         saTargetValue,
 				AmountPerMonth:      subAsset.AmountPerMonth,
 				IsRemainderConsumer: subAsset.IsRemainderConsumer,
+				RemainderPriority:   subAsset.RemainderPriority,
 				DumpingLoanId:       "",
 				StartDate:           subAsset.StartDate.Format(time.RFC3339),
 				EndDate:             "",

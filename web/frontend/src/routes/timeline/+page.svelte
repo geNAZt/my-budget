@@ -738,6 +738,7 @@
                         endDate: s.endDate || "",
                         earliestDumpDate: s.earliestDumpDate || "",
                         expenseId: s.expenseId || "",
+                        remainderPriority: Number(s.remainderPriority) || 0,
                     }))
                 }
             };
@@ -1006,6 +1007,7 @@
                                 endDate: s.endDate || "",
                                 earliestDumpDate: s.earliestDumpDate || "",
                                 expenseId: s.expenseId || "",
+                                remainderPriority: Number(s.remainderPriority) || 0,
                             })),
                         },
                     },
@@ -1343,6 +1345,7 @@
             remainderStartDate: "",
             earliestDumpDate: "",
             expenseId: selectedExpenseObj.id,
+            remainderPriority: 0,
         };
 
         const activeVersion = getActiveVersion(selectedAsset);
@@ -1366,6 +1369,7 @@
                 endDate: s.endDate || "",
                 earliestDumpDate: s.earliestDumpDate || "",
                 expenseId: s.expenseId || "",
+                remainderPriority: Number(s.remainderPriority) || 0,
             })),
             {
                 ...newSubAsset,
@@ -1559,6 +1563,7 @@
                             endDate: s.endDate || "",
                             earliestDumpDate: s.earliestDumpDate || "",
                             expenseId: s.expenseId || "",
+                            remainderPriority: Number(s.remainderPriority) || 0,
                         })),
                     },
                 },

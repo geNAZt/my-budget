@@ -185,7 +185,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 
 			// 3. Load Sub-assets
 			subQuery := fmt.Sprintf(`
-				SELECT asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id
+				SELECT asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id, remainder_priority
 				FROM asset_version_sub_assets
 				WHERE asset_version_id IN (%s)`, strings.Join(placeholders, ","))
 			saRows, err := r.db.Query(subQuery, args...)
@@ -199,7 +199,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 					var endDate sql.NullTime
 					var earliestDumpDate sql.NullTime
 					var expenseID sql.NullString
-					err := saRows.Scan(&vID, &sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID)
+					err := saRows.Scan(&vID, &sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID, &sa.RemainderPriority)
 					if err == nil {
 						if remainderStartDate.Valid {
 							sa.RemainderStartDate = &remainderStartDate.Time
@@ -335,9 +335,8 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 		}
 	}
 
-	// Load SubAssets
 	saRows, err := r.db.Query(`
-		SELECT sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id
+		SELECT sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id, remainder_priority
 		FROM asset_version_sub_assets
 		WHERE asset_version_id = ?`, v.ID)
 	if err == nil {
@@ -349,7 +348,7 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 			var endDate sql.NullTime
 			var earliestDumpDate sql.NullTime
 			var expenseID sql.NullString
-			err := saRows.Scan(&sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID)
+			err := saRows.Scan(&sa.ID, &sa.Name, &sa.TargetValue, &sa.AmountPerMonth, &sa.IsRemainderConsumer, &remainderStartDate, &dumpingLoanID, &sa.StartDate, &endDate, &earliestDumpDate, &expenseID, &sa.RemainderPriority)
 			if err == nil {
 				if remainderStartDate.Valid {
 					sa.RemainderStartDate = &remainderStartDate.Time
@@ -501,9 +500,9 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 			expenseID = nil
 		}
 		_, err = tx.Exec(`
-			INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), v.ID, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate, expenseID)
+			INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id, remainder_priority)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			uuid.New().String(), v.ID, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate, expenseID, sa.RemainderPriority)
 		if err != nil {
 			return err
 		}

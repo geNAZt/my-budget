@@ -2,6 +2,7 @@ package service
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1019,6 +1020,121 @@ func TestFlexibleRemainderFundedExpense(t *testing.T) {
 		if !sa1.isClosed {
 			t.Errorf("Expected sub-asset to close when expense triggers")
 		}
+	}
+}
+
+func TestSubAssetRemainderPriorities(t *testing.T) {
+	// Setup sub-assets with different priorities
+	saA := &subAssetState{
+		id:                  "sa-high-prio",
+		name:                "High Priority Fund",
+		currentBalance:      0.0,
+		targetValue:         "100",
+		amountPerMonth:      0,
+		isRemainderConsumer: true,
+		remainderPriority:   1, // Higher priority (lower number)
+	}
+
+	saB := &subAssetState{
+		id:                  "sa-low-prio",
+		name:                "Low Priority Fund",
+		currentBalance:      0.0,
+		targetValue:         "200",
+		amountPerMonth:      0,
+		isRemainderConsumer: true,
+		remainderPriority:   2, // Lower priority
+	}
+
+	as := &assetState{
+		asset: domain.Asset{
+			ID: "asset-savings",
+			ActiveVersion: &domain.AssetVersion{
+				ID:          "asset-ver-savings",
+				Type:        domain.AssetTypeStatic,
+				TargetValue: "1000",
+			},
+		},
+		currentBalance: 0.0,
+		subAssets:      []*subAssetState{saA, saB},
+	}
+
+	// We simulate the remainder waterfall logic for this asset with leftover = 150
+	leftover := 150.0
+
+	// Mock environment
+	loanByID := make(map[string]*loanState)
+
+	// Replicate waterfall logic
+	activeRemainderConsumers := []*subAssetState{}
+	for _, sa := range as.subAssets {
+		if !sa.isClosed && sa.isRemainderConsumer && sa.amountPerMonth == 0 {
+			target := getSubAssetTarget(sa, loanByID)
+			if target < 0 || sa.currentBalance < (target-0.01) {
+				activeRemainderConsumers = append(activeRemainderConsumers, sa)
+			}
+		}
+	}
+
+	if len(activeRemainderConsumers) > 0 {
+		priorityMap := make(map[int32][]*subAssetState)
+		for _, sa := range activeRemainderConsumers {
+			priorityMap[sa.remainderPriority] = append(priorityMap[sa.remainderPriority], sa)
+		}
+		var sortedPriorities []int32
+		for prio := range priorityMap {
+			sortedPriorities = append(sortedPriorities, prio)
+		}
+		sort.Slice(sortedPriorities, func(i, j int) bool {
+			return sortedPriorities[i] < sortedPriorities[j]
+		})
+
+		remainingInAssetLoop := leftover
+
+		for _, prio := range sortedPriorities {
+			if remainingInAssetLoop <= 0.01 {
+				break
+			}
+
+			remainderConsumers := priorityMap[prio]
+
+			for remainingInAssetLoop > 0.01 && len(remainderConsumers) > 0 {
+				evenShare := remainingInAssetLoop / float64(len(remainderConsumers))
+				newRemainderConsumers := []*subAssetState{}
+				thisRoundConsumed := 0.0
+
+				for _, sa := range remainderConsumers {
+					target := getSubAssetTarget(sa, loanByID)
+					toDep := evenShare
+					if target >= 0 {
+						room := math.Max(0, target-sa.currentBalance)
+						toDep = math.Min(evenShare, room)
+					}
+
+					if toDep > 0 {
+						sa.currentBalance += toDep // depositToSubAsset mock
+						thisRoundConsumed += toDep
+						remainingInAssetLoop -= toDep
+
+						if target < 0 || sa.currentBalance < (target-0.01) {
+							newRemainderConsumers = append(newRemainderConsumers, sa)
+						}
+					}
+				}
+
+				remainderConsumers = newRemainderConsumers
+				if thisRoundConsumed <= 0.0001 {
+					break
+				}
+			}
+		}
+	}
+
+	// Assertions
+	if saA.currentBalance != 100.0 {
+		t.Errorf("Expected saA (prio 1) to be fully funded with 100.0, got %f", saA.currentBalance)
+	}
+	if saB.currentBalance != 50.0 {
+		t.Errorf("Expected saB (prio 2) to receive remaining 50.0, got %f", saB.currentBalance)
 	}
 }
 

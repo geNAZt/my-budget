@@ -296,3 +296,20 @@ We introduce the ability to configure an expense to be funded dynamically using 
 3. **Sub-Asset Mappings**:
    - Ensure all sub-asset mappings (such as in `updateExpenseDetails` and asset saving) include the `expenseId` field.
 
+## 19. Sub-Asset Remainder Priorities
+
+To prevent large or long-term remainder-consumer sub-assets from blocking other sub-assets from receiving remainder allocations, we introduce configurable sub-asset remainder priorities.
+
+### Design Details
+1. **Model & Schema Changes**:
+   - We extend `SubAsset` in the Protobuf schema (`api.proto`) and domain package with a `remainder_priority` field (integer).
+   - We execute an idempotent DB migration to add the `remainder_priority` column to `asset_version_sub_assets`.
+2. **Frontend UI**:
+   - In the edit asset modal, if a sub-asset has "Enable Remainder Consumption" checked, we display a numeric priority input field ("Prio") next to it.
+   - Lower numbers indicate higher priority (i.e. processed first).
+3. **Backend Projection Waterfall**:
+   - Within each parent asset's remainder distribution, we group active remainder-consuming sub-assets by their `remainderPriority`.
+   - We sort these priority groups in ascending order.
+   - We iteratively distribute remainder to the highest priority group (using the even split logic if there are multiple sub-assets at the same priority). Any remaining funds cascade to the next priority groups.
+
+

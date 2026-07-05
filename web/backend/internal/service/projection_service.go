@@ -210,6 +210,7 @@ type subAssetState struct {
 	earliestDumpDate    *time.Time
 	isClosed            bool
 	expenseID           *string
+	remainderPriority   int32
 }
 
 type assetState struct {
@@ -1346,6 +1347,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 					endDate:             sa.EndDate,
 					earliestDumpDate:    sa.EarliestDumpDate,
 					expenseID:           sa.ExpenseID,
+					remainderPriority:   sa.RemainderPriority,
 				})
 			}
 		}
@@ -2982,8 +2984,8 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 						}
 
 						if len(as.subAssets) > 0 {
-							// Granular Sub-Asset Waterfall (Even Split + Rebalancing)
-							var remainderConsumers []*subAssetState
+							// Granular Sub-Asset Waterfall (Priority-based Even Split + Rebalancing)
+							var activeRemainderConsumers []*subAssetState
 							for _, sa := range as.subAssets {
 								if !sa.isClosed && sa.isRemainderConsumer && sa.amountPerMonth == 0 && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
 									if sa.remainderStartDate != nil {
@@ -2994,12 +2996,25 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 									target := getSubAssetTarget(sa, loanByID)
 									if target < 0 || sa.currentBalance < (target-0.01) {
-										remainderConsumers = append(remainderConsumers, sa)
+										activeRemainderConsumers = append(activeRemainderConsumers, sa)
 									}
 								}
 							}
 
-							if len(remainderConsumers) > 0 {
+							if len(activeRemainderConsumers) > 0 {
+								// Find unique priorities and sort them
+								priorityMap := make(map[int32][]*subAssetState)
+								for _, sa := range activeRemainderConsumers {
+									priorityMap[sa.remainderPriority] = append(priorityMap[sa.remainderPriority], sa)
+								}
+								var sortedPriorities []int32
+								for prio := range priorityMap {
+									sortedPriorities = append(sortedPriorities, prio)
+								}
+								sort.Slice(sortedPriorities, func(i, j int) bool {
+									return sortedPriorities[i] < sortedPriorities[j]
+								})
+
 								remainingInAssetLoop := leftover
 								if hasParentTarget {
 									remainingInAssetLoop = math.Min(leftover, parentTarget-as.currentBalance)
@@ -3007,38 +3022,47 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 								consumedByAssetTotal := 0.0
 
-								// Iterative even-split distribution
-								for remainingInAssetLoop > 0.01 && len(remainderConsumers) > 0 {
-									evenShare := remainingInAssetLoop / float64(len(remainderConsumers))
-									newRemainderConsumers := []*subAssetState{}
-									thisRoundConsumed := 0.0
-
-									for _, sa := range remainderConsumers {
-										target := getSubAssetTarget(sa, loanByID)
-										toDep := evenShare
-										if target >= 0 {
-											room := math.Max(0, target-sa.currentBalance)
-											toDep = math.Min(evenShare, room)
-										}
-
-										if toDep > 0 {
-											depositToSubAsset(as, sa.id, toDep)
-											thisRoundConsumed += toDep
-											remainingInAssetLoop -= toDep
-											consumedByAssetTotal += toDep
-											log.Printf("[PROJECTION] Remainder -> Sub-Asset: %s -> %s, Amount: %.2f, New Balance: %.2f (Total: %.2f)", as.asset.Name, sa.name, toDep, sa.currentBalance, as.currentBalance)
-											month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+") (Remainder)", toDep, 0, 0))
-
-											// If we still have room (or infinite), keep for next round if needed
-											if target < 0 || sa.currentBalance < (target-0.01) {
-												newRemainderConsumers = append(newRemainderConsumers, sa)
-											}
-										}
+								// Process priority levels one by one
+								for _, prio := range sortedPriorities {
+									if remainingInAssetLoop <= 0.01 {
+										break
 									}
 
-									remainderConsumers = newRemainderConsumers
-									if thisRoundConsumed <= 0.0001 {
-										break
+									remainderConsumers := priorityMap[prio]
+
+									// Iterative even-split distribution within this priority level
+									for remainingInAssetLoop > 0.01 && len(remainderConsumers) > 0 {
+										evenShare := remainingInAssetLoop / float64(len(remainderConsumers))
+										newRemainderConsumers := []*subAssetState{}
+										thisRoundConsumed := 0.0
+
+										for _, sa := range remainderConsumers {
+											target := getSubAssetTarget(sa, loanByID)
+											toDep := evenShare
+											if target >= 0 {
+												room := math.Max(0, target-sa.currentBalance)
+												toDep = math.Min(evenShare, room)
+											}
+
+											if toDep > 0 {
+												depositToSubAsset(as, sa.id, toDep)
+												thisRoundConsumed += toDep
+												remainingInAssetLoop -= toDep
+												consumedByAssetTotal += toDep
+												log.Printf("[PROJECTION] Remainder (Prio %d) -> Sub-Asset: %s -> %s, Amount: %.2f, New Balance: %.2f (Total: %.2f)", sa.remainderPriority, as.asset.Name, sa.name, toDep, sa.currentBalance, as.currentBalance)
+												month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+") (Remainder)", toDep, 0, 0))
+
+												// If we still have room (or infinite), keep for next round
+												if target < 0 || sa.currentBalance < (target-0.01) {
+													newRemainderConsumers = append(newRemainderConsumers, sa)
+												}
+											}
+										}
+
+										remainderConsumers = newRemainderConsumers
+										if thisRoundConsumed <= 0.0001 {
+											break
+										}
 									}
 								}
 

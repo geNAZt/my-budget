@@ -650,6 +650,7 @@ func InitDB(dsn string) (*sql.DB, error) {
         end_date TIMESTAMP,
         earliest_dump_date TIMESTAMP,
         expense_id TEXT,
+        remainder_priority INTEGER DEFAULT 0,
         FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE,
         FOREIGN KEY(dumping_loan_id) REFERENCES loans(id) ON DELETE SET NULL,
         FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE SET NULL
@@ -1328,6 +1329,17 @@ var migrations = []Migration{
 				}
 				_, err = db.Exec("CREATE INDEX idx_account_balance_history_acc_date ON account_balance_history (account_id, recorded_at)")
 				return err
+			}
+			return nil
+		},
+	},
+	{
+		ID: "026_asset_version_sub_assets_remainder_priority",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "asset_version_sub_assets", "remainder_priority") {
+				if _, err := db.Exec("ALTER TABLE asset_version_sub_assets ADD COLUMN remainder_priority INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
