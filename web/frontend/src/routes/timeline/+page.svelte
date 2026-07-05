@@ -808,6 +808,42 @@
         }
     }
 
+    function prepareScenarioPayload(sc: any): any {
+        if (!sc) return null;
+        return {
+            id: sc.id || "",
+            name: sc.name || "",
+            description: sc.description || "",
+            projectionMonths: Number(sc.projectionMonths) || 24,
+            remainderOrder: sc.remainderOrder || [],
+            isActive: !!sc.isActive,
+            monthStartDay: Number(sc.monthStartDay) || 1,
+            startDate: sc.startDate || "",
+            entities: (sc.entities || []).map((e: any) => ({
+                entityId: e.entityId || "",
+                entityType: e.entityType || "",
+                versionId: e.versionId || "",
+            })),
+            simulations: Number(sc.simulations) || 0,
+            simYears: Number(sc.simYears) || 0,
+            simPercent: Number(sc.simPercent) || 0,
+            lookbackYears: Number(sc.lookbackYears) || 0,
+            mcImplementation: sc.mcImplementation || "",
+            passiveIncomePercentage: Number(sc.passiveIncomePercentage) || 0,
+            etfParams: Object.fromEntries(
+                Object.entries(sc.etfParams || {}).map(([k, v]: [string, any]) => [
+                    k,
+                    {
+                        simulations: Number(v.simulations || 0),
+                        simYears: Number(v.simYears || 0),
+                        simPercent: Number(v.simPercent || 0),
+                        lookbackYears: Number(v.lookbackYears || 0),
+                    }
+                ])
+            ),
+        };
+    }
+
     async function handleScenarioChange(id: string) {
         selectedScenarioId = id;
         localStorage.setItem("timeline_scenario_id", id);
@@ -1236,15 +1272,7 @@
                         entityType: "EXPENSE",
                         versionId: ""
                     });
-                    await wsCall("scenarios::save", ScenarioSchema, {
-                        ...activeScenario,
-                        entities: (activeScenario.entities || []).map(e => ({
-                            entityId: e.entityId || "",
-                            entityType: e.entityType || "",
-                            versionId: e.versionId || "",
-                        })),
-                        etfParams: activeScenario.etfParams || {}
-                    }, [ScenarioSchema]).one();
+                    await wsCall("scenarios::save", ScenarioSchema, prepareScenarioPayload(activeScenario), [ScenarioSchema]).one();
                 }
             }
 
@@ -1373,15 +1401,7 @@
                         entityType: "SUB_ASSET",
                         versionId: ""
                     });
-                    await wsCall("scenarios::save", ScenarioSchema, {
-                        ...activeScenario,
-                        entities: (activeScenario.entities || []).map(e => ({
-                            entityId: e.entityId || "",
-                            entityType: e.entityType || "",
-                            versionId: e.versionId || "",
-                        })),
-                        etfParams: activeScenario.etfParams || {}
-                    }, [ScenarioSchema]).one();
+                    await wsCall("scenarios::save", ScenarioSchema, prepareScenarioPayload(activeScenario), [ScenarioSchema]).one();
                 }
             }
 
@@ -1531,15 +1551,7 @@
                 }
                 if (changed) {
                     activeScenario.entities = updatedEntities;
-                    await wsCall("scenarios::save", ScenarioSchema, {
-                        ...activeScenario,
-                        entities: (activeScenario.entities || []).map(e => ({
-                            entityId: e.entityId || "",
-                            entityType: e.entityType || "",
-                            versionId: e.versionId || "",
-                        })),
-                        etfParams: activeScenario.etfParams || {}
-                    }, [ScenarioSchema]).one();
+                    await wsCall("scenarios::save", ScenarioSchema, prepareScenarioPayload(activeScenario), [ScenarioSchema]).one();
                 }
             }
 
@@ -1561,7 +1573,11 @@
     async function runSingleSimulationSilent(tempOrder: string[]): Promise<any[] | null> {
         if (!activeScenario) return null;
         try {
-            const testScenario = { ...activeScenario, remainderOrder: tempOrder, projectionMonths };
+            const testScenario = prepareScenarioPayload({
+                ...activeScenario,
+                remainderOrder: tempOrder,
+                projectionMonths
+            });
             const callResult = wsCall("scenarios::projection", ScenarioSchema, testScenario, [
                 ProjectionMonthSchema, YieldMapSchema, PerformanceMetricsSchema, ErrorSchema,
             ]);
@@ -1644,15 +1660,7 @@
             const results = [];
             for (const strat of strategies) {
                 activeScenario.remainderOrder = strat.order;
-                await wsCall("scenarios::save", ScenarioSchema, {
-                    ...activeScenario,
-                    entities: (activeScenario.entities || []).map(e => ({
-                        entityId: e.entityId || "",
-                        entityType: e.entityType || "",
-                        versionId: e.versionId || "",
-                    })),
-                    etfParams: activeScenario.etfParams || {}
-                }, [ScenarioSchema]).one();
+                await wsCall("scenarios::save", ScenarioSchema, prepareScenarioPayload(activeScenario), [ScenarioSchema]).one();
 
                 const simulatedMonths = await runSingleSimulationSilent(strat.order);
                 if (simulatedMonths && simulatedMonths.length > 0) {
@@ -1706,15 +1714,7 @@
         } finally {
             // Restore original order
             activeScenario.remainderOrder = originalOrder;
-            await wsCall("scenarios::save", ScenarioSchema, {
-                ...activeScenario,
-                entities: (activeScenario.entities || []).map(e => ({
-                    entityId: e.entityId || "",
-                    entityType: e.entityType || "",
-                    versionId: e.versionId || "",
-                })),
-                etfParams: activeScenario.etfParams || {}
-            }, [ScenarioSchema]).one();
+            await wsCall("scenarios::save", ScenarioSchema, prepareScenarioPayload(activeScenario), [ScenarioSchema]).one();
             isOptimizing = false;
         }
     }
