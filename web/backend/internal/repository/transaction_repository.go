@@ -630,3 +630,36 @@ func (r *TransactionRepository) SaveAccountBalanceHistory(userID string, integra
 	return err
 }
 
+type AccountBalanceHistory struct {
+	ID            string
+	UserID        string
+	IntegrationID string
+	AccountID     string
+	Balance       float64
+	RecordedAt    time.Time
+}
+
+func (r *TransactionRepository) ListAccountBalanceHistory(userID string, accountID string) ([]AccountBalanceHistory, error) {
+	rows, err := r.db.Query(`
+		SELECT id, user_id, integration_id, account_id, balance, recorded_at
+		FROM account_balance_history
+		WHERE user_id = ? AND account_id = ?
+		ORDER BY recorded_at ASC`, userID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []AccountBalanceHistory
+	for rows.Next() {
+		var h AccountBalanceHistory
+		err := rows.Scan(&h.ID, &h.UserID, &h.IntegrationID, &h.AccountID, &h.Balance, &h.RecordedAt)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, h)
+	}
+	return history, nil
+}
+
+

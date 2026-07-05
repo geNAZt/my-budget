@@ -267,10 +267,10 @@ To allow administrators to audit bank/integration synchronization processes and 
 
 ### 3. Debit Status & Rebalancing Transactions
 - **Protobuf Extensions**: We will extend the `IntegrationAccount` message in `api.proto` with `was_in_debit_last_month` and `rebalancing_transactions`.
-- **Backend Resolution**: We will implement `ListByAccount` in `TransactionRepository` to query all active transactions for an account. In the accounts listing handler (`IntegrationsAccounts.List`), we will reconstruct the historical balance step-by-step retrospectively using the current balance and the transaction list.
+- **Backend Resolution**: We will implement `ListAccountBalanceHistory` in `TransactionRepository` to query all historical balance snapshots for an account.
 - **Debit/Rebalance Logic**:
-  - We will check if the account's balance fell below zero at any point during the previous calendar month.
-  - We will collect all incoming transactions (amount > 0) that occurred while the account was in debit to identify them as the rebalancing transactions.
+  - We will check if the account's balance fell below zero at any point during the previous calendar month solely based on the balance history records (checking the starting balance before last month and any recorded balance snapshot during last month).
+  - We will query all transactions for the account, and identify rebalancing transactions as incoming transactions (amount > 0) that occurred in last month or later, where the balance immediately before that transaction (resolved from the most recent balance history snapshot) was negative.
 - **Frontend Display**:
   - In the realtime page's account list, if an account went in debit last month, we will display an eye-catching warning badge.
   - Hovering or clicking the warning will reveal a premium popover showing the rebalancing transactions, helping the user audit how the account was rebalanced.
