@@ -66,6 +66,7 @@ type AssetVersion struct {
 	Penalties          []AssetPenalty
 	SubAssets          []SubAsset
 	CreatedAt          time.Time
+	UseForPassiveIncome bool
 }
 
 type HistoryStitchingSegment struct {

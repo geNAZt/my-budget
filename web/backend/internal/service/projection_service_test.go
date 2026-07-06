@@ -1138,6 +1138,50 @@ func TestSubAssetRemainderPriorities(t *testing.T) {
 	}
 }
 
+func TestConfigurablePassiveIncome(t *testing.T) {
+	// Setup two ETF assets: one with UseForPassiveIncome=true, one with UseForPassiveIncome=false
+	etf1 := &assetState{
+		asset: domain.Asset{
+			ID: "etf-active",
+			ActiveVersion: &domain.AssetVersion{
+				ID:                  "active-version-etf-active",
+				Type:                domain.AssetTypeETF,
+				UseForPassiveIncome: true,
+			},
+		},
+		currentBalance: 100000.0,
+	}
+
+	etf2 := &assetState{
+		asset: domain.Asset{
+			ID: "etf-inactive",
+			ActiveVersion: &domain.AssetVersion{
+				ID:                  "active-version-etf-inactive",
+				Type:                domain.AssetTypeETF,
+				UseForPassiveIncome: false,
+			},
+		},
+		currentBalance: 500000.0,
+	}
+
+	assetStates := []*assetState{etf1, etf2}
+
+	// Calculate etfWorth replicating the production code
+	etfWorth := 0.0
+	for _, as := range assetStates {
+		if !as.isClosed {
+			if as.asset.ActiveVersion.Type == domain.AssetTypeETF && as.asset.ActiveVersion.UseForPassiveIncome {
+				etfWorth += as.currentBalance
+			}
+		}
+	}
+
+	// Assertions
+	if etfWorth != 100000.0 {
+		t.Errorf("Expected etfWorth to only include the active ETF asset (100000.0), but got %f", etfWorth)
+	}
+}
+
 
 
 

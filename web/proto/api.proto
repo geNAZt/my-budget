@@ -390,6 +390,7 @@ message AssetVersion {
   repeated AssetPenalty penalties = 14;
   repeated SubAsset sub_assets = 15;
   string created_at = 16;
+  bool use_for_passive_income = 17;
 }
 
 message Asset {

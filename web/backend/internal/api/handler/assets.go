@@ -84,6 +84,8 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 		av.StopModificationID = &reqVersion.StopModificationId
 	}
 
+	av.UseForPassiveIncome = reqVersion.UseForPassiveIncome
+
 	if reqVersion.RemainderStartDate != "" {
 		if t, err := time.Parse(time.RFC3339, reqVersion.RemainderStartDate); err == nil {
 			av.RemainderStartDate = &t
@@ -250,12 +252,13 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 			Type:               string(a.ActiveVersion.Type),
 			TargetValue:        targetValue,
 			DumpingLoanId:      "",
-			StopModificationId: "",
-			InterestRate:       a.ActiveVersion.InterestRate,
-			InterestInterval:   a.ActiveVersion.InterestInterval,
-			AmountPerMonth:     a.ActiveVersion.AmountPerMonth,
-			CreatedAt:          a.ActiveVersion.CreatedAt.Format(time.RFC3339),
-			StartDate:          a.ActiveVersion.StartDate.Format(time.RFC3339),
+			StopModificationId:  "",
+			InterestRate:        a.ActiveVersion.InterestRate,
+			InterestInterval:    a.ActiveVersion.InterestInterval,
+			AmountPerMonth:      a.ActiveVersion.AmountPerMonth,
+			CreatedAt:           a.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			StartDate:           a.ActiveVersion.StartDate.Format(time.RFC3339),
+			UseForPassiveIncome: a.ActiveVersion.UseForPassiveIncome,
 		}
 
 		if a.ActiveVersion.DumpingLoanID != nil {

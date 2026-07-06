@@ -295,6 +295,8 @@ We introduce the ability to configure an expense to be funded dynamically using 
    - In the regular sub-asset payout loop, remainder consumer sub-assets linked to flexible expenses are ignored to prevent premature payouts on their `endDate`.
 3. **Sub-Asset Mappings**:
    - Ensure all sub-asset mappings (such as in `updateExpenseDetails` and asset saving) include the `expenseId` field.
+4. **Timeline Rendering Payout Stop**:
+   - In `+page.svelte`, the `getActualEndIndex` function is updated to also check `m.breakdown.incomes` in addition to `m.breakdown.assets` to find non-loan-dumping sub-asset payouts. This ensures remainder-consumer sub-assets correctly stop rendering their timeline tracks in the month they pay out.
 
 ## 19. Sub-Asset Remainder Priorities
 
@@ -326,6 +328,47 @@ To allow users to clone existing complex assets easily, we implement a single-cl
    - Each sub-asset listed under `activeVersion.subAssets` is also assigned a brand-new unique ID to prevent database constraint conflicts.
    - We trigger the standard `assets::save` WebSocket API with the newly cloned object. The backend handles auto-generating a new version ID and writes the cloned penalties, ETF configs, and stitching segments to the database.
    - The UI automatically refreshes to display the cloned asset.
+
+## 21. Configurable Passive Income Assets
+
+Instead of assuming all ETF based assets are used for passive income and auto-stopping them, we introduce a configurable `use_for_passive_income` property to allow granular selection of which assets qualify.
+
+### Design Details
+1. **Model & Schema Changes**:
+   - We add `bool use_for_passive_income` to the `AssetVersion` Protobuf model.
+   - We run a DB migration to add `use_for_passive_income` (BOOLEAN DEFAULT FALSE) to `asset_versions`.
+2. **Frontend Configuration UI**:
+   - In the edit asset modal, when the asset type is "ETF", we render a new checkbox: "Use for Passive Income".
+   - This sets `useForPassiveIncome` to true/false in the state.
+3. **Backend Projection Engine Integration**:
+   - During the monthly simulation loop, we compute `etfWorth` (used to calculate the passive income milestone) by only summing ETF assets that have `UseForPassiveIncome` set to true.
+
+## 22. Scenario-Aware Calendar Selector Ranges
+
+To align the "This Month" and "Prev Month" calendar filters with the budget cycle, the date calculation must account for the `monthStartDay` of the current active simulation (scenario).
+
+### Design Details
+1. **Scenario List Retrieval**:
+   - We update `realtime/+page.svelte` to fetch the scenarios list on mount via `scenarios::list` WebSocket API.
+   - We store the scenarios in Svelte state.
+2. **Active Scenario Identification**:
+   - The active scenario is defined as the scenario where `isActive` is true.
+   - We extract `monthStartDay = activeScenario?.monthStartDay || 1`.
+3. **Date Boundary Calculation**:
+   - When the user selects "This Month" or "Prev Month", we calculate the boundaries based on `monthStartDay`.
+   - If `monthStartDay <= 1`:
+     - "This Month": Start on the 1st of the current month, end on the last day of the current month.
+     - "Prev Month": Start on the 1st of the previous month, end on the last day of the previous month.
+   - If `monthStartDay > 1`:
+     - Capped at 28 (`monthStartDay = Math.min(monthStartDay, 28)`).
+     - "This Month":
+       - If today's day of the month is `< monthStartDay`, the current budget period starts on `monthStartDay` of the previous month, and ends on `monthStartDay - 1` of the current month.
+       - If today's day of the month is `>= monthStartDay`, the current budget period starts on `monthStartDay` of the current month, and ends on `monthStartDay - 1` of the next month.
+     - "Prev Month" is calculated similarly as the period immediately preceding "This Month" (i.e. using a date offset by 1 day before the start of the current period).
+4. **Timezone Safety**:
+   - We format dates using local date components (`getFullYear()`, `getMonth()`, `getDate()`) to generate `YYYY-MM-DD` strings, avoiding timezone shifts inherent to `toISOString()`.
+
+
 
 
 

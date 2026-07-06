@@ -15,6 +15,7 @@
         TransactionSchema,
         ErrorSchema,
         SyncFinishedPayloadSchema,
+        ScenarioListSchema,
     } from "$lib/gen/api_pb.js";
     const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
 
@@ -91,7 +92,10 @@
     let integrations = $state<any[]>([]);
     let pools = $state<any[]>([]);
     let rules = $state<any[]>([]);
+    let scenarios = $state<any[]>([]);
     let allAccountsRaw = $state<any[]>([]);
+    const activeScenario = $derived(scenarios.find((s) => s.isActive));
+    const monthStartDay = $derived(activeScenario?.monthStartDay || 1);
     let mappedAccounts = $state<Record<string, any>>({});
     const allAccounts = $derived(allAccountsRaw);
     let isLoading = $state(true);
@@ -481,7 +485,7 @@
         if (!silent) isLoading = true;
         console.log("[REALTIME] Starting fetchData...");
         try {
-            const [txResp, intResp, poolResp, ruleResp, accResp] =
+            const [txResp, intResp, poolResp, ruleResp, accResp, scResp] =
                 await Promise.all([
                     wsCall("integrations::transactions::list", null, null, [
                         DiscoveredTransactionListSchema,
@@ -498,6 +502,9 @@
                     wsCall("integrations::accounts::list", null, null, [
                         IntegrationAccountListSchema,
                     ]).one(),
+                    wsCall("scenarios::list", null, null, [
+                        ScenarioListSchema,
+                    ]).one(),
                 ]);
 
             console.log("[REALTIME] Received responses:", {
@@ -506,6 +513,7 @@
                 pools: poolResp[0]?.pools?.length,
                 rules: ruleResp[0]?.rules?.length,
                 accounts: accResp[0]?.accounts?.length,
+                scenarios: scResp[0]?.scenarios?.length,
             });
 
             if (
@@ -513,7 +521,8 @@
                 intResp[1] ||
                 poolResp[1] ||
                 ruleResp[1] ||
-                accResp[1]
+                accResp[1] ||
+                scResp[1]
             ) {
                 console.warn("[REALTIME] One or more requests had errors:", {
                     txErr: txResp[1],
@@ -521,6 +530,7 @@
                     poolErr: poolResp[1],
                     ruleErr: ruleResp[1],
                     accErr: accResp[1],
+                    scErr: scResp[1],
                 });
             }
 
@@ -528,6 +538,7 @@
             integrations = intResp[0] ? intResp[0].integrations : [];
             pools = poolResp[0] ? poolResp[0].pools : [];
             rules = ruleResp[0] ? ruleResp[0].rules : [];
+            scenarios = scResp[0] ? scResp[0].scenarios : [];
 
             console.log(
                 "[REALTIME] First Integration Object:",
@@ -896,23 +907,51 @@
         filterStartDate = start.toISOString().split("T")[0];
         filterEndDate = end.toISOString().split("T")[0];
     }
+    function formatLocalDate(date: Date): string {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+
+    function getPeriodBoundsForDate(date: Date, startDay: number) {
+        let monthStartDay = startDay;
+        if (monthStartDay <= 1) {
+            const start = new Date(date.getFullYear(), date.getMonth(), 1);
+            const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+            return { start, end };
+        }
+        if (monthStartDay > 28) {
+            monthStartDay = 28;
+        }
+
+        let labelYear = date.getFullYear();
+        let labelMonth = date.getMonth();
+        let labelDate = new Date(labelYear, labelMonth, monthStartDay);
+        if (date.getDate() >= monthStartDay) {
+            labelMonth++;
+            labelDate = new Date(labelYear, labelMonth, monthStartDay);
+        }
+
+        const end = new Date(labelDate.getFullYear(), labelDate.getMonth(), labelDate.getDate() - 1);
+        const start = new Date(labelDate.getFullYear(), labelDate.getMonth() - 1, labelDate.getDate());
+
+        return { start, end };
+    }
+
     function setThisMonth() {
-        const d = new Date();
-        filterStartDate = new Date(d.getFullYear(), d.getMonth(), 1)
-            .toISOString()
-            .split("T")[0];
-        filterEndDate = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-            .toISOString()
-            .split("T")[0];
+        const today = new Date();
+        const { start, end } = getPeriodBoundsForDate(today, monthStartDay);
+        filterStartDate = formatLocalDate(start);
+        filterEndDate = formatLocalDate(end);
     }
     function setPreviousMonth() {
-        const d = new Date();
-        filterStartDate = new Date(d.getFullYear(), d.getMonth() - 1, 1)
-            .toISOString()
-            .split("T")[0];
-        filterEndDate = new Date(d.getFullYear(), d.getMonth(), 0)
-            .toISOString()
-            .split("T")[0];
+        const today = new Date();
+        const thisPeriod = getPeriodBoundsForDate(today, monthStartDay);
+        const prevDay = new Date(thisPeriod.start.getTime() - 24 * 60 * 60 * 1000);
+        const { start, end } = getPeriodBoundsForDate(prevDay, monthStartDay);
+        filterStartDate = formatLocalDate(start);
+        filterEndDate = formatLocalDate(end);
     }
     function setThisYear() {
         const d = new Date();

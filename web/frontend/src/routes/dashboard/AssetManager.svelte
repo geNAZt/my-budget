@@ -108,6 +108,7 @@
         etfConfig: ETFTracker[];
         penalties: AssetPenalty[];
         subAssets: SubAsset[];
+        useForPassiveIncome: boolean;
     }
 
     interface Asset {
@@ -200,6 +201,7 @@
                 etfConfig: [],
                 penalties: [],
                 subAssets: [],
+                useForPassiveIncome: false,
             },
         } as any;
     }
@@ -376,6 +378,7 @@
                             currentAsset.activeVersion.remainderStartDate || "",
                         startDate: currentAsset.activeVersion.startDate || "",
                         endDate: currentAsset.activeVersion.endDate || "",
+                        useForPassiveIncome: !!currentAsset.activeVersion.useForPassiveIncome,
                         etfConfig: (
                             currentAsset.activeVersion.etfConfig || []
                         ).map((t: any) => ({
@@ -493,6 +496,7 @@
                         remainderStartDate: av.remainderStartDate || "",
                         startDate: av.startDate || "",
                         endDate: av.endDate || "",
+                        useForPassiveIncome: !!av.useForPassiveIncome,
                         etfConfig: (av.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
@@ -558,8 +562,10 @@
                 etfConfig: [],
                 penalties: [],
                 subAssets: [],
+                useForPassiveIncome: false,
             };
         }
+        currentAsset.activeVersion.useForPassiveIncome = !!currentAsset.activeVersion.useForPassiveIncome;
         currentAsset.activeVersion.penalties =
             currentAsset.activeVersion.penalties || [];
         currentAsset.activeVersion.subAssets = (
@@ -1273,6 +1279,22 @@
                                     triggers.
                                 </p>
                             </div>
+                            
+                            {#if currentAsset.activeVersion.type === "ETF"}
+                                <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl flex items-center justify-between gap-4 border border-slate-100 dark:border-slate-800">
+                                    <div class="space-y-0.5">
+                                        <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Use for Passive Income</span>
+                                        <span class="text-[10px] text-slate-400 leading-normal block font-medium">
+                                            Includes this asset's balance in the passive income milestone calculation.
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        bind:checked={currentAsset.activeVersion.useForPassiveIncome}
+                                        class="w-5 h-5 accent-emerald-600 rounded-lg cursor-pointer"
+                                    />
+                                </div>
+                            {/if}
                         </div>
 
                         <!-- Loan Dumping Section -->

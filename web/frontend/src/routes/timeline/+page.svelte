@@ -432,6 +432,8 @@
         
         for (let i = 0; i < months.length; i++) {
             const m = months[i];
+            
+            // Check assets breakdown for dumps/leftovers/payouts
             if (m.breakdown?.assets) {
                 for (const entry of m.breakdown.assets) {
                     const entryName = entry.name || "";
@@ -448,6 +450,19 @@
                             if (!containsSubAsset) {
                                 return i;
                             }
+                        }
+                    }
+                }
+            }
+
+            // Also check incomes breakdown for sub-asset payouts that don't dump into a loan
+            if (m.breakdown?.incomes) {
+                for (const entry of m.breakdown.incomes) {
+                    const entryName = entry.name || "";
+                    if (saName) {
+                        if (entryName.includes(parentName) && entryName.includes(saName) && 
+                            (entryName.includes("Dump") || entryName.includes("Leftover") || entryName.includes("Payout"))) {
+                            return i;
                         }
                     }
                 }
@@ -708,6 +723,7 @@
                     remainderStartDate: av.remainderStartDate || "",
                     startDate: av.startDate || "",
                     endDate: av.endDate || "",
+                    useForPassiveIncome: !!av.useForPassiveIncome,
                     etfConfig: (av.etfConfig || []).map((t: any) => ({
                         tracker: t.tracker || "",
                         historicalTracker: t.historicalTracker || "",
@@ -982,6 +998,7 @@
                             remainderStartDate: av.remainderStartDate || "",
                             startDate: av.startDate || "",
                             endDate: av.endDate || "",
+                            useForPassiveIncome: !!av.useForPassiveIncome,
                             etfConfig: (av.etfConfig || []).map((t: any) => ({
                                 tracker: t.tracker || "",
                                 historicalTracker: t.historicalTracker || "",
@@ -1402,6 +1419,7 @@
                         remainderStartDate: activeVersion.remainderStartDate || "",
                         startDate: activeVersion.startDate || "",
                         endDate: activeVersion.endDate || "",
+                        useForPassiveIncome: !!activeVersion.useForPassiveIncome,
                         etfConfig: (activeVersion.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
@@ -1533,6 +1551,7 @@
                         remainderStartDate: activeVersion.remainderStartDate || "",
                         startDate: activeVersion.startDate || "",
                         endDate: activeVersion.endDate || "",
+                        useForPassiveIncome: !!activeVersion.useForPassiveIncome,
                         etfConfig: (activeVersion.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",

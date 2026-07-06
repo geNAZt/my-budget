@@ -19,7 +19,7 @@ func NewAssetRepository(db *sql.DB) *AssetRepository {
 
 func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 	query := `
-		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.created_at
+		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.use_for_passive_income, v.created_at
 		FROM assets a
 		INNER JOIN asset_versions v ON a.id = v.asset_id
 		WHERE a.user_id = ? AND a.is_deleted = FALSE
@@ -62,7 +62,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 		var withdrawalPenaltyDummy float64
 		var poolID sql.NullString
 
-		err := rows.Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &v.CreatedAt)
+		err := rows.Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &v.UseForPassiveIncome, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -230,7 +230,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 
 func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, error) {
 	query := `
-		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.created_at
+		SELECT a.id, a.name, a.pool_id, a.created_at, v.id, v.type, v.target_value, v.dumping_loan_id, v.stop_modification_id, v.interest_rate, v.interest_interval, v.amount_per_month, v.remainder_start_date, v.start_date, v.end_date, v.withdrawal_penalty, v.use_for_passive_income, v.created_at
 		FROM assets a
 		INNER JOIN asset_versions v ON a.id = v.asset_id
 		WHERE a.user_id = ? AND a.id = ? AND a.is_deleted = FALSE
@@ -247,7 +247,7 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 	var withdrawalPenaltyDummy float64
 	var poolID sql.NullString
 
-	err := r.db.QueryRow(query, userID, id).Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &v.CreatedAt)
+	err := r.db.QueryRow(query, userID, id).Scan(&a.ID, &a.Name, &poolID, &a.CreatedAt, &v.ID, &v.Type, &v.TargetValue, &dumpingLoanID, &stopModID, &v.InterestRate, &v.InterestInterval, &v.AmountPerMonth, &remainderStartDate, &v.StartDate, &endDate, &withdrawalPenaltyDummy, &v.UseForPassiveIncome, &v.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -432,9 +432,9 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 	v.AssetID = asset.ID
 
 	_, err = tx.Exec(`
-		INSERT INTO asset_versions (id, asset_id, type, target_value, dumping_loan_id, stop_modification_id, interest_rate, interest_interval, amount_per_month, remainder_start_date, start_date, end_date, withdrawal_penalty)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0)`,
-		v.ID, v.AssetID, v.Type, v.TargetValue, v.DumpingLoanID, v.StopModificationID, v.InterestRate, v.InterestInterval, v.AmountPerMonth, v.RemainderStartDate, v.StartDate, v.EndDate)
+		INSERT INTO asset_versions (id, asset_id, type, target_value, dumping_loan_id, stop_modification_id, interest_rate, interest_interval, amount_per_month, remainder_start_date, start_date, end_date, withdrawal_penalty, use_for_passive_income)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?)`,
+		v.ID, v.AssetID, v.Type, v.TargetValue, v.DumpingLoanID, v.StopModificationID, v.InterestRate, v.InterestInterval, v.AmountPerMonth, v.RemainderStartDate, v.StartDate, v.EndDate, v.UseForPassiveIncome)
 	if err != nil {
 		return err
 	}

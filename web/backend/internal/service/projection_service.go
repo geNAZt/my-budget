@@ -3293,7 +3293,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		for _, as := range assetStates {
 			if !as.isClosed {
 				month.AssetWorth += as.currentBalance
-				if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
+				if as.asset.ActiveVersion.Type == domain.AssetTypeETF && as.asset.ActiveVersion.UseForPassiveIncome {
 					etfWorth += as.currentBalance
 				}
 			}

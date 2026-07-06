@@ -376,6 +376,7 @@ func InitDB(dsn string) (*sql.DB, error) {
         start_date TIMESTAMP,
         end_date TIMESTAMP,
         withdrawal_penalty DOUBLE PRECISION DEFAULT 0,
+        use_for_passive_income BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(asset_id) REFERENCES assets(id),
         FOREIGN KEY(dumping_loan_id) REFERENCES loans(id)
@@ -1338,6 +1339,17 @@ var migrations = []Migration{
 		Run: func(db *sql.DB) error {
 			if !hasColumn(db, "asset_version_sub_assets", "remainder_priority") {
 				if _, err := db.Exec("ALTER TABLE asset_version_sub_assets ADD COLUMN remainder_priority INTEGER DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID: "027_asset_version_use_for_passive_income",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "asset_versions", "use_for_passive_income") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN use_for_passive_income BOOLEAN DEFAULT FALSE"); err != nil {
 					return err
 				}
 			}
