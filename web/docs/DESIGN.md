@@ -367,8 +367,19 @@ To align the "This Month" and "Prev Month" calendar filters with the budget cycl
      - "Prev Month" is calculated similarly as the period immediately preceding "This Month" (i.e. using a date offset by 1 day before the start of the current period).
 4. **Timezone Safety**:
    - We format dates using local date components (`getFullYear()`, `getMonth()`, `getDate()`) to generate `YYYY-MM-DD` strings, avoiding timezone shifts inherent to `toISOString()`.
+## 23. Target Expense Funding & Payout Attribution
 
+We introduce support for non-remainder-consumer sub-assets (target savings plans) to automatically fund their linked expenses when the sub-asset reaches its payout month (end date). We also implement proper virtual account attribution for sub-asset payouts.
 
+### Design Details
+1. **Backend Projection Engine Integration**:
+   - In `projection_service.go`, inside the monthly simulation loop (Step 2: Bills and Expenses), we check if an expense is linked to a non-remainder-consumer sub-asset whose end date (payout month) is reached in the current simulation month.
+   - If `sa.expenseID != nil` matches the expense ID, and `!sa.isRemainderConsumer`, and the current month matches `sa.endDate`, the expense is triggered.
+   - Triggering the expense adds its amount (`v.Amount`) to `month.Expenses` and appends it to `month.Breakdown.Expenses`.
+   - We ensure the expense is triggered only once (either by its own due date or by the linked sub-asset end date, using a logical OR condition).
 
-
+2. **Virtual Account Payout Attribution**:
+   - When a sub-asset payout occurs:
+     - If the payout is **linked** to an expense (i.e. `sa.expenseID != nil`), the payout's income entry is attributed to the linked expense's `AccountIDs` so they offset each other in the same virtual accounts.
+     - If the payout is **non-linked** (i.e. `sa.expenseID == nil`), the payout's income entry is attributed to `nil` (`unassigned`), dumping the content of the sub-asset directly onto the budget sheet's general pool so it is available to be spent/allocated.
 

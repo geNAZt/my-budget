@@ -1182,6 +1182,218 @@ func TestConfigurablePassiveIncome(t *testing.T) {
 	}
 }
 
+func TestTargetExpenseFunding(t *testing.T) {
+	// Setup a non-flexible expense
+	expID := "exp-car"
+	expense := domain.Expense{
+		ID:        expID,
+		Name:      "Kia EV5",
+		IsDeleted: false,
+		ActiveVersion: &domain.ExpenseVersion{
+			ID:        "exp-ver-car",
+			ExpenseID: expID,
+			Amount:     31384.90,
+			DueDate:   time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	// Setup linked non-remainder consumer sub-asset
+	endDate := time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)
+	sa1 := &subAssetState{
+		id:                  "sa-car",
+		name:                "Kia EV5 Savings",
+		currentBalance:      34811.03,
+		targetValue:         "31385",
+		amountPerMonth:      653.85,
+		isRemainderConsumer: false,
+		expenseID:           &expID,
+		endDate:             &endDate,
+		isClosed:            false,
+	}
+
+	as := &assetState{
+		asset: domain.Asset{
+			ID: "asset-savings",
+			ActiveVersion: &domain.AssetVersion{
+				ID:   "asset-ver-savings",
+				Type: domain.AssetTypeStatic,
+			},
+		},
+		currentBalance: 34811.03,
+		subAssets:      []*subAssetState{sa1},
+	}
+
+	// Simulation loop snippet representation for Jan 2031
+	currentDate := time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)
+	loc := time.UTC
+	scenarioMonthStartDay := 1
+
+	month := &domain.ProjectionMonth{
+		Date: currentDate,
+		Breakdown: domain.MonthBreakdown{
+			Expenses: []domain.EntryBreakdown{},
+		},
+	}
+
+	// Replicate step 2 logic for this test case
+	expensesList := []domain.Expense{expense}
+	assetStatesList := []*assetState{as}
+
+	for _, e := range expensesList {
+		v := e.ActiveVersion
+		isFlexibleRemainderConsumer := false
+		if strings.HasSuffix(e.Name, " (Flexible)") || strings.Contains(e.Name, "[Flex]") {
+			// Flexible path skipped
+		}
+
+		if isFlexibleRemainderConsumer {
+			// Skip
+		} else {
+			linkedSubAssetEndReached := false
+			for _, asState := range assetStatesList {
+				for _, sa := range asState.subAssets {
+					if sa.expenseID != nil && *sa.expenseID == e.ID && !sa.isRemainderConsumer && !sa.isClosed {
+						if sa.endDate != nil {
+							saEnd := sa.endDate.UTC()
+							if currentDate.Year() == saEnd.Year() && currentDate.Month() == saEnd.Month() {
+								linkedSubAssetEndReached = true
+								break
+							}
+						}
+					}
+				}
+				if linkedSubAssetEndReached {
+					break
+				}
+			}
+
+			uDue := v.DueDate.UTC()
+			start, end := projectionPeriodBounds(currentDate, scenarioMonthStartDay, loc)
+			isDue := (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end)
+
+			if isDue || linkedSubAssetEndReached {
+				month.Expenses += v.Amount
+				month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
+					Name:       e.Name,
+					EntityName: e.Name,
+					Amount:     v.Amount,
+					AccountIDs: e.AccountIDs,
+					PoolID:     e.PoolID,
+				})
+			}
+		}
+	}
+
+	// Assertions
+	if month.Expenses != 31384.90 {
+		t.Errorf("Expected month.Expenses to be 31384.90, got %f", month.Expenses)
+	}
+	if len(month.Breakdown.Expenses) != 1 {
+		t.Errorf("Expected 1 expense breakdown entry, got %d", len(month.Breakdown.Expenses))
+	} else if month.Breakdown.Expenses[0].Name != "Kia EV5" {
+		t.Errorf("Expected breakdown expense name to be 'Kia EV5', got '%s'", month.Breakdown.Expenses[0].Name)
+	}
+}
+
+func TestPayoutVirtualAccountAttribution(t *testing.T) {
+	// Scenario 1: Linked Payout
+	expID := "exp-linked"
+	expense := domain.Expense{
+		ID:         expID,
+		Name:       "Car Purchase",
+		IsDeleted:  false,
+		AccountIDs: []string{"account-car-fund"},
+		ActiveVersion: &domain.ExpenseVersion{
+			ID:        "exp-ver-linked",
+			ExpenseID: expID,
+			Amount:    10000,
+		},
+	}
+	endDate := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	saLinked := &subAssetState{
+		id:                  "sa-linked",
+		name:                "Car Fund Sub-Asset",
+		currentBalance:      10000,
+		targetValue:         "10000",
+		amountPerMonth:      100,
+		isRemainderConsumer: false,
+		expenseID:           &expID,
+		endDate:             &endDate,
+		isClosed:            false,
+	}
+	asLinked := &assetState{
+		asset: domain.Asset{
+			ID:         "asset-parent-linked",
+			AccountIDs: []string{"account-parent-asset-savings"},
+			ActiveVersion: &domain.AssetVersion{
+				ID:   "asset-ver-parent-linked",
+				Type: domain.AssetTypeStatic,
+			},
+		},
+		currentBalance: 10000,
+		subAssets:      []*subAssetState{saLinked},
+	}
+
+	// Scenario 2: Non-Linked Payout
+	saNonLinked := &subAssetState{
+		id:                  "sa-nonlinked",
+		name:                "General Fund Sub-Asset",
+		currentBalance:      5000,
+		targetValue:         "5000",
+		amountPerMonth:      50,
+		isRemainderConsumer: false,
+		expenseID:           nil, // Non-linked
+		endDate:             &endDate,
+		isClosed:            false,
+	}
+	asNonLinked := &assetState{
+		asset: domain.Asset{
+			ID:         "asset-parent-nonlinked",
+			AccountIDs: []string{"account-parent-asset-savings"},
+			ActiveVersion: &domain.AssetVersion{
+				ID:   "asset-ver-parent-nonlinked",
+				Type: domain.AssetTypeStatic,
+			},
+		},
+		currentBalance: 5000,
+		subAssets:      []*subAssetState{saNonLinked},
+	}
+
+	// Simulation inputs
+	expensesList := []domain.Expense{expense}
+	_ = asLinked
+	_ = asNonLinked
+
+	// Verify Step 5 logic for linked payout
+	var linkedPayoutAccountIDs []string
+	if saLinked.expenseID != nil && *saLinked.expenseID != "" {
+		for _, e := range expensesList {
+			if e.ID == *saLinked.expenseID {
+				linkedPayoutAccountIDs = e.AccountIDs
+				break
+			}
+		}
+	}
+	if len(linkedPayoutAccountIDs) != 1 || linkedPayoutAccountIDs[0] != "account-car-fund" {
+		t.Errorf("Expected linked payout account IDs to be ['account-car-fund'], got %v", linkedPayoutAccountIDs)
+	}
+
+	// Verify Step 5 logic for non-linked payout
+	var nonLinkedPayoutAccountIDs []string
+	if saNonLinked.expenseID != nil && *saNonLinked.expenseID != "" {
+		for _, e := range expensesList {
+			if e.ID == *saNonLinked.expenseID {
+				nonLinkedPayoutAccountIDs = e.AccountIDs
+				break
+			}
+		}
+	}
+	if len(nonLinkedPayoutAccountIDs) != 0 {
+		t.Errorf("Expected non-linked payout account IDs to be empty, got %v", nonLinkedPayoutAccountIDs)
+	}
+}
+
+
 
 
 

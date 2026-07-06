@@ -2058,16 +2058,36 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							EntityName: matchingAsState.asset.Name,
 							Amount:     netPayout,
 							Penalty:    penaltyPaid,
-							AccountIDs: matchingAsState.asset.AccountIDs,
+							AccountIDs: e.AccountIDs,
 						})
 						matchingSubAsset.isClosed = true
 					}
 				} else {
+					linkedSubAssetEndReached := false
+					for _, as := range assetStates {
+						for _, sa := range as.subAssets {
+							if sa.expenseID != nil && *sa.expenseID == e.ID && !sa.isRemainderConsumer && !sa.isClosed {
+								if sa.endDate != nil {
+									saEnd := sa.endDate.UTC()
+									if currentDate.Year() == saEnd.Year() && currentDate.Month() == saEnd.Month() {
+										linkedSubAssetEndReached = true
+										break
+									}
+								}
+							}
+						}
+						if linkedSubAssetEndReached {
+							break
+						}
+					}
+
 					uDue := v.DueDate.UTC()
 					start, end := projectionPeriodBounds(currentDate, scenario.MonthStartDay, loc)
-					if (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end) {
+					isDue := (uDue.Equal(start) || uDue.After(start)) && uDue.Before(end)
+
+					if isDue || linkedSubAssetEndReached {
 						month.Expenses += v.Amount
-						log.Printf("[PROJECTION] Expense: %s, Amount: %.2f", e.Name, v.Amount)
+						log.Printf("[PROJECTION] Expense: %s, Amount: %.2f (due: %v, linked end: %v)", e.Name, v.Amount, isDue, linkedSubAssetEndReached)
 						month.Breakdown.Expenses = append(month.Breakdown.Expenses, domain.EntryBreakdown{
 							Name:       e.Name,
 							EntityName: e.Name,
@@ -2417,12 +2437,22 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 								month.Income += leftoverNet
 								availableFunds += leftoverNet
+								var payoutAccountIDs []string
+								if sa.expenseID != nil && *sa.expenseID != "" {
+									for _, e := range expenses {
+										if e.ID == *sa.expenseID {
+											payoutAccountIDs = e.AccountIDs
+											break
+										}
+									}
+								}
+
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
 									Name:       as.asset.Name + " (" + sa.name + " Leftover after Dump)",
 									EntityName: as.asset.Name,
 									Amount:     leftoverNet,
 									Penalty:    penaltyPaidLeftover,
-									AccountIDs: as.asset.AccountIDs,
+									AccountIDs: payoutAccountIDs,
 									PoolID:     as.asset.PoolID,
 								})
 							}
@@ -2522,12 +2552,22 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 							log.Printf("[PROJECTION] Sub-Asset Payout: %s (%s), Gross: %.2f, Net: %.2f", as.asset.Name, sa.name, grossPayout, netPayout)
 							month.Income += netPayout
 							availableFunds += netPayout
+							var payoutAccountIDs []string
+							if sa.expenseID != nil && *sa.expenseID != "" {
+								for _, e := range expenses {
+									if e.ID == *sa.expenseID {
+										payoutAccountIDs = e.AccountIDs
+										break
+									}
+								}
+							}
+
 							month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
 								Name:       as.asset.Name + " (" + sa.name + " Payout)",
 								EntityName: as.asset.Name,
 								Amount:     netPayout,
 								Penalty:    penaltyPaid,
-								AccountIDs: as.asset.AccountIDs,
+								AccountIDs: payoutAccountIDs,
 							})
 						}
 						sa.isClosed = true
@@ -2603,12 +2643,22 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								log.Printf("[PROJECTION] Sub-Asset Payout: %s (%s), Gross: %.2f, Net: %.2f", as.asset.Name, sa.name, grossPayout, netPayout)
 								month.Income += netPayout
 								availableFunds += netPayout
+								var payoutAccountIDs []string
+								if sa.expenseID != nil && *sa.expenseID != "" {
+									for _, e := range expenses {
+										if e.ID == *sa.expenseID {
+											payoutAccountIDs = e.AccountIDs
+											break
+										}
+									}
+								}
+
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
 									Name:       as.asset.Name + " (" + sa.name + " Payout)",
 									EntityName: as.asset.Name,
 									Amount:     netPayout,
 									Penalty:    penaltyPaid,
-									AccountIDs: as.asset.AccountIDs,
+									AccountIDs: payoutAccountIDs,
 									PoolID:     as.asset.PoolID,
 								})
 							}
@@ -2842,12 +2892,22 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 								log.Printf("[PROJECTION] Dumping Sub-Asset Orphaned (Loan %s closed): %s (%s), Gross: %.2f, Net: %.2f", ls.loan.Name, as.asset.Name, sa.name, grossPayout, netPayout)
 								month.Income += netPayout
 								availableFunds += netPayout
+								var payoutAccountIDs []string
+								if sa.expenseID != nil && *sa.expenseID != "" {
+									for _, e := range expenses {
+										if e.ID == *sa.expenseID {
+											payoutAccountIDs = e.AccountIDs
+											break
+										}
+									}
+								}
+
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
 									Name:       as.asset.Name + " (" + sa.name + " Orphaned Dump Payout)",
 									EntityName: as.asset.Name,
 									Amount:     netPayout,
 									Penalty:    penaltyPaid,
-									AccountIDs: as.asset.AccountIDs,
+									AccountIDs: payoutAccountIDs,
 									PoolID:     as.asset.PoolID,
 								})
 							}
