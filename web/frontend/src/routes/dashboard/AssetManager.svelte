@@ -1154,6 +1154,22 @@
                                 >
                             </select>
                         </div>
+
+                        {#if currentAsset.activeVersion.type === "ETF"}
+                            <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl flex items-center justify-between gap-4 border border-slate-100 dark:border-slate-800 self-end">
+                                <div class="space-y-0.5">
+                                    <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Use for Passive Income</span>
+                                    <span class="text-[10px] text-slate-400 leading-normal block font-medium">
+                                        Includes this asset's balance in the passive income milestone calculation.
+                                    </span>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    bind:checked={currentAsset.activeVersion.useForPassiveIncome}
+                                    class="w-5 h-5 accent-emerald-600 rounded-lg cursor-pointer"
+                                />
+                            </div>
+                        {/if}
                     </div>
 
                     <!-- Core Asset Inputs -->
@@ -1279,22 +1295,6 @@
                                     triggers.
                                 </p>
                             </div>
-                            
-                            {#if currentAsset.activeVersion.type === "ETF"}
-                                <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl flex items-center justify-between gap-4 border border-slate-100 dark:border-slate-800">
-                                    <div class="space-y-0.5">
-                                        <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Use for Passive Income</span>
-                                        <span class="text-[10px] text-slate-400 leading-normal block font-medium">
-                                            Includes this asset's balance in the passive income milestone calculation.
-                                        </span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        bind:checked={currentAsset.activeVersion.useForPassiveIncome}
-                                        class="w-5 h-5 accent-emerald-600 rounded-lg cursor-pointer"
-                                    />
-                                </div>
-                            {/if}
                         </div>
 
                         <!-- Loan Dumping Section -->
