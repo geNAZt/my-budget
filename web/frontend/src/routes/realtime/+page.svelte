@@ -16,6 +16,9 @@
         ErrorSchema,
         SyncFinishedPayloadSchema,
         ScenarioListSchema,
+        AvailableTagListSchema,
+        AvailableTagCreateRequestSchema,
+        AvailableTagSchema,
     } from "$lib/gen/api_pb.js";
     const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
 
@@ -162,14 +165,14 @@
     let transactionToEdit = $state<any>(null);
     let showRawData = $state(false);
     let editTagsInput = $state("");
-    let customTags = $state<string[]>(getStored("realtime_customTags", []));
+    let dbTags = $state<string[]>([]);
     let tagSearchQuery = $state("");
 
     const allAvailableTags = $derived(() => {
         const set = new Set<string>();
         const defaults = ["Internal", "Cashback", "Subscription", "Salary", "Food", "Rent", "Utilities", "Leisure", "Travel"];
         defaults.forEach((t: string) => set.add(t));
-        customTags.forEach((t: string) => set.add(t));
+        dbTags.forEach((t: string) => set.add(t));
         
         for (const tx of transactions) {
             if (tx.tags) {
@@ -202,14 +205,37 @@
         }
     }
 
-    function addAndSelectTag(tag: string) {
+    async function fetchDbTags() {
+        try {
+            const [resp, err] = await wsCall(
+                "tags::list",
+                null,
+                null,
+                [AvailableTagListSchema]
+            ).one();
+            if (err) throw err;
+            if (resp && resp.tags) {
+                dbTags = resp.tags.map((t: any) => t.name);
+            }
+        } catch (e) {
+            console.error("[REALTIME] Failed to fetch tags:", e);
+        }
+    }
+
+    async function addAndSelectTag(tag: string) {
         const trimmed = tag.trim();
         if (!trimmed) return;
-        if (!customTags.includes(trimmed)) {
-            customTags = [...customTags, trimmed];
-            if (typeof localStorage !== "undefined") {
-                localStorage.setItem("realtime_customTags", customTags.join(","));
-            }
+        try {
+            const [, err] = await wsCall(
+                "tags::create",
+                AvailableTagCreateRequestSchema,
+                { name: trimmed },
+                [ErrorSchema]
+            ).one();
+            if (err) throw err;
+            await fetchDbTags();
+        } catch (e) {
+            console.error("[REALTIME] Failed to create tag:", e);
         }
         editTagsInput = trimmed;
         tagSearchQuery = "";
@@ -537,7 +563,7 @@
         if (!silent) isLoading = true;
         console.log("[REALTIME] Starting fetchData...");
         try {
-            const [txResp, intResp, poolResp, ruleResp, accResp, scResp] =
+            const [txResp, intResp, poolResp, ruleResp, accResp, scResp, tagsResp] =
                 await Promise.all([
                     wsCall("integrations::transactions::list", null, null, [
                         DiscoveredTransactionListSchema,
@@ -557,6 +583,9 @@
                     wsCall("scenarios::list", null, null, [
                         ScenarioListSchema,
                     ]).one(),
+                    wsCall("tags::list", null, null, [
+                        AvailableTagListSchema,
+                    ]).one(),
                 ]);
 
             console.log("[REALTIME] Received responses:", {
@@ -566,6 +595,7 @@
                 rules: ruleResp[0]?.rules?.length,
                 accounts: accResp[0]?.accounts?.length,
                 scenarios: scResp[0]?.scenarios?.length,
+                tags: tagsResp[0]?.tags?.length,
             });
 
             if (
@@ -574,7 +604,8 @@
                 poolResp[1] ||
                 ruleResp[1] ||
                 accResp[1] ||
-                scResp[1]
+                scResp[1] ||
+                tagsResp[1]
             ) {
                 console.warn("[REALTIME] One or more requests had errors:", {
                     txErr: txResp[1],
@@ -583,6 +614,7 @@
                     ruleErr: ruleResp[1],
                     accErr: accResp[1],
                     scErr: scResp[1],
+                    tagsErr: tagsResp[1],
                 });
             }
 
@@ -591,6 +623,7 @@
             pools = poolResp[0] ? poolResp[0].pools : [];
             rules = ruleResp[0] ? ruleResp[0].rules : [];
             scenarios = scResp[0] ? scResp[0].scenarios : [];
+            dbTags = tagsResp[0] && tagsResp[0].tags ? tagsResp[0].tags.map((t: any) => t.name) : [];
 
             console.log(
                 "[REALTIME] First Integration Object:",

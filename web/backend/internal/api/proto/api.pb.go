@@ -8138,6 +8138,155 @@ func (x *SystemStatus) GetWatchtowerStatus() string {
 	return ""
 }
 
+type AvailableTag struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Id   string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+}
+
+func (x *AvailableTag) Reset() {
+	*x = AvailableTag{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[108]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AvailableTag) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableTag) ProtoMessage() {}
+
+func (x *AvailableTag) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[108]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableTag.ProtoReflect.Descriptor instead.
+func (*AvailableTag) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{108}
+}
+
+func (x *AvailableTag) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AvailableTag) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type AvailableTagList struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Tags []*AvailableTag `protobuf:"bytes,1,rep,name=tags,proto3" json:"tags,omitempty"`
+}
+
+func (x *AvailableTagList) Reset() {
+	*x = AvailableTagList{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[109]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AvailableTagList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableTagList) ProtoMessage() {}
+
+func (x *AvailableTagList) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[109]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableTagList.ProtoReflect.Descriptor instead.
+func (*AvailableTagList) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{109}
+}
+
+func (x *AvailableTagList) GetTags() []*AvailableTag {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+type AvailableTagCreateRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+}
+
+func (x *AvailableTagCreateRequest) Reset() {
+	*x = AvailableTagCreateRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_api_proto_msgTypes[110]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AvailableTagCreateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AvailableTagCreateRequest) ProtoMessage() {}
+
+func (x *AvailableTagCreateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_msgTypes[110]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AvailableTagCreateRequest.ProtoReflect.Descriptor instead.
+func (*AvailableTagCreateRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_rawDescGZIP(), []int{110}
+}
+
+func (x *AvailableTagCreateRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var File_api_proto protoreflect.FileDescriptor
 
 var file_api_proto_rawDesc = []byte{
@@ -9315,7 +9464,17 @@ var file_api_proto_rawDesc = []byte{
 	0x52, 0x0e, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
 	0x12, 0x2b, 0x0a, 0x11, 0x77, 0x61, 0x74, 0x63, 0x68, 0x74, 0x6f, 0x77, 0x65, 0x72, 0x5f, 0x73,
 	0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x77, 0x61, 0x74,
-	0x63, 0x68, 0x74, 0x6f, 0x77, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x42, 0x43, 0x5a,
+	0x63, 0x68, 0x74, 0x6f, 0x77, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x22, 0x32, 0x0a,
+	0x0c, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x54, 0x61, 0x67, 0x12, 0x0e, 0x0a,
+	0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x12, 0x0a,
+	0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d,
+	0x65, 0x22, 0x39, 0x0a, 0x10, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x54, 0x61,
+	0x67, 0x4c, 0x69, 0x73, 0x74, 0x12, 0x25, 0x0a, 0x04, 0x74, 0x61, 0x67, 0x73, 0x18, 0x01, 0x20,
+	0x03, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61,
+	0x62, 0x6c, 0x65, 0x54, 0x61, 0x67, 0x52, 0x04, 0x74, 0x61, 0x67, 0x73, 0x22, 0x2f, 0x0a, 0x19,
+	0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62, 0x6c, 0x65, 0x54, 0x61, 0x67, 0x43, 0x72, 0x65, 0x61,
+	0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d,
+	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x42, 0x43, 0x5a,
 	0x41, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x67, 0x65, 0x6e, 0x61,
 	0x7a, 0x74, 0x2f, 0x6d, 0x79, 0x2d, 0x62, 0x75, 0x64, 0x67, 0x65, 0x74, 0x2d, 0x73, 0x63, 0x72,
 	0x69, 0x70, 0x74, 0x2f, 0x77, 0x65, 0x62, 0x2f, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x2f,
@@ -9335,7 +9494,7 @@ func file_api_proto_rawDescGZIP() []byte {
 	return file_api_proto_rawDescData
 }
 
-var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 115)
+var file_api_proto_msgTypes = make([]protoimpl.MessageInfo, 118)
 var file_api_proto_goTypes = []interface{}{
 	(*GenericID)(nil),                   // 0: api.GenericID
 	(*Empty)(nil),                       // 1: api.Empty
@@ -9445,13 +9604,16 @@ var file_api_proto_goTypes = []interface{}{
 	(*SyncRawLogFile)(nil),              // 105: api.SyncRawLogFile
 	(*SyncRunDetailsResponse)(nil),      // 106: api.SyncRunDetailsResponse
 	(*SystemStatus)(nil),                // 107: api.SystemStatus
-	nil,                                 // 108: api.YieldMap.YieldsEntry
-	nil,                                 // 109: api.EntryBreakdown.RealSplitEntry
-	nil,                                 // 110: api.EntryBreakdown.TrackerFlowsEntry
-	nil,                                 // 111: api.EntryBreakdown.SubAssetFlowsEntry
-	nil,                                 // 112: api.Scenario.EtfParamsEntry
-	nil,                                 // 113: api.SubExpense.MetadataEntry
-	nil,                                 // 114: api.IntegrationSyncRequest.PsuHeadersEntry
+	(*AvailableTag)(nil),                // 108: api.AvailableTag
+	(*AvailableTagList)(nil),            // 109: api.AvailableTagList
+	(*AvailableTagCreateRequest)(nil),   // 110: api.AvailableTagCreateRequest
+	nil,                                 // 111: api.YieldMap.YieldsEntry
+	nil,                                 // 112: api.EntryBreakdown.RealSplitEntry
+	nil,                                 // 113: api.EntryBreakdown.TrackerFlowsEntry
+	nil,                                 // 114: api.EntryBreakdown.SubAssetFlowsEntry
+	nil,                                 // 115: api.Scenario.EtfParamsEntry
+	nil,                                 // 116: api.SubExpense.MetadataEntry
+	nil,                                 // 117: api.IntegrationSyncRequest.PsuHeadersEntry
 }
 var file_api_proto_depIdxs = []int32{
 	10,  // 0: api.ExecutionPlanList.plans:type_name -> api.ExecutionPlan
@@ -9461,10 +9623,10 @@ var file_api_proto_depIdxs = []int32{
 	20,  // 4: api.IntegrationAccount.rebalancing_transactions:type_name -> api.Transaction
 	23,  // 5: api.IntegrationAccountList.accounts:type_name -> api.IntegrationAccount
 	20,  // 6: api.DiscoveredTransactionList.transactions:type_name -> api.Transaction
-	108, // 7: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
-	109, // 8: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
-	110, // 9: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
-	111, // 10: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
+	111, // 7: api.YieldMap.yields:type_name -> api.YieldMap.YieldsEntry
+	112, // 8: api.EntryBreakdown.real_split:type_name -> api.EntryBreakdown.RealSplitEntry
+	113, // 9: api.EntryBreakdown.tracker_flows:type_name -> api.EntryBreakdown.TrackerFlowsEntry
+	114, // 10: api.EntryBreakdown.sub_asset_flows:type_name -> api.EntryBreakdown.SubAssetFlowsEntry
 	28,  // 11: api.MonthBreakdown.incomes:type_name -> api.EntryBreakdown
 	28,  // 12: api.MonthBreakdown.bills:type_name -> api.EntryBreakdown
 	28,  // 13: api.MonthBreakdown.expenses:type_name -> api.EntryBreakdown
@@ -9474,7 +9636,7 @@ var file_api_proto_depIdxs = []int32{
 	29,  // 17: api.ProjectionMonth.breakdown:type_name -> api.MonthBreakdown
 	32,  // 18: api.PenaltyAnalysis.events:type_name -> api.PenaltyEvent
 	34,  // 19: api.Scenario.entities:type_name -> api.ScenarioEntity
-	112, // 20: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
+	115, // 20: api.Scenario.etf_params:type_name -> api.Scenario.EtfParamsEntry
 	36,  // 21: api.ScenarioList.scenarios:type_name -> api.Scenario
 	38,  // 22: api.ETFTracker.stitching_segments:type_name -> api.HistoryStitchingSegment
 	40,  // 23: api.TrackerChart.points:type_name -> api.TrackerChartPoint
@@ -9493,7 +9655,7 @@ var file_api_proto_depIdxs = []int32{
 	52,  // 36: api.BillVersion.slices:type_name -> api.TimeSlice
 	56,  // 37: api.Bill.active_version:type_name -> api.BillVersion
 	57,  // 38: api.BillList.bills:type_name -> api.Bill
-	113, // 39: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
+	116, // 39: api.SubExpense.metadata:type_name -> api.SubExpense.MetadataEntry
 	52,  // 40: api.ExpenseVersion.slices:type_name -> api.TimeSlice
 	59,  // 41: api.ExpenseVersion.sub_expenses:type_name -> api.SubExpense
 	60,  // 42: api.Expense.active_version:type_name -> api.ExpenseVersion
@@ -9507,19 +9669,20 @@ var file_api_proto_depIdxs = []int32{
 	71,  // 50: api.TransactionRuleList.rules:type_name -> api.TransactionRule
 	75,  // 51: api.EBAspspsList.aspsps:type_name -> api.EBAspsp
 	80,  // 52: api.GCInstitutionsList.institutions:type_name -> api.GCInstitution
-	114, // 53: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
+	117, // 53: api.IntegrationSyncRequest.psu_headers:type_name -> api.IntegrationSyncRequest.PsuHeadersEntry
 	91,  // 54: api.UserProfile.authenticators:type_name -> api.UserAuthenticator
 	97,  // 55: api.ContainerList.containers:type_name -> api.ContainerInfo
 	100, // 56: api.SyncRunList.runs:type_name -> api.SyncRun
 	104, // 57: api.DetectedTransaction.other_sync_runs:type_name -> api.SyncRunInfoForTx
 	103, // 58: api.SyncRunDetailsResponse.detected_transactions:type_name -> api.DetectedTransaction
 	105, // 59: api.SyncRunDetailsResponse.raw_logs:type_name -> api.SyncRawLogFile
-	35,  // 60: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
-	61,  // [61:61] is the sub-list for method output_type
-	61,  // [61:61] is the sub-list for method input_type
-	61,  // [61:61] is the sub-list for extension type_name
-	61,  // [61:61] is the sub-list for extension extendee
-	0,   // [0:61] is the sub-list for field type_name
+	108, // 60: api.AvailableTagList.tags:type_name -> api.AvailableTag
+	35,  // 61: api.Scenario.EtfParamsEntry.value:type_name -> api.ETFScenarioParams
+	62,  // [62:62] is the sub-list for method output_type
+	62,  // [62:62] is the sub-list for method input_type
+	62,  // [62:62] is the sub-list for extension type_name
+	62,  // [62:62] is the sub-list for extension extendee
+	0,   // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_init() }
@@ -10824,6 +10987,42 @@ func file_api_proto_init() {
 				return nil
 			}
 		}
+		file_api_proto_msgTypes[108].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AvailableTag); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[109].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AvailableTagList); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_api_proto_msgTypes[110].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AvailableTagCreateRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -10831,7 +11030,7 @@ func file_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_api_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   115,
+			NumMessages:   118,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

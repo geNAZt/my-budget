@@ -102,6 +102,7 @@ func main() {
 	integrationRepo := repository.NewIntegrationRepository(database)
 	transactionRepo := repository.NewTransactionRepository(database)
 	ruleRepo := repository.NewRuleRepository(database)
+	tagRepo := repository.NewTagRepository(database)
 	scenarioRepo := repository.NewScenarioRepository(database, incomeRepo, billRepo, expenseRepo)
 	virtualAccountRepo := repository.NewVirtualAccountRepository(database)
 
@@ -196,6 +197,7 @@ func main() {
 		handler.NewRules(webSocketHandler, ruleRepo, syncService),
 		handler.NewPools(webSocketHandler, ruleRepo, syncService),
 		handler.NewVirtualAccounts(webSocketHandler, virtualAccountRepo),
+		handler.NewTags(webSocketHandler, tagRepo),
 	)
 
 	// Routes

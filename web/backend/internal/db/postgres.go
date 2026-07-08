@@ -1356,6 +1356,33 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "028_available_tags_table",
+		Run: func(db *sql.DB) error {
+			var exists bool
+			err := db.QueryRow("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'available_tags' AND table_schema = current_schema())").Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				_, err = db.Exec(`
+					CREATE TABLE available_tags (
+						id TEXT PRIMARY KEY DEFAULT '',
+						user_id TEXT NOT NULL DEFAULT '',
+						name TEXT NOT NULL DEFAULT '',
+						created_at TIMESTAMP NOT NULL,
+						FOREIGN KEY(user_id) REFERENCES users(id)
+					)
+				`)
+				if err != nil {
+					return err
+				}
+				_, err = db.Exec("CREATE UNIQUE INDEX idx_available_tags_user_name ON available_tags (user_id, name)")
+				return err
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

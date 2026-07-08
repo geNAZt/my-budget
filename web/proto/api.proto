@@ -851,4 +851,18 @@ message SystemStatus {
   string watchtower_status = 3; // "green", "yellow", "red", "yellow-blinking"
 }
 
+message AvailableTag {
+  string id = 1;
+  string name = 2;
+}
+
+message AvailableTagList {
+  repeated AvailableTag tags = 1;
+}
+
+message AvailableTagCreateRequest {
+  string name = 1;
+}
+
+
 
