@@ -440,3 +440,24 @@ To improve UI usability and density, we convert the entity managers (Assets, Inc
    - For `AssetManager.svelte`, we also place the duplicate button (copy icon) in the rightmost actions column next to edit/delete.
 4. **Header Add Button**:
    - Ensure the "Add" button remains easily accessible in the header of each page/component.
+
+## 27. Asset Balance Payout & Analytics Chart Bug Fixes
+
+To resolve the issue where assets do not properly reduce their balances in the analytics charts or monthly breakdown displays when a payout happens, we implement the following design:
+
+### 1. Backend Projection Service Updates
+- In `web/backend/internal/service/projection_service.go`, when an asset or sub-asset payout/withdrawal occurs (e.g., in sub-asset end dates, final dump, orphaned dump, or remainder payouts), we must:
+  - Subtract the net payout/withdrawn amount from `month.Assets` to reflect the asset delta of that month.
+  - Append a breakdown entry to `month.Breakdown.Assets` using `buildAssetBreakdownEntry` with the negative withdrawn amount and the corresponding penalty paid.
+- Identify all places where payouts happen:
+  - Flexible remainder sub-asset payouts.
+  - Regular sub-asset end date payouts.
+  - Active sub-asset final payouts at asset end date.
+  - Leftover/remainder parent asset payouts at asset end date.
+  - Orphaned dumping sub-asset payouts.
+  - Orphaned dumping parent asset payouts.
+  - Leftover releases after aggregate loan dumps.
+
+### 2. Frontend Analytics Chart Updates
+- In `web/frontend/src/routes/analytics/+page.svelte`, when updating the `currentBalance` in `assetChartData`, allow `e.balance` to be 0 or any other valid non-negative value (instead of checking `e.balance > 0`). Change the check `e.balance !== undefined && e.balance > 0` to `e.balance !== undefined && e.balance !== null`. This ensures that when an asset is fully paid out and its balance becomes 0, the chart correctly reflects the 0 balance instead of carrying over the last active balance.
+

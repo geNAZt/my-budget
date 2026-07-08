@@ -580,7 +580,7 @@
                 }
                 monthlyInterest += e.interest || 0;
                 monthlyPenalty += e.penalty || 0;
-                if (e.balance !== undefined && e.balance > 0) {
+                if (e.balance !== undefined && e.balance !== null) {
                     currentBalance = e.balance;
                 }
             });
