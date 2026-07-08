@@ -100,7 +100,18 @@
     let rules = $state<any[]>([]);
     let scenarios = $state<any[]>([]);
     let allAccountsRaw = $state<any[]>([]);
-    const activeScenario = $derived(scenarios.find((s) => s.isActive));
+    const activeScenario = $derived(
+        (() => {
+            const preferredId =
+                auth.user?.dashboardScenarioId ||
+                localStorage.getItem("dashboard_scenario_id");
+            if (preferredId) {
+                const found = scenarios.find((s) => s.id === preferredId);
+                if (found) return found;
+            }
+            return scenarios.find((s) => s.isActive) || scenarios[0];
+        })()
+    );
     const monthStartDay = $derived(activeScenario?.monthStartDay || 1);
     let mappedAccounts = $state<Record<string, any>>({});
     const allAccounts = $derived(allAccountsRaw);
