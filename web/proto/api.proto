@@ -587,6 +587,7 @@ message VirtualAccountVersion {
   double starting_balance = 4;
   string description = 5;
   string created_at = 6;
+  string realtime_account_id = 7;
 }
 
 message VirtualAccount {

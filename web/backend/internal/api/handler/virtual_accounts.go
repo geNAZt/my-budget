@@ -79,9 +79,10 @@ func (v *VirtualAccounts) Save(s *api.WebsocketSession, reqID string, body *apip
 
 	if body.ActiveVersion != nil {
 		va.ActiveVersion = &domain.VirtualAccountVersion{
-			Color:           body.ActiveVersion.Color,
-			StartingBalance: body.ActiveVersion.StartingBalance,
-			Description:     body.ActiveVersion.Description,
+			Color:             body.ActiveVersion.Color,
+			StartingBalance:   body.ActiveVersion.StartingBalance,
+			Description:       body.ActiveVersion.Description,
+			RealtimeAccountID: body.ActiveVersion.RealtimeAccountId,
 		}
 	}
 
@@ -103,12 +104,13 @@ func mapVirtualAccountToProto(va domain.VirtualAccount) *apiproto.VirtualAccount
 	}
 	if va.ActiveVersion != nil {
 		pva.ActiveVersion = &apiproto.VirtualAccountVersion{
-			Id:               va.ActiveVersion.ID,
-			VirtualAccountId: va.ActiveVersion.VirtualAccountID,
-			Color:            va.ActiveVersion.Color,
-			StartingBalance:  va.ActiveVersion.StartingBalance,
-			Description:      va.ActiveVersion.Description,
-			CreatedAt:        va.ActiveVersion.CreatedAt.Format(time.RFC3339),
+			Id:                va.ActiveVersion.ID,
+			VirtualAccountId:  va.ActiveVersion.VirtualAccountID,
+			Color:             va.ActiveVersion.Color,
+			StartingBalance:   va.ActiveVersion.StartingBalance,
+			Description:       va.ActiveVersion.Description,
+			RealtimeAccountId: va.ActiveVersion.RealtimeAccountID,
+			CreatedAt:         va.ActiveVersion.CreatedAt.Format(time.RFC3339),
 		}
 	}
 	return pva

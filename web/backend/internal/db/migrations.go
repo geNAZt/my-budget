@@ -714,6 +714,17 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "029_virtual_account_versions_realtime_account_id",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "virtual_account_versions", "realtime_account_id") {
+				if _, err := db.Exec("ALTER TABLE virtual_account_versions ADD COLUMN realtime_account_id TEXT DEFAULT ''"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

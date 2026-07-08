@@ -473,3 +473,30 @@ To address high GPU usage when the application is open (even when idle), we impl
 - **Problem**: Elements with CSS `backdrop-filter: blur(...)` (such as `.glass-card` and `.glass-nav`) require the browser's graphics engine to perform expensive copy-blur-composite operations. When page content scrolls, loaders spin, or pulsing animations occur, the GPU repaints the entire blurred area on every frame.
 - **Solution**: Add `transform: translateZ(0)` and `backface-visibility: hidden` to `.glass-card` and `.glass-nav` in `web/frontend/src/app.css` to promote them to their own GPU layers. This allows the browser to cache the composited layer instead of recalculating the blur filter continuously.
 
+## 29. Linking Realtime Accounts to Virtual Accounts
+
+To allow linking realtime (integrated bank) accounts to virtual ones, we dynamically override the starting balance of the virtual account in projections with the latest balance fetched from the linked realtime account.
+
+### 1. Database Schema & Migrations
+- **Table**: `virtual_account_versions`
+  - Add column `realtime_account_id TEXT DEFAULT ''` to keep track of the linked realtime account in each immutable version.
+- **Migration**: Add idempotent migration `029_virtual_account_versions_realtime_account_id` checking `information_schema` and running the `ALTER TABLE` statement.
+
+### 2. Domain & Protobuf Definition
+- **Go Domain**: `VirtualAccountVersion` in `web/backend/internal/domain/virtual_account.go` gets `RealtimeAccountID string`.
+- **API Protobuf**: `VirtualAccountVersion` in `web/proto/api.proto` gets `string realtime_account_id = 7;`.
+
+### 3. Repository & Handler Mapping
+- **Repository**: Update `VirtualAccountRepository.List` and `Save` to include the `realtime_account_id` field.
+- **Handler**: Update mapping functions in `virtual_accounts.go` handler to bridge `RealtimeAccountID` between domain models and protobuf.
+
+### 4. Projection Engine Execution
+- During scenario initialization in `ProjectionService.RunWithLimit` (in `projection_runner.go`), load the realtime account balance map (by decrypting active integration configs).
+- When initializing `vaRunningBalances`, if a virtual account's active version is linked to a realtime account ID, use the realtime account's balance instead of the static version `StartingBalance`.
+
+### 5. Frontend UI Integration
+- In `VirtualAccountManager.svelte`, load the realtime accounts via `integrations::accounts::list`.
+- Add a custom `SearchableDropdown` to link the virtual account to a realtime account.
+- When linked, disable the `StartingBalance` input and display the latest realtime balance.
+- Pass the selected `realtimeAccountId` to the `virtualaccounts::save` request.
+

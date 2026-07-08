@@ -17,5 +17,6 @@ type VirtualAccountVersion struct {
 	Color            string
 	StartingBalance  float64
 	Description      string
+	RealtimeAccountID string
 	CreatedAt        time.Time
 }

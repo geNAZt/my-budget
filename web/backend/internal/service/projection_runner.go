@@ -146,10 +146,18 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		virtualAccounts, _ = s.virtualAccountRepo.List(userID)
 	}
 
+	realtimeAccountBalances, _ := s.loadRealtimeAccountBalances(userID)
+
 	vaRunningBalances := make(map[string]float64)
 	for _, va := range virtualAccounts {
 		if va.ActiveVersion != nil {
-			vaRunningBalances[va.ID] = va.ActiveVersion.StartingBalance
+			startBal := va.ActiveVersion.StartingBalance
+			if va.ActiveVersion.RealtimeAccountID != "" {
+				if bal, ok := realtimeAccountBalances[va.ActiveVersion.RealtimeAccountID]; ok {
+					startBal = bal
+				}
+			}
+			vaRunningBalances[va.ID] = startBal
 		}
 	}
 

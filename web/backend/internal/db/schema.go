@@ -367,6 +367,7 @@ const Schema = `
         color TEXT DEFAULT '#6366f1',
         starting_balance DOUBLE PRECISION DEFAULT 0,
         description TEXT DEFAULT '',
+        realtime_account_id TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(virtual_account_id) REFERENCES virtual_accounts(id)
     );

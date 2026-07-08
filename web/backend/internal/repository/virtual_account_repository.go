@@ -18,7 +18,7 @@ func NewVirtualAccountRepository(db *sql.DB) *VirtualAccountRepository {
 func (r *VirtualAccountRepository) List(userID string) ([]domain.VirtualAccount, error) {
 	// Subquery to find the latest created_at for each virtual_account_id
 	query := `
-		SELECT va.id, va.name, va.created_at, vav.id, vav.color, vav.starting_balance, vav.description, vav.created_at
+		SELECT va.id, va.name, va.created_at, vav.id, vav.color, vav.starting_balance, vav.description, vav.realtime_account_id, vav.created_at
 		FROM virtual_accounts va
 		INNER JOIN virtual_account_versions vav ON va.id = vav.virtual_account_id
 		WHERE va.user_id = ? AND va.is_deleted = FALSE
@@ -38,7 +38,7 @@ func (r *VirtualAccountRepository) List(userID string) ([]domain.VirtualAccount,
 		var va domain.VirtualAccount
 		var v domain.VirtualAccountVersion
 
-		err := rows.Scan(&va.ID, &va.Name, &va.CreatedAt, &v.ID, &v.Color, &v.StartingBalance, &v.Description, &v.CreatedAt)
+		err := rows.Scan(&va.ID, &va.Name, &va.CreatedAt, &v.ID, &v.Color, &v.StartingBalance, &v.Description, &v.RealtimeAccountID, &v.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -74,9 +74,9 @@ func (r *VirtualAccountRepository) Save(userID string, va *domain.VirtualAccount
 	v.ID = uuid.New().String()
 	v.VirtualAccountID = va.ID
 	_, err = tx.Exec(`
-		INSERT INTO virtual_account_versions (id, virtual_account_id, color, starting_balance, description)
-		VALUES (?, ?, ?, ?, ?)`,
-		v.ID, v.VirtualAccountID, v.Color, v.StartingBalance, v.Description)
+		INSERT INTO virtual_account_versions (id, virtual_account_id, color, starting_balance, description, realtime_account_id)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		v.ID, v.VirtualAccountID, v.Color, v.StartingBalance, v.Description, v.RealtimeAccountID)
 	if err != nil {
 		return err
 	}

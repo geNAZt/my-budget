@@ -5,7 +5,9 @@
         VirtualAccountSchema,
         GenericIDSchema,
         ErrorSchema,
+        IntegrationAccountListSchema,
     } from "$lib/gen/api_pb.js";
+    import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     const decode = (obj: any) => {
         if (!obj) return obj;
         try {
@@ -40,6 +42,7 @@
         color: string;
         startingBalance: number;
         description: string;
+        realtimeAccountId?: string;
         createdAt?: string;
     }
 
@@ -56,6 +59,7 @@
         })
     );
     let isLoading = $state(true);
+    let realtimeAccounts = $state<{ id: string; name: string; balance: number }[]>([]);
     let isSaving = $state(false);
     let error = $state<string | null>(null);
 
@@ -84,8 +88,29 @@
                 color: "#6366f1",
                 startingBalance: 0,
                 description: "",
+                realtimeAccountId: "",
             },
         } as any;
+    }
+
+    async function fetchRealtimeAccounts() {
+        try {
+            const [resp, err] = await wsCall(
+                "integrations::accounts::list",
+                null,
+                null,
+                [IntegrationAccountListSchema],
+            ).one();
+            if (!err && resp && resp.accounts) {
+                realtimeAccounts = resp.accounts.map((a: any) => ({
+                    id: a.id,
+                    name: a.name || a.id,
+                    balance: a.balance || 0,
+                }));
+            }
+        } catch (e) {
+            console.error("Failed to fetch realtime accounts", e);
+        }
     }
 
     async function fetchAccounts() {
@@ -132,7 +157,10 @@
                 color: "#6366f1",
                 startingBalance: 0,
                 description: "",
+                realtimeAccountId: "",
             };
+        } else if (currentAccount.activeVersion.realtimeAccountId === undefined) {
+            currentAccount.activeVersion.realtimeAccountId = "";
         }
         balanceInput = formatGermanAmount(
             currentAccount.activeVersion.startingBalance,
@@ -150,6 +178,7 @@
                     color: "#6366f1",
                     startingBalance: 0,
                     description: "",
+                    realtimeAccountId: "",
                 };
             }
             currentAccount.activeVersion.startingBalance =
@@ -168,6 +197,7 @@
                         startingBalance:
                             currentAccount.activeVersion.startingBalance,
                         description: currentAccount.activeVersion.description,
+                        realtimeAccountId: currentAccount.activeVersion.realtimeAccountId || "",
                     },
                 },
                 [VirtualAccountSchema],
@@ -205,8 +235,19 @@
         }
     }
 
+    $effect(() => {
+        const linkId = currentAccount?.activeVersion?.realtimeAccountId;
+        if (linkId) {
+            const linked = realtimeAccounts.find(a => a.id === linkId);
+            if (linked) {
+                balanceInput = formatGermanAmount(linked.balance);
+            }
+        }
+    });
+
     onMount(() => {
         fetchAccounts();
+        fetchRealtimeAccounts();
     });
 </script>
 
@@ -393,6 +434,21 @@
                     />
                 </div>
 
+                <div class="space-y-2">
+                    <SearchableDropdown
+                        label="Link Realtime Account"
+                        options={[
+                            { id: "", label: "No Link (Static Starting Balance)" },
+                            ...realtimeAccounts.map(acc => ({
+                                id: acc.id,
+                                label: `${acc.name} (${formatGermanAmount(acc.balance)} €)`
+                            }))
+                        ]}
+                        bind:value={currentAccount.activeVersion.realtimeAccountId}
+                        placeholder="Select integrated account..."
+                    />
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-2">
                         <label
@@ -402,7 +458,8 @@
                         <input
                             type="text"
                             bind:value={balanceInput}
-                            class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-900"
+                            disabled={!!currentAccount.activeVersion.realtimeAccountId}
+                            class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                     </div>
                     <div class="space-y-2">

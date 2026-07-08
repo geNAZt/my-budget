@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -168,6 +169,54 @@ func (s *ProjectionService) loadRealtimeBalances(userID string, monthStartDay in
 					currPoolID = *p.ParentID
 				} else {
 					currPoolID = ""
+				}
+			}
+		}
+	}
+
+	return balances, nil
+}
+
+func (s *ProjectionService) loadRealtimeAccountBalances(userID string) (map[string]float64, error) {
+	balances := make(map[string]float64)
+	if s.syncService == nil || s.syncService.integrationRepo == nil {
+		return balances, nil
+	}
+
+	integrations, err := s.syncService.integrationRepo.List(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, integration := range integrations {
+		decrypted, err := s.syncService.DecryptIntegrationConfig(userID, &integration)
+		if err != nil {
+			continue
+		}
+
+		var config struct {
+			AccountIDs       []string `json:"account_ids"`
+			LegacyAccountIDs []string `json:"accounts"`
+			AccountsMetadata map[string]struct {
+				Alias   string  `json:"alias"`
+				Enabled bool    `json:"enabled"`
+				Balance float64 `json:"balance"`
+			} `json:"accounts_metadata"`
+		}
+
+		if err := json.Unmarshal(decrypted, &config); err == nil {
+			accIDs := config.AccountIDs
+			if len(accIDs) == 0 {
+				accIDs = config.LegacyAccountIDs
+			}
+			for _, accID := range accIDs {
+				meta, ok := config.AccountsMetadata[accID]
+				if !ok {
+					continue
+				}
+				balances[accID] = meta.Balance
+				if meta.Alias != "" {
+					balances[meta.Alias] = meta.Balance
 				}
 			}
 		}
