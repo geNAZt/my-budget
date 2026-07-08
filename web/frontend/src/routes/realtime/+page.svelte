@@ -19,6 +19,9 @@
         AvailableTagListSchema,
         AvailableTagCreateRequestSchema,
         AvailableTagSchema,
+        TransactionPoolSchema,
+        TransactionRuleSchema,
+        ExpenseSchema,
     } from "$lib/gen/api_pb.js";
     const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
 
@@ -162,6 +165,10 @@
 
     // Edit Transaction Modal
     let showTransactionEdit = $state(false);
+    let showWizard = $state(false);
+    let wizardPoolName = $state("");
+    let isWizardSaving = $state(false);
+    let wizardError = $state("");
     let transactionToEdit = $state<any>(null);
     let showRawData = $state(false);
     let editTagsInput = $state("");
@@ -793,6 +800,94 @@
         editDescriptionInput = getTxDescription(tx);
         showRawData = false;
         showTransactionEdit = true;
+    }
+
+    function startWizard() {
+        wizardPoolName = editReceiverInput || editDescriptionInput || "New Temporary Pool";
+        wizardError = "";
+        showWizard = true;
+    }
+
+    async function runWizard() {
+        if (!wizardPoolName.trim()) {
+            wizardError = "Pool name is required";
+            return;
+        }
+        isWizardSaving = true;
+        wizardError = "";
+        try {
+            // 1. Generate a temporary pool
+            const [pool, poolErr] = await wsCall(
+                "pools::save",
+                TransactionPoolSchema,
+                {
+                    id: "",
+                    name: wizardPoolName.trim(),
+                    color: "#6366f1",
+                    parentId: "",
+                    isHidden: false,
+                },
+                [TransactionPoolSchema],
+            ).one();
+            if (poolErr) throw poolErr;
+            if (!pool) throw new Error("Failed to create pool");
+
+            // 2. Attach current transaction to pool via a TRANSACTION_ID matching rule
+            const [, ruleErr] = await wsCall(
+                "rules::save",
+                TransactionRuleSchema,
+                {
+                    id: "",
+                    operator: "NONE",
+                    field: "TRANSACTION_ID",
+                    regex: `^${transactionToEdit.id}$`,
+                    targetPoolId: pool.id,
+                    priority: 1000,
+                    negate: false,
+                    parentId: "",
+                    integrationId: transactionToEdit.integrationId || "",
+                },
+                [TransactionRuleSchema],
+            ).one();
+            if (ruleErr) throw ruleErr;
+
+            // 3. Calculate expense date as the transaction book date's active month start day
+            const { start: periodStart } = getPeriodBoundsForDate(new Date(transactionToEdit.createdAt), monthStartDay);
+            const dueDate = periodStart.toISOString();
+
+            // 4. Generate expense of same name as pool & Link pool to expense & Link to current active scenario
+            const [, expErr] = await wsCall(
+                "expenses::save",
+                ExpenseSchema,
+                {
+                    id: "",
+                    name: wizardPoolName.trim(),
+                    poolId: pool.id,
+                    accountIds: transactionToEdit.destinationAccountId ? [transactionToEdit.destinationAccountId] : (transactionToEdit.sourceAccountId ? [transactionToEdit.sourceAccountId] : []),
+                    activeVersion: {
+                        id: "",
+                        expenseId: "",
+                        amount: Math.abs(editAmountInput),
+                        dueDate: dueDate,
+                        createdAt: "",
+                        slices: [],
+                    },
+                    linkToScenarios: activeScenario ? [activeScenario.id] : [],
+                },
+                [ErrorSchema],
+            ).one();
+            if (expErr) throw expErr;
+
+            // Close modals and refresh
+            showWizard = false;
+            showTransactionEdit = false;
+            await fetchData(true);
+        } catch (e: any) {
+            console.error(e);
+            wizardError = e.message || "Failed to complete wizard flow";
+        } finally {
+            isWizardSaving = false;
+        }
     }
 
     async function saveTransactionEdit() {
@@ -2439,6 +2534,18 @@
                             </span>
                         </div>
                     </div>
+
+                    <!-- Wizard Trigger Button -->
+                    <div class="pt-3 border-t border-slate-200/60 flex justify-end">
+                        <button
+                            type="button"
+                            onclick={startWizard}
+                            class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-700 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm shadow-indigo-100/10 border border-indigo-100"
+                        >
+                            <Zap class="w-3 h-3" />
+                            <span>Create Pool & Expense Wizard</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Reference / Description & Assigned Pools selection -->
@@ -2670,6 +2777,136 @@
                     >
                         <Check class="w-4 h-4" />
                         <span>Apply Flow Changes</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}
+
+<!-- Budget Generation Wizard Modal -->
+{#if showWizard}
+    <div
+        class="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+        transition:fade
+    >
+        <div
+            class="w-full max-w-md bg-white rounded-[30px] shadow-2xl relative overflow-hidden"
+            transition:slide
+        >
+            <div
+                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+            ></div>
+
+            <div class="p-8 space-y-6">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-1">
+                        <h2 class="text-xl font-black text-slate-900 tracking-tight">
+                            Budgeting Wizard
+                        </h2>
+                        <p class="text-slate-500 font-medium text-xs">
+                            Create a pool, link this transaction, and setup a matching expense.
+                        </p>
+                    </div>
+                    <button
+                        onclick={() => (showWizard = false)}
+                        class="p-2 hover:bg-slate-100 rounded-xl transition-all border border-transparent hover:border-slate-200"
+                    >
+                        <X class="w-5 h-5 text-slate-400" />
+                    </button>
+                </div>
+
+                {#if wizardError}
+                    <div class="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-2.5 text-rose-600 text-xs font-semibold">
+                        <AlertTriangle class="w-4 h-4 shrink-0 mt-0.5" />
+                        <p>{wizardError}</p>
+                    </div>
+                {/if}
+
+                <div class="space-y-4">
+                    <div class="space-y-2">
+                        <label
+                            for="wizard-pool-name"
+                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                        >
+                            Pool & Expense Name
+                        </label>
+                        <div class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all">
+                            <input
+                                id="wizard-pool-name"
+                                type="text"
+                                bind:value={wizardPoolName}
+                                placeholder="Enter budget / pool name..."
+                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-3.5 text-xs font-medium text-slate-600 leading-relaxed">
+                        <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                            <span>Summary of Actions</span>
+                            <span class="text-indigo-600">Automated</span>
+                        </div>
+                        <ul class="space-y-2.5">
+                            <li class="flex items-start gap-2">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0"></span>
+                                <span>Create pool <strong class="text-slate-800">"{wizardPoolName || '...'}"</strong></span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0"></span>
+                                <span>Attach transaction to pool using rule parameter <strong class="text-slate-800">TRANSACTION_ID</strong></span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0"></span>
+                                <span>
+                                    Create expense <strong class="text-slate-800">"{wizardPoolName || '...'}"</strong> matching the transaction amount of
+                                    <strong class="text-slate-800">€{Math.abs(editAmountInput).toLocaleString("de-DE", { minimumFractionDigits: 2 })}</strong>
+                                </span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0"></span>
+                                <span>
+                                    Set expense date to active month start day:
+                                    {#if transactionToEdit?.createdAt}
+                                        <strong class="text-slate-800">
+                                            {getPeriodBoundsForDate(new Date(transactionToEdit.createdAt), monthStartDay).start.toLocaleDateString("de-DE")}
+                                        </strong>
+                                    {/if}
+                                </span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-600 mt-1.5 shrink-0"></span>
+                                <span>
+                                    Link expense to active scenario:
+                                    <strong class="text-slate-800">"{activeScenario?.name || 'Default Scenario'}"</strong>
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex gap-4">
+                    <button
+                        type="button"
+                        onclick={() => (showWizard = false)}
+                        class="px-6 py-4 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200/50 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex-1 text-center shadow-sm"
+                        disabled={isWizardSaving}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onclick={runWizard}
+                        class="btn-primary py-4 flex items-center justify-center gap-3 flex-[2] bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200"
+                        disabled={isWizardSaving || !wizardPoolName.trim()}
+                    >
+                        {#if isWizardSaving}
+                            <Loader2 class="w-4 h-4 animate-spin" />
+                            <span>Processing...</span>
+                        {:else}
+                            <Check class="w-4 h-4" />
+                            <span>Confirm & Generate</span>
+                        {/if}
                     </button>
                 </div>
             </div>

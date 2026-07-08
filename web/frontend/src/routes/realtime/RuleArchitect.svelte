@@ -281,6 +281,9 @@
                 case "DATA_CHAIN":
                     target = tx.integrationId || "";
                     break;
+                case "TRANSACTION_ID":
+                    target = tx.id || "";
+                    break;
                 case "AMOUNT":
                     const limit = Number(rule.amountValue || 0);
                     switch (rule.amountOperator) {
@@ -687,6 +690,7 @@
                 <option value="ACCOUNT_TAGS">Account Tags</option>
                 <option value="ACCOUNT_NAME">Account Name</option>
                 <option value="DATA_CHAIN">Data Chain</option>
+                <option value="TRANSACTION_ID">Transaction ID</option>
                 <option value="AMOUNT">Amount (€)</option>
             </select>
 

@@ -274,7 +274,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 					accountName = meta.Alias
 				}
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
+				txID := uuid.New().String()
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, txID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -293,7 +294,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				}
 
 				newTx := domain.BankTransaction{
-					ID:                   uuid.New().String(),
+					ID:                   txID,
 					UserID:               userID,
 					IntegrationID:        i.ID,
 					AccountID:            "T212_PORTFOLIO",
@@ -388,7 +389,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 						accountName = meta.Alias
 					}
 
-					poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, changeAmount)
+					txID := uuid.New().String()
+					poolIDs, _ := p.ruleService.ProcessTransaction(userID, txID, i.ID, receiver, desc, "", accountTags, accountName, changeAmount)
 
 
 					// Generate a stable and completely unique ExternalID for this specific change event
@@ -412,7 +414,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 					}
 
 					newTx := domain.BankTransaction{
-						ID:                   uuid.New().String(),
+						ID:                   txID,
 						UserID:               userID,
 						IntegrationID:        i.ID,
 						AccountID:            "T212_PORTFOLIO",
@@ -514,7 +516,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				h.Write([]byte(uniquePayload))
 				externalID := fmt.Sprintf("T212_PENDING_%s", hex.EncodeToString(h.Sum(nil)))
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
+				txID := uuid.New().String()
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, txID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -526,7 +529,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				encryptedData, _ := p.cryptoService.Encrypt(masterKey, orderJSON)
 
 				pendingTx := domain.BankTransaction{
-					ID:                   uuid.New().String(),
+					ID:                   txID,
 					UserID:               userID,
 					IntegrationID:        i.ID,
 					AccountID:            "T212_CASH",

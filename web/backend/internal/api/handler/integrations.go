@@ -515,7 +515,7 @@ func (t *IntegrationsTransactions) Update(s *api.WebsocketSession, reqID string,
 							}
 						}
 
-						newPoolIDs, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, accountName, meta.Amount)
+						newPoolIDs, _ := t.syncService.RuleService().ProcessTransaction(userID, tx.ID, tx.IntegrationID, meta.Receiver, meta.Description, req.Tags, accountTags, accountName, meta.Amount)
 						t.repo.UpdatePools(userID, tx.ID, newPoolIDs)
 					}
 				}

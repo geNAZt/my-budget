@@ -399,7 +399,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 					accountName = meta.Alias
 				}
 
-				poolIDs, _ := p.ruleService.ProcessTransaction(userID, i.ID, receiver, desc, "", accountTags, accountName, amt)
+				txID := uuid.New().String()
+				poolIDs, _ := p.ruleService.ProcessTransaction(userID, txID, i.ID, receiver, desc, "", accountTags, accountName, amt)
 				genericTx := domain.GenericTransaction{
 					Amount:      amt,
 					Description: desc,
@@ -419,7 +420,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				}
 
 				newTx := domain.BankTransaction{
-					ID: uuid.New().String(), UserID: userID, IntegrationID: i.ID, AccountID: accID,
+					ID: txID, UserID: userID, IntegrationID: i.ID, AccountID: accID,
 					SourceAccountID: sourceAcc, DestinationAccountID: destAcc,
 					PoolIDs: poolIDs, ExternalID: externalID, EncryptedData: base64.StdEncoding.EncodeToString(encryptedData),
 					CorrelationID: correlationID,

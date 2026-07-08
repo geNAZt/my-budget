@@ -18,10 +18,10 @@ func TestEvaluateRule(t *testing.T) {
 		Field:    "RECEIVER",
 		Regex:    "Amazon",
 	}
-	if !s.evaluateRule(rule1, "", "Amazon EU", "Order 123", "", "", "", 50.0) {
+	if !s.evaluateRule(rule1, "", "", "Amazon EU", "Order 123", "", "", "", 50.0) {
 		t.Error("Expected rule1 to match Amazon EU")
 	}
-	if s.evaluateRule(rule1, "", "Starbucks", "Coffee", "", "", "", 10.0) {
+	if s.evaluateRule(rule1, "", "", "Starbucks", "Coffee", "", "", "", 10.0) {
 		t.Error("Expected rule1 to not match Starbucks")
 	}
 
@@ -32,10 +32,10 @@ func TestEvaluateRule(t *testing.T) {
 		AmountOperator: "<",
 		AmountValue:    floatPtr(50.0),
 	}
-	if !s.evaluateRule(ruleAmtLess, "", "Store", "Desc", "", "", "", 49.99) {
+	if !s.evaluateRule(ruleAmtLess, "", "", "Store", "Desc", "", "", "", 49.99) {
 		t.Error("Expected 49.99 < 50.0 to match")
 	}
-	if s.evaluateRule(ruleAmtLess, "", "Store", "Desc", "", "", "", 50.0) {
+	if s.evaluateRule(ruleAmtLess, "", "", "Store", "Desc", "", "", "", 50.0) {
 		t.Error("Expected 50.0 < 50.0 to not match")
 	}
 
@@ -45,7 +45,7 @@ func TestEvaluateRule(t *testing.T) {
 		AmountOperator: "=",
 		AmountValue:    floatPtr(-10.50),
 	}
-	if !s.evaluateRule(ruleAmtEqual, "", "Store", "Desc", "", "", "", -10.50) {
+	if !s.evaluateRule(ruleAmtEqual, "", "", "Store", "Desc", "", "", "", -10.50) {
 		t.Error("Expected -10.50 = -10.50 to match")
 	}
 
@@ -66,13 +66,13 @@ func TestEvaluateRule(t *testing.T) {
 			},
 		},
 	}
-	if !s.evaluateRule(ruleAND, "", "Starbucks Berlin", "Coffee", "", "", "", 12.50) {
+	if !s.evaluateRule(ruleAND, "", "", "Starbucks Berlin", "Coffee", "", "", "", 12.50) {
 		t.Error("Expected AND to match for Starbucks and amount > 10")
 	}
-	if s.evaluateRule(ruleAND, "", "Starbucks Berlin", "Coffee", "", "", "", 8.50) {
+	if s.evaluateRule(ruleAND, "", "", "Starbucks Berlin", "Coffee", "", "", "", 8.50) {
 		t.Error("Expected AND to fail if amount <= 10")
 	}
-	if s.evaluateRule(ruleAND, "", "Dunkin Donuts", "Coffee", "", "", "", 15.00) {
+	if s.evaluateRule(ruleAND, "", "", "Dunkin Donuts", "Coffee", "", "", "", 15.00) {
 		t.Error("Expected AND to fail if receiver is not Starbucks")
 	}
 
@@ -92,13 +92,13 @@ func TestEvaluateRule(t *testing.T) {
 			},
 		},
 	}
-	if !s.evaluateRule(ruleOR, "", "Store", "Morning coffee", "", "", "", 3.0) {
+	if !s.evaluateRule(ruleOR, "", "", "Store", "Morning coffee", "", "", "", 3.0) {
 		t.Error("Expected OR to match 'coffee'")
 	}
-	if !s.evaluateRule(ruleOR, "", "Store", "Grande Cafe Latte", "", "", "", 4.0) {
+	if !s.evaluateRule(ruleOR, "", "", "Store", "Grande Cafe Latte", "", "", "", 4.0) {
 		t.Error("Expected OR to match 'cafe'")
 	}
-	if s.evaluateRule(ruleOR, "", "Store", "Lunch sushi", "", "", "", 15.0) {
+	if s.evaluateRule(ruleOR, "", "", "Store", "Lunch sushi", "", "", "", 15.0) {
 		t.Error("Expected OR to fail for 'sushi'")
 	}
 
@@ -130,10 +130,10 @@ func TestEvaluateRule(t *testing.T) {
 		},
 	}
 
-	if !s.evaluateRule(ruleNested, "", "Starbucks Munich", "Green tea", "", "", "", 5.0) {
+	if !s.evaluateRule(ruleNested, "", "", "Starbucks Munich", "Green tea", "", "", "", 5.0) {
 		t.Error("Expected nested to match Starbucks and green tea")
 	}
-	if s.evaluateRule(ruleNested, "", "Starbucks Munich", "Muffin", "", "", "", 3.5) {
+	if s.evaluateRule(ruleNested, "", "", "Starbucks Munich", "Muffin", "", "", "", 3.5) {
 		t.Error("Expected nested to fail for Starbucks and muffin")
 	}
 
@@ -155,10 +155,23 @@ func TestEvaluateRule(t *testing.T) {
 		},
 	}
 
-	if !s.evaluateRule(ruleNegate, "", "REWE Supermarket", "Grocery", "", "", "", 25.0) {
+	if !s.evaluateRule(ruleNegate, "", "", "REWE Supermarket", "Grocery", "", "", "", 25.0) {
 		t.Error("Expected ruleNegate to match 'REWE Supermarket'")
 	}
-	if s.evaluateRule(ruleNegate, "", "REWE Financial Services", "Cashback", "", "", "", 10.0) {
+	if s.evaluateRule(ruleNegate, "", "", "REWE Financial Services", "Cashback", "", "", "", 10.0) {
 		t.Error("Expected ruleNegate to reject 'REWE Financial Services' due to negation")
+	}
+
+	// Test 7: TRANSACTION_ID matching
+	ruleTxID := domain.TransactionRule{
+		Operator: "NONE",
+		Field:    "TRANSACTION_ID",
+		Regex:    "^tx-123-abc$",
+	}
+	if !s.evaluateRule(ruleTxID, "tx-123-abc", "", "Receiver", "Description", "", "", "", 15.0) {
+		t.Error("Expected ruleTxID to match transaction ID 'tx-123-abc'")
+	}
+	if s.evaluateRule(ruleTxID, "tx-999-xyz", "", "Receiver", "Description", "", "", "", 15.0) {
+		t.Error("Expected ruleTxID to reject transaction ID 'tx-999-xyz'")
 	}
 }

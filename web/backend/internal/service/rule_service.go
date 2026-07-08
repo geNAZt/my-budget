@@ -19,7 +19,7 @@ func NewRuleService(repo *repository.RuleRepository) *RuleService {
 }
 
 // ProcessTransaction matches a single transaction against all applicable rules and returns the target pool IDs
-func (s *RuleService) ProcessTransaction(userID string, integrationID string, receiver string, description string, tags string, accountTags string, accountName string, amount float64) ([]string, error) {
+func (s *RuleService) ProcessTransaction(userID string, transactionID string, integrationID string, receiver string, description string, tags string, accountTags string, accountName string, amount float64) ([]string, error) {
 
 	rules, err := s.repo.ListRules(userID)
 	if err != nil {
@@ -35,7 +35,7 @@ func (s *RuleService) ProcessTransaction(userID string, integrationID string, re
 	seenPools := make(map[string]bool)
 
 	for _, rule := range rules {
-		if s.evaluateRule(rule, integrationID, receiver, description, tags, accountTags, accountName, amount) {
+		if s.evaluateRule(rule, transactionID, integrationID, receiver, description, tags, accountTags, accountName, amount) {
 			if rule.TargetPoolID != nil && *rule.TargetPoolID != "" && !seenPools[*rule.TargetPoolID] {
 				matchedPools = append(matchedPools, *rule.TargetPoolID)
 				seenPools[*rule.TargetPoolID] = true
@@ -46,7 +46,7 @@ func (s *RuleService) ProcessTransaction(userID string, integrationID string, re
 	return matchedPools, nil
 }
 
-func (s *RuleService) evaluateRule(rule domain.TransactionRule, integrationID string, receiver string, description string, tags string, accountTags string, accountName string, amount float64) bool {
+func (s *RuleService) evaluateRule(rule domain.TransactionRule, transactionID string, integrationID string, receiver string, description string, tags string, accountTags string, accountName string, amount float64) bool {
 	matched := false
 
 	// If it's a container rule (operator is AND or OR)
@@ -55,14 +55,14 @@ func (s *RuleService) evaluateRule(rule domain.TransactionRule, integrationID st
 			if rule.Operator == "AND" {
 				matched = true
 				for _, child := range rule.Children {
-					if !s.evaluateRule(child, integrationID, receiver, description, tags, accountTags, accountName, amount) {
+					if !s.evaluateRule(child, transactionID, integrationID, receiver, description, tags, accountTags, accountName, amount) {
 						matched = false
 						break
 					}
 				}
 			} else if rule.Operator == "OR" {
 				for _, child := range rule.Children {
-					if s.evaluateRule(child, integrationID, receiver, description, tags, accountTags, accountName, amount) {
+					if s.evaluateRule(child, transactionID, integrationID, receiver, description, tags, accountTags, accountName, amount) {
 						matched = true
 						break
 					}
@@ -85,6 +85,8 @@ func (s *RuleService) evaluateRule(rule domain.TransactionRule, integrationID st
 			target = strings.ToLower(accountName)
 		case "DATA_CHAIN":
 			target = strings.ToLower(integrationID)
+		case "TRANSACTION_ID":
+			target = strings.ToLower(transactionID)
 		case "AMOUNT":
 			if rule.AmountValue != nil {
 				val := *rule.AmountValue

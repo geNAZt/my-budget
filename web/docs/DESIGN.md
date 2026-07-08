@@ -396,3 +396,25 @@ To improve the user experience on the realtime transaction tracker, we simplify 
    - We replace the plain comma-separated text input with a beautiful, search-enabled tag cloud selector.
    - Available tags are dynamically built from default values, user-defined custom tags, and existing transaction tags.
    - If the user types a tag that does not exist in the available set, a "+ Add" button is rendered. Clicking this adds the new tag to a persisted custom tag list in `localStorage`, selects it, and clears the query.
+
+## 25. Realtime Transaction Detail Wizard for Pool & Expense Creation
+
+To streamline budgeting directly from the transaction feed, we introduce a wizard button in the transaction edit modal to dynamically generate a pool, attach the current transaction to that pool via an explicit transaction ID rule, create a corresponding expense linked to that pool, and link it to the active scenario.
+
+### Design Details
+1. **Rule Engine Field Expansion**:
+   - We extend `evaluateRule` and `ProcessTransaction` in `rule_service.go` to accept the transaction ID.
+   - We add a new rule matching field: `"TRANSACTION_ID"`. When evaluated, it compares the transaction ID to the rule regex.
+   - All rule processing calls in `sync_service.go`, `integrations.go`, and provider packages are updated to pass the transaction ID.
+
+2. **Frontend Wizard Component**:
+   - We implement a new wizard modal or embedded wizard form in `realtime/+page.svelte`.
+   - The wizard takes the current transaction's details:
+     - Default pool/expense name is the transaction's receiver/description.
+     - The user can modify the pool name.
+     - Budget date is set to the start date of the active period containing the transaction's book date (calculated via `getPeriodBoundsForDate(new Date(tx.createdAt), monthStartDay).start`).
+   - The wizard performs the following actions:
+     - Creates a new pool via `pools::save` WebSocket API.
+     - Creates a transaction rule matching the explicit transaction ID using `rules::save` (assigning the rule field to `"TRANSACTION_ID"` and regex to the transaction's ID, targeting the newly created pool ID).
+     - Creates a corresponding expense with the pool name via `expenses::save` WebSocket API (amount is set to the absolute transaction amount, pool ID is the new pool ID, due date is set to the active month start day, and it is linked to the current active scenario).
+     - Closes the detail view and prompts a refresh of the page state.

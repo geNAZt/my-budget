@@ -1086,7 +1086,7 @@ func (s *SyncService) ApplyRulesToAllTransactions(userID string) error {
 			accountName = namesMap[t.AccountID]
 		}
 
-		poolIDs, _ := s.ruleService.ProcessTransaction(userID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, accountName, meta.Amount)
+		poolIDs, _ := s.ruleService.ProcessTransaction(userID, t.ID, t.IntegrationID, meta.Receiver, meta.Description, t.Tags, accountTags, accountName, meta.Amount)
 		s.transactionRepo.UpdatePools(userID, t.ID, poolIDs)
 	}
 	return nil
@@ -1280,7 +1280,8 @@ func (s *SyncService) WipeAndReimportBankLogs() {
 						continue
 					}
 
-					poolIDs, _ := s.ruleService.ProcessTransaction(user.ID, integrationObj.ID, meta.Receiver, meta.Description, "", accountTags, accountName, meta.Amount)
+					txID := uuid.New().String()
+					poolIDs, _ := s.ruleService.ProcessTransaction(user.ID, txID, integrationObj.ID, meta.Receiver, meta.Description, "", accountTags, accountName, meta.Amount)
 					genericTx := domain.GenericTransaction{
 						Amount:         meta.Amount,
 						Description:    meta.Description,
@@ -1301,7 +1302,7 @@ func (s *SyncService) WipeAndReimportBankLogs() {
 					}
 
 					batch = append(batch, domain.BankTransaction{
-						ID: uuid.New().String(), UserID: user.ID, IntegrationID: integrationObj.ID, AccountID: targetAccountID,
+						ID: txID, UserID: user.ID, IntegrationID: integrationObj.ID, AccountID: targetAccountID,
 						SourceAccountID: sourceAcc, DestinationAccountID: destAcc,
 						PoolIDs: poolIDs, ExternalID: meta.ExternalID, EncryptedData: base64.StdEncoding.EncodeToString(encryptedData),
 						CorrelationID: run.cid, InternalStatus: meta.InternalStatus,
