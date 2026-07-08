@@ -500,3 +500,12 @@ To allow linking realtime (integrated bank) accounts to virtual ones, we dynamic
 - When linked, disable the `StartingBalance` input and display the latest realtime balance.
 - Pass the selected `realtimeAccountId` to the `virtualaccounts::save` request.
 
+### 6. Outstanding & Booked Balance Tracking
+- If a virtual account has a linked realtime account:
+  - The starting balance of the virtual account tracks with the realtime account balance.
+  - Inflows and outflows are only booked (applied) if they are **outstanding** and their scheduled day/date is **greater than or equal to the current day** of the month.
+  - This prevents double-counting transactions that have already cleared and are included in the realtime balance.
+- If not linked:
+  - The starting balance is initialized to `0` at the start of each month.
+  - All inflows and outflows of the month are fully booked to reveal the final net monthly change.
+

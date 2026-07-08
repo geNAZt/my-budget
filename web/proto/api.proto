@@ -205,6 +205,8 @@ message VirtualAccountMonthBalance {
   double balance = 3;
   double allocated_bills = 4;
   double allocated_expenses = 5;
+  double starting_balance = 6;
+  string realtime_account_id = 7;
 }
 
 message EntryBreakdown {

@@ -2589,12 +2589,71 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 		}
 
+		// Resolve BookingDate and PreviousBookingDate for all entries in the breakdown
+		resolveList := func(list []domain.EntryBreakdown) {
+			for idx := range list {
+				entry := &list[idx]
+				if entry.PoolID == nil || *entry.PoolID == "" {
+					continue
+				}
+				pid := *entry.PoolID
+				txsInPool, ok := poolTxs[pid]
+				if !ok || len(txsInPool) == 0 {
+					continue
+				}
+
+				var latestCurrentTx *domain.BankTransaction
+				var latestPreviousTx *domain.BankTransaction
+
+				for txIdx := range txsInPool {
+					tx := &txsInPool[txIdx]
+					txMonth := projectionMonthForDate(tx.CreatedAt, monthStartDay, loc)
+					if txMonth.Equal(month.Date) {
+						if latestCurrentTx == nil || tx.CreatedAt.After(latestCurrentTx.CreatedAt) {
+							latestCurrentTx = tx
+						}
+					} else if txMonth.Before(month.Date) {
+						if latestPreviousTx == nil || tx.CreatedAt.After(latestPreviousTx.CreatedAt) {
+							latestPreviousTx = tx
+						}
+					}
+				}
+
+				if latestCurrentTx != nil {
+					entry.BookingDate = latestCurrentTx.CreatedAt.In(loc).Format("2006-01-02")
+				}
+				if latestPreviousTx != nil {
+					entry.PreviousBookingDate = latestPreviousTx.CreatedAt.In(loc).Format("2006-01-02")
+				}
+			}
+		}
+
+		resolveList(month.Breakdown.Incomes)
+		resolveList(month.Breakdown.Bills)
+		resolveList(month.Breakdown.Expenses)
+		resolveList(month.Breakdown.Assets)
+		resolveList(month.Breakdown.Loans)
+
 		// Calculate Virtual Account planned monthly changes and ending balances
 		month.VirtualAccounts = make([]domain.VirtualAccountMonthBalance, 0)
 
-		// Reset running balances of virtual accounts to 0 at the start of each month
+		// Initialize/override running balances of virtual accounts at the start of each month
 		for _, va := range virtualAccounts {
-			vaRunningBalances[va.ID] = 0.0
+			if va.ActiveVersion != nil {
+				if i == 0 {
+					startBal := 0.0
+					if va.ActiveVersion.RealtimeAccountID != "" {
+						if bal, ok := realtimeAccountBalances[va.ActiveVersion.RealtimeAccountID]; ok {
+							startBal = bal
+						}
+					}
+					vaRunningBalances[va.ID] = startBal
+				} else {
+					if va.ActiveVersion.RealtimeAccountID == "" {
+						vaRunningBalances[va.ID] = 0.0
+					}
+				}
+			}
 		}
 		unassignedRunningBalance = 0.0
 
@@ -2647,40 +2706,68 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			}
 
 			vBal := domain.VirtualAccountMonthBalance{
-				AccountID:       va.ID,
-				Name:            va.Name,
-				Color:           va.ActiveVersion.Color,
-				StartingBalance: vaRunningBalances[va.ID],
+				AccountID:         va.ID,
+				Name:              va.Name,
+				Color:             va.ActiveVersion.Color,
+				StartingBalance:   vaRunningBalances[va.ID],
+				RealtimeAccountID: va.ActiveVersion.RealtimeAccountID,
+			}
+
+			// Helper to check if we should book this entry
+			shouldBook := func(entry domain.EntryBreakdown) bool {
+				if va.ActiveVersion.RealtimeAccountID == "" || i > 0 {
+					return true
+				}
+				// Current month, linked: only book if outstanding and day >= currentDay
+				isOutstanding := entry.RealtimeBalance == nil
+				if !isOutstanding {
+					return false
+				}
+				dateStr := entry.BookingDate
+				if dateStr == "" {
+					dateStr = entry.PreviousBookingDate
+				}
+				day := parseDayFromDateString(dateStr)
+				currentDay := time.Now().Day()
+				return day >= currentDay
 			}
 
 			// Add incomes
 			for _, entry := range month.Breakdown.Incomes {
 				if factor := getAssignmentFactor(entry.AccountIDs, va.ID); factor > 0 {
-					vBal.Inflow += entry.Amount * factor
+					if shouldBook(entry) {
+						vBal.Inflow += entry.Amount * factor
+					}
 				}
 			}
 
 			// Add bills
 			for _, entry := range month.Breakdown.Bills {
 				if factor := getAssignmentFactor(entry.AccountIDs, va.ID); factor > 0 {
-					vBal.Outflow += entry.Amount * factor
+					if shouldBook(entry) {
+						vBal.Outflow += entry.Amount * factor
+					}
 				}
 			}
 
 			// Add expenses
 			for _, entry := range month.Breakdown.Expenses {
 				if factor := getAssignmentFactor(entry.AccountIDs, va.ID); factor > 0 {
-					vBal.Outflow += entry.Amount * factor
+					if shouldBook(entry) {
+						vBal.Outflow += entry.Amount * factor
+					}
 				}
 			}
 
 			// Add assets contributions and payouts
 			for _, entry := range month.Breakdown.Assets {
 				if factor := getAssignmentFactor(entry.AccountIDs, va.ID); factor > 0 {
-					if entry.Amount >= 0 {
-						vBal.Outflow += entry.Amount * factor
-					} else {
-						vBal.Inflow += math.Abs(entry.Amount) * factor
+					if shouldBook(entry) {
+						if entry.Amount >= 0 {
+							vBal.Outflow += entry.Amount * factor
+						} else {
+							vBal.Inflow += math.Abs(entry.Amount) * factor
+						}
 					}
 				}
 			}
@@ -2688,7 +2775,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			// Add loans payments
 			for _, entry := range month.Breakdown.Loans {
 				if factor := getAssignmentFactor(entry.AccountIDs, va.ID); factor > 0 {
-					vBal.Outflow += entry.Amount * factor
+					if shouldBook(entry) {
+						vBal.Outflow += entry.Amount * factor
+					}
 				}
 			}
 
@@ -2781,51 +2870,6 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 			month.VirtualAccounts = append(month.VirtualAccounts, unassignedBal)
 		}
-
-		// Resolve BookingDate and PreviousBookingDate for all entries in the breakdown
-		resolveList := func(list []domain.EntryBreakdown) {
-			for idx := range list {
-				entry := &list[idx]
-				if entry.PoolID == nil || *entry.PoolID == "" {
-					continue
-				}
-				pid := *entry.PoolID
-				txsInPool, ok := poolTxs[pid]
-				if !ok || len(txsInPool) == 0 {
-					continue
-				}
-
-				var latestCurrentTx *domain.BankTransaction
-				var latestPreviousTx *domain.BankTransaction
-
-				for txIdx := range txsInPool {
-					tx := &txsInPool[txIdx]
-					txMonth := projectionMonthForDate(tx.CreatedAt, monthStartDay, loc)
-					if txMonth.Equal(month.Date) {
-						if latestCurrentTx == nil || tx.CreatedAt.After(latestCurrentTx.CreatedAt) {
-							latestCurrentTx = tx
-						}
-					} else if txMonth.Before(month.Date) {
-						if latestPreviousTx == nil || tx.CreatedAt.After(latestPreviousTx.CreatedAt) {
-							latestPreviousTx = tx
-						}
-					}
-				}
-
-				if latestCurrentTx != nil {
-					entry.BookingDate = latestCurrentTx.CreatedAt.In(loc).Format("2006-01-02")
-				}
-				if latestPreviousTx != nil {
-					entry.PreviousBookingDate = latestPreviousTx.CreatedAt.In(loc).Format("2006-01-02")
-				}
-			}
-		}
-
-		resolveList(month.Breakdown.Incomes)
-		resolveList(month.Breakdown.Bills)
-		resolveList(month.Breakdown.Expenses)
-		resolveList(month.Breakdown.Assets)
-		resolveList(month.Breakdown.Loans)
 
 		result.Months[i] = month
 		if onMonth != nil {
@@ -3049,4 +3093,19 @@ func diffMonths(start, end time.Time) int {
 	y1, m1, _ := start.Date()
 	y2, m2, _ := end.Date()
 	return int(y2-y1)*12 + int(m2-m1)
+}
+
+func parseDayFromDateString(dateStr string) int {
+	if len(dateStr) < 10 {
+		return 0
+	}
+	parts := strings.Split(dateStr, "-")
+	if len(parts) != 3 {
+		return 0
+	}
+	day, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0
+	}
+	return day
 }

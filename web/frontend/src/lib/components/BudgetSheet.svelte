@@ -118,8 +118,13 @@
 
         return (virtualAccounts || []).map((va: any, index: number) => {
             const id = va.id || va.account_id || va.accountId || "";
+            const realtimeAccountId = va.realtimeAccountId || va.realtime_account_id || "";
             
-            // Calculate outstanding in and outflows
+            // Start balance tracks with realtime account if set, 0 otherwise
+            const startBal = realtimeAccountId ? (va.startingBalance || va.starting_balance || 0) : 0;
+
+            let inflow = 0;
+            let outflow = 0;
             let outstandingInflow = 0;
             let outstandingOutflow = 0;
 
@@ -127,98 +132,6 @@
                 return entry.realtimeBalance === undefined || entry.realtimeBalance === null || entry.realtimeBalance === 0;
             };
 
-            const mappedEntities: { name: string; type: string; amount: number; outstanding: boolean; previousBookingDate?: string; bookingDate?: string }[] = [];
-
-            for (const entry of breakdown.incomes || []) {
-                const factor = getAssignmentFactor(entry.accountIds, id);
-                if (factor > 0) {
-                    if (isOutstanding(entry)) {
-                        outstandingInflow += entry.amount * factor;
-                    }
-                    mappedEntities.push({
-                        name: entry.name,
-                        type: "Income",
-                        amount: entry.amount * factor,
-                        outstanding: isOutstanding(entry),
-                        previousBookingDate: entry.previousBookingDate,
-                        bookingDate: entry.bookingDate,
-                    });
-                }
-            }
-
-            for (const entry of breakdown.bills || []) {
-                const factor = getAssignmentFactor(entry.accountIds, id);
-                if (factor > 0) {
-                    if (isOutstanding(entry)) {
-                        outstandingOutflow += entry.amount * factor;
-                    }
-                    mappedEntities.push({
-                        name: entry.name,
-                        type: "Bill",
-                        amount: entry.amount * factor,
-                        outstanding: isOutstanding(entry),
-                        previousBookingDate: entry.previousBookingDate,
-                        bookingDate: entry.bookingDate,
-                    });
-                }
-            }
-
-            for (const entry of breakdown.expenses || []) {
-                const factor = getAssignmentFactor(entry.accountIds, id);
-                if (factor > 0) {
-                    if (isOutstanding(entry)) {
-                        outstandingOutflow += entry.amount * factor;
-                    }
-                    mappedEntities.push({
-                        name: entry.name,
-                        type: "Event",
-                        amount: entry.amount * factor,
-                        outstanding: isOutstanding(entry),
-                        previousBookingDate: entry.previousBookingDate,
-                        bookingDate: entry.bookingDate,
-                    });
-                }
-            }
-
-            for (const entry of breakdown.assets || []) {
-                const factor = getAssignmentFactor(entry.accountIds, id);
-                if (factor > 0) {
-                    if (isOutstanding(entry)) {
-                        if (entry.amount >= 0) {
-                            outstandingOutflow += entry.amount * factor;
-                        } else {
-                            outstandingInflow += Math.abs(entry.amount) * factor;
-                        }
-                    }
-                    mappedEntities.push({
-                        name: entry.name || entry.entityName || "Asset",
-                        type: "Asset",
-                        amount: entry.amount * factor,
-                        outstanding: isOutstanding(entry),
-                        previousBookingDate: entry.previousBookingDate,
-                        bookingDate: entry.bookingDate,
-                    });
-                }
-            }
-
-            for (const entry of breakdown.loans || []) {
-                const factor = getAssignmentFactor(entry.accountIds, id);
-                if (factor > 0) {
-                    if (isOutstanding(entry)) {
-                        outstandingOutflow += entry.amount * factor;
-                    }
-                    mappedEntities.push({
-                        name: entry.name,
-                        type: "Loan",
-                        amount: entry.amount * factor,
-                        outstanding: isOutstanding(entry),
-                        previousBookingDate: entry.previousBookingDate,
-                        bookingDate: entry.bookingDate,
-                    });
-                }
-            }
-
-            const currentDay = new Date().getDate();
             const getDay = (dateStr?: string) => {
                 if (!dateStr) return null;
                 const parts = dateStr.split("-");
@@ -228,6 +141,143 @@
                 return null;
             };
 
+            const shouldBook = (entry: any) => {
+                if (!realtimeAccountId) {
+                    // No realtime account linked: book ALL entries
+                    return true;
+                }
+                // Realtime account linked: only book entries that are OUTSTANDING and come AFTER (or on) current day
+                if (isOutstanding(entry)) {
+                    const day = getDay(entry.previousBookingDate || entry.bookingDate);
+                    const currentDay = new Date().getDate();
+                    if (day !== null && day >= currentDay) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const mappedEntities: { name: string; type: string; amount: number; outstanding: boolean; previousBookingDate?: string; bookingDate?: string }[] = [];
+
+            for (const entry of breakdown.incomes || []) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    const amount = entry.amount * factor;
+                    const isOut = isOutstanding(entry);
+                    if (isOut) {
+                        outstandingInflow += amount;
+                    }
+                    if (shouldBook(entry)) {
+                        inflow += amount;
+                    }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Income",
+                        amount: amount,
+                        outstanding: isOut,
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
+                    });
+                }
+            }
+
+            for (const entry of breakdown.bills || []) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    const amount = entry.amount * factor;
+                    const isOut = isOutstanding(entry);
+                    if (isOut) {
+                        outstandingOutflow += amount;
+                    }
+                    if (shouldBook(entry)) {
+                        outflow += amount;
+                    }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Bill",
+                        amount: amount,
+                        outstanding: isOut,
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
+                    });
+                }
+            }
+
+            for (const entry of breakdown.expenses || []) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    const amount = entry.amount * factor;
+                    const isOut = isOutstanding(entry);
+                    if (isOut) {
+                        outstandingOutflow += amount;
+                    }
+                    if (shouldBook(entry)) {
+                        outflow += amount;
+                    }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Event",
+                        amount: amount,
+                        outstanding: isOut,
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
+                    });
+                }
+            }
+
+            for (const entry of breakdown.assets || []) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    const amount = entry.amount * factor;
+                    const isOut = isOutstanding(entry);
+                    if (isOut) {
+                        if (entry.amount >= 0) {
+                            outstandingOutflow += amount;
+                        } else {
+                            outstandingInflow += Math.abs(amount);
+                        }
+                    }
+                    if (shouldBook(entry)) {
+                        if (entry.amount >= 0) {
+                            outflow += amount;
+                        } else {
+                            inflow += Math.abs(amount);
+                        }
+                    }
+                    mappedEntities.push({
+                        name: entry.name || entry.entityName || "Asset",
+                        type: "Asset",
+                        amount: amount,
+                        outstanding: isOut,
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
+                    });
+                }
+            }
+
+            for (const entry of breakdown.loans || []) {
+                const factor = getAssignmentFactor(entry.accountIds, id);
+                if (factor > 0) {
+                    const amount = entry.amount * factor;
+                    const isOut = isOutstanding(entry);
+                    if (isOut) {
+                        outstandingOutflow += amount;
+                    }
+                    if (shouldBook(entry)) {
+                        outflow += amount;
+                    }
+                    mappedEntities.push({
+                        name: entry.name,
+                        type: "Loan",
+                        amount: amount,
+                        outstanding: isOut,
+                        previousBookingDate: entry.previousBookingDate,
+                        bookingDate: entry.bookingDate,
+                    });
+                }
+            }
+
+            const currentDay = new Date().getDate();
             const sortedEntities = [...mappedEntities].sort((a, b) => {
                 const getGroupIndex = (item: any) => {
                     if (item.outstanding) {
@@ -283,9 +333,10 @@
                 id,
                 name: va.name || "",
                 color: va.color || getAccountColor(id, index),
-                balance: va.balance !== undefined ? va.balance : 0,
-                inflow: va.inflow !== undefined ? va.inflow : (va.allocatedBills !== undefined ? va.allocatedBills : 0),
-                outflow: va.outflow !== undefined ? va.outflow : (va.allocatedExpenses !== undefined ? va.allocatedExpenses : 0),
+                starting_balance: startBal,
+                balance: startBal + inflow - outflow,
+                inflow,
+                outflow,
                 asset_worth: va.asset_worth !== undefined ? va.asset_worth : (va.assetWorth !== undefined ? va.assetWorth : 0),
                 loan_debt: va.loan_debt !== undefined ? va.loan_debt : (va.loanDebt !== undefined ? va.loanDebt : 0),
                 outstandingInflow,

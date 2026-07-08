@@ -209,6 +209,8 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 				Balance:           va.Balance,
 				AllocatedBills:    va.Inflow,
 				AllocatedExpenses: va.Outflow,
+				StartingBalance:   va.StartingBalance,
+				RealtimeAccountId: va.RealtimeAccountID,
 			})
 		}
 

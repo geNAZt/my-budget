@@ -74,15 +74,16 @@ type PerformanceMetrics struct {
 }
 
 type VirtualAccountMonthBalance struct {
-	AccountID       string
-	Name            string
-	Color           string
-	StartingBalance float64
-	Inflow          float64
-	Outflow         float64
-	Balance         float64
-	AssetWorth      float64
-	LoanDebt        float64
+	AccountID         string
+	Name              string
+	Color             string
+	StartingBalance   float64
+	Inflow            float64
+	Outflow           float64
+	Balance           float64
+	AssetWorth        float64
+	LoanDebt          float64
+	RealtimeAccountID string
 }
 
 type ProjectionMonth struct {
