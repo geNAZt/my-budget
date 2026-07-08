@@ -8,6 +8,7 @@
 
     let container: HTMLDivElement | null = $state(null);
     let editor: any = null;
+    let resizeObserver: ResizeObserver | null = null;
     let loading = $state(true);
 
     const typings = `
@@ -302,7 +303,7 @@ export default _default;
         editor = monaco.editor.create(container, {
             model: model,
             theme: 'monokai-soft',
-            automaticLayout: true,
+            automaticLayout: false,
             readOnly: readOnly,
             minimap: { enabled: false },
             fontSize: 14,
@@ -319,6 +320,15 @@ export default _default;
                 useShadows: false
             }
         });
+
+        if (typeof ResizeObserver !== 'undefined' && container) {
+            resizeObserver = new ResizeObserver(() => {
+                if (editor) {
+                    editor.layout();
+                }
+            });
+            resizeObserver.observe(container);
+        }
 
         editor.onDidChangeModelContent(() => {
             const currentVal = editor.getValue();
@@ -363,6 +373,10 @@ export default _default;
     });
 
     onDestroy(() => {
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+            resizeObserver = null;
+        }
         if (editor) {
             editor.dispose();
         }

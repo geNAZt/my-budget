@@ -461,3 +461,15 @@ To resolve the issue where assets do not properly reduce their balances in the a
 ### 2. Frontend Analytics Chart Updates
 - In `web/frontend/src/routes/analytics/+page.svelte`, when updating the `currentBalance` in `assetChartData`, allow `e.balance` to be 0 or any other valid non-negative value (instead of checking `e.balance > 0`). Change the check `e.balance !== undefined && e.balance > 0` to `e.balance !== undefined && e.balance !== null`. This ensures that when an asset is fully paid out and its balance becomes 0, the chart correctly reflects the 0 balance instead of carrying over the last active balance.
 
+## 28. High GPU Usage Diagnosis & Optimization
+
+To address high GPU usage when the application is open (even when idle), we implement the following optimizations to minimize rendering/compositing overhead:
+
+### 1. Monaco Editor Resize Optimization (Eliminating Polling)
+- **Problem**: Monaco Editor is configured with `automaticLayout: true`, which spawns a continuous polling loop (using `requestAnimationFrame` or `setInterval`) to check the container size. This keeps both CPU and GPU active constantly even when the editor is idle.
+- **Solution**: Set `automaticLayout: false` in `MonacoEditor.svelte` and register a native browser `ResizeObserver` on the editor's container. The observer calls `editor.layout()` only when container bounds actually change, and is cleanly disconnected in `onDestroy()`.
+
+### 2. Glassmorphism CSS Composite Layer Promotion
+- **Problem**: Elements with CSS `backdrop-filter: blur(...)` (such as `.glass-card` and `.glass-nav`) require the browser's graphics engine to perform expensive copy-blur-composite operations. When page content scrolls, loaders spin, or pulsing animations occur, the GPU repaints the entire blurred area on every frame.
+- **Solution**: Add `transform: translateZ(0)` and `backface-visibility: hidden` to `.glass-card` and `.glass-nav` in `web/frontend/src/app.css` to promote them to their own GPU layers. This allows the browser to cache the composited layer instead of recalculating the blur filter continuously.
+
