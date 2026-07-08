@@ -380,6 +380,19 @@ We introduce support for non-remainder-consumer sub-assets (target savings plans
 
 2. **Virtual Account Payout Attribution**:
    - When a sub-asset payout occurs:
-     - If the payout is **linked** to an expense (i.e. `sa.expenseID != nil`), the payout's income entry is attributed to the linked expense's `AccountIDs` so they offset each other in the same virtual accounts.
+      - If the payout is **linked** to an expense (i.e. `sa.expenseID != nil`), the payout's income entry is attributed to the linked expense's `AccountIDs` so they offset each other in the same virtual accounts.
      - If the payout is **non-linked** (i.e. `sa.expenseID == nil`), the payout's income entry is attributed to `nil` (`unassigned`), dumping the content of the sub-asset directly onto the budget sheet's general pool so it is available to be spent/allocated.
 
+## 24. Realtime Tracker Compact Transaction Detail View & Single Tag Cloud Selection
+
+To improve the user experience on the realtime transaction tracker, we simplify and optimize the detail transaction modification panel:
+1. **Remove Associated Transactions (Chain)**: Eliminate this section entirely from the transaction edit view, as it is not useful in its current state.
+2. **Compact Metadata View**: Display the transaction Amount, Peer Name, and Peer IBAN as styled, read-only metadata cards instead of bulky text inputs. These fields are no longer editable in the frontend.
+3. **Hotkey Database Payload Toggle**:
+   - The database payload JSON remains hidden by default.
+   - We implement global keydown event handlers (`Alt + D` / `Alt + P` case-insensitive) to toggle the visibility of the raw payload while the transaction edit modal is active.
+4. **Single-Tag Cloud Selection**:
+   - A transaction is restricted to at most one tag.
+   - We replace the plain comma-separated text input with a beautiful, search-enabled tag cloud selector.
+   - Available tags are dynamically built from default values, user-defined custom tags, and existing transaction tags.
+   - If the user types a tag that does not exist in the available set, a "+ Add" button is rendered. Clicking this adds the new tag to a persisted custom tag list in `localStorage`, selects it, and clears the query.

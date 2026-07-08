@@ -162,6 +162,58 @@
     let transactionToEdit = $state<any>(null);
     let showRawData = $state(false);
     let editTagsInput = $state("");
+    let customTags = $state<string[]>(getStored("realtime_customTags", []));
+    let tagSearchQuery = $state("");
+
+    const allAvailableTags = $derived(() => {
+        const set = new Set<string>();
+        const defaults = ["Internal", "Cashback", "Subscription", "Salary", "Food", "Rent", "Utilities", "Leisure", "Travel"];
+        defaults.forEach((t: string) => set.add(t));
+        customTags.forEach((t: string) => set.add(t));
+        
+        for (const tx of transactions) {
+            if (tx.tags) {
+                tx.tags.split(",").forEach((t: string) => {
+                    const trimmed = t.trim();
+                    if (trimmed) set.add(trimmed);
+                });
+            }
+        }
+        return Array.from(set).sort();
+    });
+
+    const filteredTags = $derived(() => {
+        const query = tagSearchQuery.trim().toLowerCase();
+        if (!query) return allAvailableTags();
+        return allAvailableTags().filter((t: string) => t.toLowerCase().includes(query));
+    });
+
+    const showAddTagOption = $derived(() => {
+        const query = tagSearchQuery.trim();
+        if (!query) return false;
+        return !allAvailableTags().some((t: string) => t.toLowerCase() === query.toLowerCase());
+    });
+
+    function selectTag(tag: string) {
+        if (editTagsInput === tag) {
+            editTagsInput = "";
+        } else {
+            editTagsInput = tag;
+        }
+    }
+
+    function addAndSelectTag(tag: string) {
+        const trimmed = tag.trim();
+        if (!trimmed) return;
+        if (!customTags.includes(trimmed)) {
+            customTags = [...customTags, trimmed];
+            if (typeof localStorage !== "undefined") {
+                localStorage.setItem("realtime_customTags", customTags.join(","));
+            }
+        }
+        editTagsInput = trimmed;
+        tagSearchQuery = "";
+    }
     let editAmountInput = $state<number>(0);
     let editReceiverInput = $state("");
     let editReceiverIbanInput = $state("");
@@ -1003,6 +1055,9 @@
         showPoolsPopover = false;
         showChainsPopover = false;
         showAmountPopover = false;
+    } else if (showTransactionEdit && e.altKey && (e.key.toLowerCase() === 'd' || e.key.toLowerCase() === 'p')) {
+        e.preventDefault();
+        showRawData = !showRawData;
     }
 }} />
 
@@ -2286,33 +2341,34 @@
         transition:fade
     >
         <div
-            class="w-full max-w-2xl bg-white rounded-[30px] shadow-2xl relative overflow-hidden"
+            class="w-full max-w-xl bg-white rounded-[30px] shadow-2xl relative overflow-hidden"
             transition:slide
         >
             <div
                 class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
             ></div>
 
-            <div class="p-10 space-y-10">
+            <div class="p-8 space-y-6">
                 <div class="flex items-center justify-between">
                     <div class="space-y-1">
                         <h2
-                            class="text-2xl font-black text-slate-900 tracking-tight"
+                            class="text-xl font-black text-slate-900 tracking-tight"
                         >
                             Modify Transaction Flow
                         </h2>
-                        <p class="text-slate-500 font-medium text-sm">
+                        <p class="text-slate-500 font-medium text-xs">
                             Update account mapping and deterministic metadata.
                         </p>
                     </div>
                     <button
                         onclick={() => (showTransactionEdit = false)}
-                        class="p-3 hover:bg-slate-100 rounded-2xl transition-all border border-transparent hover:border-slate-200"
-                        ><X class="w-6 h-6 text-slate-400" /></button
+                        class="p-2 hover:bg-slate-100 rounded-xl transition-all border border-transparent hover:border-slate-200"
+                        ><X class="w-5 h-5 text-slate-400" /></button
                     >
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Source / Destination Accounts Selection -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <SearchableDropdown
                         label="Source Account"
                         options={accountOptions}
@@ -2328,49 +2384,32 @@
                     />
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="space-y-2">
-                        <label
-                            for="edit-receiver-input"
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Peer Name</label
-                        >
-                        <div
-                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                        >
-                            <User class="w-4 h-4 text-slate-400" />
-                            <input
-                                id="edit-receiver-input"
-                                type="text"
-                                bind:value={editReceiverInput}
-                                placeholder="External Peer"
-                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                            />
+                <!-- Read-Only Transaction Info (Amount, Peer Name, Peer IBAN) -->
+                <div class="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div class="space-y-1">
+                            <span class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Peer Name / IBAN</span>
+                            <p class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                <User class="w-3.5 h-3.5 text-slate-400" />
+                                {editReceiverInput || "—"}
+                            </p>
+                            {#if editReceiverIbanInput}
+                                <p class="text-[10px] font-bold text-slate-500 font-mono tracking-wider">
+                                    {editReceiverIbanInput}
+                                </p>
+                            {/if}
                         </div>
-                    </div>
-
-                    <div class="space-y-2">
-                        <label
-                            for="edit-receiver-iban-input"
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Peer IBAN</label
-                        >
-                        <div
-                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                        >
-                            <CreditCard class="w-4 h-4 text-slate-400" />
-                            <input
-                                id="edit-receiver-iban-input"
-                                type="text"
-                                bind:value={editReceiverIbanInput}
-                                placeholder="DE00..."
-                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                            />
+                        <div class="text-right">
+                            <span class="block text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Amount</span>
+                            <span class="text-lg font-black tracking-tight tabular-nums {editAmountInput < 0 ? 'text-rose-600' : 'text-emerald-600'}">
+                                {editAmountInput < 0 ? '-' : ''}{Math.abs(editAmountInput).toLocaleString("de-DE", { minimumFractionDigits: 2 })} €
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Reference / Description & Assigned Pools selection -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-2">
                         <label
                             for="edit-description-input"
@@ -2391,54 +2430,74 @@
                         </div>
                     </div>
 
-                    <div class="space-y-2">
-                        <label
-                            for="edit-amount-input"
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Transaction Amount (€)</label
-                        >
-                        <div
-                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
-                        >
-                            <Euro class="w-4 h-4 text-slate-400" />
-                            <input
-                                id="edit-amount-input"
-                                type="number"
-                                step="0.01"
-                                bind:value={editAmountInput}
-                                placeholder="0,00"
-                                class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <SearchableMultiSelect
                         label="Assigned Pools"
                         options={poolOptions}
                         bind:values={transactionToEdit.poolIds}
                         placeholder="Select pools..."
                     />
+                </div>
 
-                    <div class="space-y-2">
-                        <label
-                            for="deterministic-tags-input"
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Deterministic Tags</label
-                        >
+                <!-- Single Tag Cloud Selector -->
+                <div class="space-y-3">
+                    <label
+                        for="tag-search-input"
+                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
+                        >Deterministic Tag</label
+                    >
+                    <div class="space-y-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                         <div
-                            class="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
+                            class="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all"
                         >
-                            <Tags class="w-4 h-4 text-slate-400" />
+                            <Search class="w-3.5 h-3.5 text-slate-400" />
                             <input
-                                id="deterministic-tags-input"
+                                id="tag-search-input"
                                 type="text"
-                                bind:value={editTagsInput}
-                                placeholder="e.g. Internal, Cashback..."
+                                bind:value={tagSearchQuery}
+                                placeholder="Search or add tag..."
                                 class="bg-transparent border-none outline-none text-xs font-black w-full text-slate-900 placeholder:text-slate-300"
                             />
+                            {#if tagSearchQuery}
+                                <button 
+                                    type="button"
+                                    onclick={() => tagSearchQuery = ""}
+                                    class="text-slate-400 hover:text-slate-600"
+                                >
+                                    <X class="w-3.5 h-3.5" />
+                                </button>
+                            {/if}
                         </div>
+
+                        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-1 py-1">
+                            {#each filteredTags() as tag}
+                                {@const isSelected = editTagsInput === tag}
+                                <button
+                                    type="button"
+                                    onclick={() => selectTag(tag)}
+                                    class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border {isSelected 
+                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100' 
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 hover:text-slate-900'}"
+                                >
+                                    {tag}
+                                </button>
+                            {/each}
+
+                            {#if showAddTagOption()}
+                                <button
+                                    type="button"
+                                    onclick={() => addAndSelectTag(tagSearchQuery)}
+                                    class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300"
+                                >
+                                    + Add "{tagSearchQuery.trim()}"
+                                </button>
+                            {/if}
+                        </div>
+
+                        {#if !filteredTags().length && !showAddTagOption()}
+                            <p class="text-[10px] font-black text-slate-400 uppercase text-center py-2">
+                                No tags found. Type above to add one.
+                            </p>
+                        {/if}
                     </div>
                 </div>
 
@@ -2518,78 +2577,6 @@
                                     >
                                         <Trash2 class="w-4 h-4" />
                                     </button>
-                                </div>
-                            {/each}
-                        </div>
-                    </div>
-                {/if}
-
-                {#if transactions.filter(t => 
-                    (t.id !== transactionToEdit.id) && (
-                        // Case 1: Direct Link (Internal Transfer sides)
-                        (transactionToEdit.linkedTransactionId && t.id === transactionToEdit.linkedTransactionId) ||
-                        (t.linkedTransactionId && t.linkedTransactionId === transactionToEdit.id) ||
-                        
-                        // Case 2: Funding Chain (Same Account, Opposite Amount, close date)
-                        (t.accountId === transactionToEdit.accountId && 
-                         Math.abs(t.amount + transactionToEdit.amount) < 0.01 && 
-                         Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000) ||
-
-                        // Case 3: Success/Rejection Pair (Same Account, same merchant, close date)
-                        (t.accountId === transactionToEdit.accountId &&
-                         ((t.receiver && t.receiver === transactionToEdit.receiver) || (t.description && t.description === transactionToEdit.description)) &&
-                         Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000)
-                    )
-                ).length > 0}
-                    {@const associatedTransactions = transactions.filter(t => 
-                        (t.id !== transactionToEdit.id) && (
-                            (transactionToEdit.linkedTransactionId && t.id === transactionToEdit.linkedTransactionId) ||
-                            (t.linkedTransactionId && t.linkedTransactionId === transactionToEdit.id) ||
-                            
-                            (t.accountId === transactionToEdit.accountId && 
-                             Math.abs(t.amount + transactionToEdit.amount) < 0.01 && 
-                             Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000) ||
-
-                            (t.accountId === transactionToEdit.accountId &&
-                             ((t.receiver && t.receiver === transactionToEdit.receiver) || (t.description && t.description === transactionToEdit.description)) &&
-                             Math.abs(new Date(t.createdAt).getTime() - new Date(transactionToEdit.createdAt).getTime()) < 48 * 3600000)
-                        )
-                    )}
-                    <div class="space-y-3">
-                        <span
-                            class="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1"
-                            >Associated Transactions (Chain)</span
-                        >
-                        <div class="space-y-2.5">
-                            {#each associatedTransactions as at (at.id)}
-                                <div
-                                    class="p-4 bg-indigo-50/30 border border-indigo-100/50 rounded-2xl flex items-center justify-between group hover:border-indigo-200 transition-all shadow-sm"
-                                >
-                                    <div class="space-y-1">
-                                        <p class="text-xs font-black text-slate-800">
-                                            {at.receiver || at.description || "Untitled Transaction"}
-                                        </p>
-                                        <div class="flex items-center gap-2 text-[10px] font-black text-slate-400 tracking-wider">
-                                            <span class="text-indigo-600/60 uppercase">{getTxAccountName(at)}</span>
-                                            <span>•</span>
-                                            <span>{new Date(at.createdAt).toLocaleDateString()}</span>
-                                            <span>•</span>
-                                            <span class={at.amount < 0 ? "text-rose-500" : "text-emerald-500"}>
-                                                {at.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} EUR
-                                            </span>
-                                            {#if at.internalStatus}
-                                                <span>•</span>
-                                                <span class="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded-md text-[8px]">{at.internalStatus}</span>
-                                            {/if}
-                                        </div>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        {#if at.id === transactionToEdit.linkedTransactionId}
-                                            <Link class="w-3.5 h-3.5 text-indigo-500" />
-                                        {:else if at.correlationId === transactionToEdit.correlationId}
-                                            <Layers class="w-3.5 h-3.5 text-slate-400" />
-                                        {/if}
-                                    </div>
                                 </div>
                             {/each}
                         </div>
