@@ -27,6 +27,70 @@ const requests = new Map<string, QueuedRequest>();
 const eventListeners = new Map<string, Array<(data: any) => void>>();
 const offlineQueue: QueuedRequest[] = [];
 
+const pathSchemaMap: Record<string, any> = {
+  "auth::handshake": api.AuthSuccessResponseSchema,
+  "auth::begin": api.AuthBeginResponseSchema,
+  "auth::finish": api.AuthSuccessResponseSchema,
+  "auth::recovery": api.AuthSuccessResponseSchema,
+
+  "assets::list": api.AssetListSchema,
+  "assets::save": api.AssetSchema,
+  "assets::delete": api.GenericIDSchema,
+
+  "loans::list": api.LoanListSchema,
+  "loans::save": api.LoanSchema,
+  "loans::delete": api.GenericIDSchema,
+
+  "incomes::list": api.IncomeListSchema,
+  "incomes::save": api.IncomeSchema,
+  "incomes::delete": api.GenericIDSchema,
+
+  "bills::list": api.BillListSchema,
+  "bills::save": api.BillSchema,
+  "bills::delete": api.GenericIDSchema,
+
+  "expenses::list": api.ExpenseListSchema,
+  "expenses::save": api.ExpenseSchema,
+  "expenses::delete": api.GenericIDSchema,
+
+  "modifications::list": api.ModificationListSchema,
+  "modifications::save": api.ModificationSchema,
+  "modifications::delete": api.GenericIDSchema,
+
+  "scenarios::list": api.ScenarioListSchema,
+  "scenarios::save": api.ScenarioSchema,
+  "scenarios::delete": api.GenericIDSchema,
+
+  "virtualaccounts::list": api.VirtualAccountListSchema,
+  "virtualaccounts::save": api.VirtualAccountSchema,
+  "virtualaccounts::delete": api.GenericIDSchema,
+
+  "pools::list": api.TransactionPoolListSchema,
+  "pools::save": api.TransactionPoolSchema,
+  "pools::delete": api.GenericIDSchema,
+
+  "rules::list": api.TransactionRuleListSchema,
+  "rules::save": api.TransactionRuleSchema,
+  "rules::delete": api.GenericIDSchema,
+
+  "tags::list": api.AvailableTagListSchema,
+  "tags::save": api.AvailableTagSchema,
+  "tags::delete": api.GenericIDSchema,
+
+  "automations::list_plans": api.ExecutionPlanListSchema,
+  "automations::save_plan": api.ExecutionPlanSchema,
+  "automations::delete_plan": api.GenericIDSchema,
+  "automations::list_connections": api.ExecutionConnectionListSchema,
+  "automations::save_connection": api.ExecutionConnectionSchema,
+  "automations::delete_connection": api.GenericIDSchema,
+  "automations::list_logs": api.ExecutionLogListSchema,
+
+  "integrations::list": api.IntegrationListSchema,
+  "integrations::save": api.IntegrationSchema,
+  "integrations::delete": api.GenericIDSchema,
+  "integrations::list_accounts": api.IntegrationAccountListSchema,
+};
+
 let activeToken: string | null = null;
 if (typeof window !== "undefined") {
   activeToken = localStorage.getItem("auth_token");
@@ -112,8 +176,21 @@ export function connect(): Promise<void> {
                 }
               }
 
-              // Robust fallback: brute-force try parsing against all exported schemas in api
+              // 2. Try the static path map
+              if (!parseSuccessful && req.path) {
+                const schema = pathSchemaMap[req.path];
+                if (schema) {
+                  const parsed = tryProtoParse(schema, streamMsg.data);
+                  if (parsed !== null) {
+                    decodedPayload = parsed;
+                    parseSuccessful = true;
+                  }
+                }
+              }
+
+              // 3. Fallback: check all exported schemas to find a structural match (legacy compatibility fallback)
               if (!parseSuccessful && streamMsg.data.length > 0) {
+                console.warn(`[WS] Path "${req.path}" did not resolve via responseSchemas or pathSchemaMap. Falling back to brute force parser.`);
                 for (const key of Object.keys(api)) {
                   if (key.endsWith("Schema") && key !== "ErrorSchema" && key !== "WSResponseSchema") {
                     const schema = (api as any)[key];
