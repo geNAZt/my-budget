@@ -50,6 +50,11 @@
     }
 
     let accounts = $state<(VirtualAccount & { activeVersion: VirtualAccountVersion })[]>([]);
+    let sortedAccounts = $derived(
+        [...accounts].sort((a, b) => {
+            return (a.name || "").localeCompare(b.name || "");
+        })
+    );
     let isLoading = $state(true);
     let isSaving = $state(false);
     let error = $state<string | null>(null);
@@ -277,75 +282,66 @@
             </button>
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each accounts as acc (acc.id)}
-                <div
-                    class="glass-card p-6 flex flex-col justify-between group hover:shadow-2xl hover:shadow-indigo-100/20 transition-all duration-500 border-l-4"
-                    style="border-left-color: {acc.activeVersion?.color}"
-                >
-                    <div>
-                        <div class="flex items-center justify-between mb-4">
-                            <div
-                                class="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg"
-                                style="background-color: {acc.activeVersion
-                                    .color}"
-                            >
-                                <Wallet class="w-5 h-5" />
-                            </div>
-                            <div class="flex gap-2">
-                                <button
-                                    onclick={() => openEdit(acc)}
-                                    class="p-2 bg-slate-50 hover:bg-indigo-50 border border-slate-100 hover:border-indigo-200 text-slate-400 hover:text-indigo-600 rounded-xl transition-all"
-                                >
-                                    <Edit3 class="w-4 h-4" />
-                                </button>
-                                <button
-                                    onclick={() => triggerDelete(acc.id!)}
-                                    class="p-2 bg-slate-50 hover:bg-rose-50 border border-slate-100 hover:border-rose-100 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
-                                >
-                                    <Trash2 class="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                        <h3
-                            class="text-lg font-black text-slate-900 group-hover:text-indigo-600 transition-colors"
-                        >
-                            {acc.name}
-                        </h3>
-                        <p
-                            class="text-slate-500 text-xs mt-1 font-medium line-clamp-2 min-h-[32px]"
-                        >
-                            {acc.activeVersion?.description ||
-                                "No description provided."}
-                        </p>
-                    </div>
-
-                    <div
-                        class="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between"
-                    >
-                        <div>
-                            <span
-                                class="text-[10px] font-black text-slate-400 uppercase tracking-wider block"
-                                >Starting Balance</span
-                            >
-                            <span class="text-xl font-black text-slate-900"
-                                >{formatGermanAmount(
-                                    acc.activeVersion?.startingBalance,
-                                )}€</span
-                            >
-                        </div>
-                        <div
-                            class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg text-slate-500"
-                        >
-                            <Info class="w-3 h-3" />
-                            <span
-                                class="text-[9px] font-black uppercase tracking-wider"
-                                >Virtual</span
-                            >
-                        </div>
-                    </div>
-                </div>
-            {/each}
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 w-12">Color</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Description</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Starting Balance</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedAccounts as acc (acc.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4">
+                                    <div
+                                        class="w-6 h-6 rounded-lg border border-white/20 shadow-sm"
+                                        style="background-color: {acc.activeVersion?.color || '#cbd5e1'}"
+                                    ></div>
+                                </td>
+                                <td class="px-6 py-4 font-bold text-slate-800">{acc.name}</td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700 max-w-xs truncate">
+                                    {acc.activeVersion?.description || "No description provided."}
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                        Virtual
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                        <span>€</span>
+                                        <span>{formatGermanAmount(acc.activeVersion?.startingBalance)}</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => openEdit(acc)}
+                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-100 rounded-xl transition-all"
+                                            title="Edit"
+                                        >
+                                            <Edit3 class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => triggerDelete(acc.id!)}
+                                            class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-100 rounded-xl transition-all"
+                                            title="Delete"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>

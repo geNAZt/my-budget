@@ -73,6 +73,16 @@
     }
 
     let expenses = $state<(Expense & { activeVersion: ExpenseVersion })[]>([]);
+    let sortedExpenses = $derived(
+        [...expenses].sort((a, b) => {
+            const dateA = a.activeVersion?.dueDate || "";
+            const dateB = b.activeVersion?.dueDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return (a.name || "").localeCompare(b.name || "");
+        })
+    );
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -361,88 +371,60 @@
             </button>
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each expenses as expense (expense.id)}
-                <div
-                    transition:fade
-                    class="glass-card p-8 group hover:border-rose-200/50 transition-all duration-300 relative overflow-hidden"
-                >
-                    <div
-                        class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500/0 via-rose-500/20 to-rose-500/0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-
-                    <div class="flex justify-between items-start mb-8">
-                        <div class="space-y-1">
-                            <h3
-                                class="text-xl font-black tracking-tight text-slate-900"
-                            >
-                                {expense.name}
-                            </h3>
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="px-2 py-0.5 bg-rose-50 text-rose-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]"
-                                >
-                                    One-Time
-                                </span>
-                                <span
-                                    class="px-2 py-0.5 bg-slate-100 text-slate-400 rounded-md text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1"
-                                >
-                                    <History class="w-2.5 h-2.5" /> Latest
-                                </span>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() => editExpense(expense)}
-                                class="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100"
-                                title="Edit (Create New Version)"
-                            >
-                                <Pencil class="w-4 h-4" />
-                            </button>
-                            <button
-                                onclick={() => {
-                                    expenseToDelete = expense.id!;
-                                    showDeleteConfirm = true;
-                                }}
-                                class="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                title="Delete/Revert"
-                            >
-                                <Trash2 class="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div>
-                            <p
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                            >
-                                Value
-                            </p>
-                            <p class="text-3xl font-black text-slate-900">
-                                {formatGermanAmount(
-                                    expense.activeVersion?.amount,
-                                )} €
-                            </p>
-                        </div>
-
-                        <div
-                            class="flex items-center gap-6 pt-6 border-t border-slate-100"
-                        >
-                            <div class="space-y-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1"
-                                >
-                                    <Calendar class="w-3 h-3" /> Due Date
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {formatDate(expense.activeVersion?.dueDate)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {/each}
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Due Date</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedExpenses as expense (expense.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4 font-bold text-slate-800">{expense.name}</td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <span class="px-2 py-0.5 bg-rose-50 text-rose-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                        One-Time
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(expense.activeVersion?.dueDate)}</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                        <span>€</span>
+                                        <span>{formatGermanAmount(expense.activeVersion?.amount)}</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => editExpense(expense)}
+                                            class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100"
+                                            title="Edit (Create New Version)"
+                                        >
+                                            <Pencil class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => {
+                                                expenseToDelete = expense.id!;
+                                                showDeleteConfirm = true;
+                                            }}
+                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Delete/Revert"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>

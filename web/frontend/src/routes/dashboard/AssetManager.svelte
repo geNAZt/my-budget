@@ -131,6 +131,16 @@
     }
 
     let assets = $state<(Asset & { activeVersion: AssetVersion })[]>([]);
+    let sortedAssets = $derived(
+        [...assets].sort((a, b) => {
+            const dateA = a.activeVersion?.startDate || "";
+            const dateB = b.activeVersion?.startDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return (a.name || "").localeCompare(b.name || "");
+        })
+    );
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let loans = $state<Loan[]>([]);
@@ -719,351 +729,110 @@
             </button>
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each assets as asset (asset.id)}
-                <div
-                    transition:fade
-                    class="glass-card p-8 group hover:border-emerald-200/50 transition-all duration-300 relative overflow-hidden"
-                >
-                    <div
-                        class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/0 via-emerald-500/20 to-emerald-500/0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-
-                    <div class="flex justify-between items-start mb-6">
-                        <div class="space-y-1">
-                            <h3
-                                class="text-xl font-black tracking-tight text-slate-900"
-                            >
-                                {asset.name}
-                            </h3>
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]"
-                                >
-                                    {asset.activeVersion.type === "ETF"
-                                        ? "ETF Portfolio"
-                                        : asset.activeVersion.interestInterval}
-                                </span>
-                                <span
-                                    class="px-2 py-0.5 bg-slate-100 text-slate-400 rounded-md text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1"
-                                >
-                                    <History class="w-2.5 h-2.5" /> Latest
-                                </span>
-                                {#if asset.activeVersion.stopModificationId}
-                                    {@const mod = modifications.find(
-                                        (m) =>
-                                            m.id ===
-                                            asset.activeVersion
-                                                .stopModificationId,
-                                    )}
-                                    <span
-                                        class="px-2 py-0.5 bg-amber-50 text-amber-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1"
-                                        title="Closes when {mod?.description ||
-                                            'Modification'} triggers"
-                                    >
-                                        <Layers class="w-2.5 h-2.5" /> Auto-Stop
-                                    </span>
-                                {/if}
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() => editAsset(asset)}
-                                class="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border border-transparent hover:border-emerald-100"
-                                title="Refine (New Version)"
-                            >
-                                <Pencil class="w-4 h-4" />
-                            </button>
-                            <button
-                                onclick={() => duplicateAsset(asset)}
-                                class="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
-                                title="Duplicate Asset"
-                            >
-                                <Copy class="w-4 h-4" />
-                            </button>
-                            <button
-                                onclick={() => {
-                                    assetToDelete = asset.id!;
-                                    showDeleteConfirm = true;
-                                }}
-                                class="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                title="Lifecycle Action"
-                            >
-                                <Trash2 class="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <p
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                                >
-                                    Monthly Rate
-                                </p>
-                                <div class="flex items-center gap-2">
-                                    {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                                        <div>
-                                            <p
-                                                class="text-2xl font-black text-slate-900"
-                                            >
-                                                {formatGermanAmount(
-                                                    asset.activeVersion.subAssets.reduce(
-                                                        (sum, sa) =>
-                                                            sum +
-                                                            sa.amountPerMonth,
-                                                        0,
-                                                    ),
-                                                )} €
-                                            </p>
-                                            <p
-                                                class="text-[8px] font-black text-indigo-500 uppercase tracking-[0.2em] mt-0.5"
-                                            >
-                                                Target Sum
-                                            </p>
-                                        </div>
-                                    {:else if asset.activeVersion.amountPerMonth > 0}
-                                        <p
-                                            class="text-2xl font-black text-slate-900"
-                                        >
-                                            {formatGermanAmount(
-                                                asset.activeVersion
-                                                    .amountPerMonth,
-                                            )} €
-                                        </p>
-                                    {:else}
-                                        <div
-                                            class="flex items-center gap-1.5 text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 shadow-sm"
-                                        >
-                                            <Waves class="w-3.5 h-3.5" />
-                                            <span
-                                                class="text-[10px] font-black uppercase tracking-[0.2em]"
-                                                >Remainder</span
-                                            >
-                                        </div>
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Monthly Rate</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Started</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Target</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedAssets as asset (asset.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4">
+                                    <div class="font-bold text-slate-800">{asset.name}</div>
+                                    {#if asset.activeVersion.stopModificationId}
+                                        <div class="text-[9px] font-black text-amber-600 uppercase tracking-wider mt-0.5">Auto-Stop</div>
                                     {/if}
-                                </div>
-                            </div>
-                            <div>
-                                <p
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                                >
-                                    Interest
-                                </p>
-                                <p class="text-2xl font-black text-slate-900">
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                        {asset.activeVersion.type === "ETF"
+                                            ? "ETF Portfolio"
+                                            : asset.activeVersion.interestInterval}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
                                     {asset.activeVersion.type === "ETF"
                                         ? "STOCHASTIC"
-                                        : formatGermanAmount(
-                                              asset.activeVersion.interestRate,
-                                          ) + "%"}
-                                </p>
-                                {#if asset.activeVersion.penalties && asset.activeVersion.penalties.length > 0}
-                                    {#each asset.activeVersion.penalties as penalty}
-                                        <p
-                                            class="text-[9px] font-black text-rose-500 uppercase tracking-tighter mt-1 flex items-center gap-1"
+                                        : formatGermanAmount(asset.activeVersion.interestRate) + "%"}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                        <span>€</span>
+                                        <span>
+                                            {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
+                                                {formatGermanAmount(
+                                                    asset.activeVersion.subAssets.reduce((sum, sa) => sum + sa.amountPerMonth, 0)
+                                                )}
+                                            {:else if asset.activeVersion.amountPerMonth > 0}
+                                                {formatGermanAmount(asset.activeVersion.amountPerMonth)}
+                                            {:else}
+                                                Remainder
+                                            {/if}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(asset.activeVersion.startDate)}</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-indigo-600">
+                                        <span>€</span>
+                                        <span>
+                                            {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
+                                                {formatGermanAmount(
+                                                    asset.activeVersion.subAssets.reduce(
+                                                        (sum, sa) => sum + (parseFloat(String(sa.targetValue)) || 0),
+                                                        0
+                                                    )
+                                                )}
+                                            {:else if asset.activeVersion.dumpingLoanId}
+                                                Dumps Loan
+                                            {:else}
+                                                {formatGermanAmount(parseFloat(String(asset.activeVersion.targetValue)) || 0)}
+                                            {/if}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => duplicateAsset(asset)}
+                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
+                                            title="Duplicate Asset"
                                         >
-                                            <AlertCircle class="w-2.5 h-2.5" />
-                                            {penalty.name}: {formatGermanAmount(
-                                                penalty.percentage,
-                                            )}% ({penalty.triggerType ===
-                                            "WITHDRAWAL"
-                                                ? "W"
-                                                : "I"})
-                                        </p>
-                                    {/each}
-                                {/if}
-                            </div>
-                        </div>
-
-                        <!-- ETF Tracker Detail Overlay (If ETF) -->
-                        {#if asset.activeVersion.type === "ETF" && asset.activeVersion.etfConfig && asset.activeVersion.etfConfig.length > 0}
-                            <div
-                                class="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl space-y-3"
-                            >
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >
-                                    Portfolio Nodes
-                                </p>
-                                <div class="space-y-2">
-                                    {#each asset.activeVersion.etfConfig as tracker}
-                                        <div
-                                            class="flex justify-between items-center text-[10px]"
+                                            <Copy class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => editAsset(asset)}
+                                            class="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border border-transparent hover:border-emerald-100"
+                                            title="Refine (New Version)"
                                         >
-                                            <span
-                                                class="font-bold text-slate-600"
-                                                >{tracker.tracker}
-                                                {#if tracker.historicalTracker}
-                                                    <span
-                                                        class="text-slate-400 font-medium ml-1"
-                                                        >({tracker.historicalTracker}{tracker.conversionTracker
-                                                            ? ` / ${tracker.conversionTracker}`
-                                                            : ""})</span
-                                                    >
-                                                {/if}</span
-                                            >
-                                            <div
-                                                class="flex items-center gap-3"
-                                            >
-                                                <span
-                                                    class="font-black text-slate-900"
-                                                    >{(
-                                                        tracker.percentage * 100
-                                                    ).toFixed(0)}%</span
-                                                >
-                                                <span
-                                                    class="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[8px] font-black text-slate-400"
-                                                    >TER {tracker.ter}%</span
-                                                >
-                                            </div>
-                                        </div>
-                                    {/each}
-                                </div>
-                            </div>
-                        {/if}
-
-                        <!-- Sub-Assets Targets Detail Overlay -->
-                        {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                            <div
-                                class="p-4 bg-slate-50/50 border border-slate-100 rounded-2xl space-y-3"
-                            >
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1"
-                                >
-                                    <Target
-                                        class="w-3.5 h-3.5 text-indigo-500"
-                                    /> Logical Targets ({asset.activeVersion
-                                        .subAssets.length})
-                                </p>
-                                <div
-                                    class="space-y-2 max-h-[160px] overflow-y-auto pr-1"
-                                >
-                                    {#each asset.activeVersion.subAssets as target}
-                                        <div
-                                            class="flex flex-col p-2.5 bg-white border border-slate-100 rounded-xl space-y-1 shadow-sm"
+                                            <Pencil class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => {
+                                                assetToDelete = asset.id!;
+                                                showDeleteConfirm = true;
+                                            }}
+                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Lifecycle Action"
                                         >
-                                            <div
-                                                class="flex justify-between items-center text-[11px]"
-                                            >
-                                                <span
-                                                    class="font-black text-slate-700"
-                                                    >{target.name}</span
-                                                >
-                                                <span
-                                                    class="font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[9px] tracking-tight"
-                                                >
-                                                    Goal: {formatGermanAmount(
-                                                        parseFloat(
-                                                            String(target.targetValue),
-                                                        ),
-                                                    )} €
-                                                </span>
-                                            </div>
-                                            <div
-                                                class="flex justify-between items-center text-[9px] text-slate-400 font-bold"
-                                            >
-                                                <span
-                                                    >Contrib: {formatGermanAmount(
-                                                        target.amountPerMonth,
-                                                    )} €/m</span
-                                                >
-                                                {#if target.dumpingLoanId}
-                                                    <span
-                                                        class="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded tracking-tighter flex items-center gap-0.5"
-                                                    >
-                                                        <Activity
-                                                            class="w-2.5 h-2.5"
-                                                        /> Dumps: {loans.find(
-                                                            (l) =>
-                                                                l.id ===
-                                                                target.dumpingLoanId,
-                                                        )?.name || "Loan"}
-                                                    </span>
-                                                {/if}
-                                            </div>
-                                            <div
-                                                class="flex items-center gap-1 text-[9px] text-slate-400 font-medium"
-                                            >
-                                                <Calendar
-                                                    class="w-3 h-3 text-slate-350"
-                                                />
-                                                <span
-                                                    >Active: {formatDate(
-                                                        target.startDate,
-                                                    )} - {target.endDate
-                                                        ? formatDate(
-                                                              target.endDate,
-                                                          )
-                                                        : "Ongoing"}</span
-                                                >
-                                            </div>
-                                        </div>
-                                    {/each}
-                                </div>
-                            </div>
-                        {/if}
-
-                        <div
-                            class="flex items-center gap-6 pt-6 border-t border-slate-100"
-                        >
-                            <div class="space-y-1 flex-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1"
-                                >
-                                    <Calendar class="w-3 h-3" /> Started
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {formatDate(asset.activeVersion.startDate)}
-                                </p>
-                            </div>
-                            <div class="space-y-1 flex-1 text-right">
-                                <p
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5 flex items-center justify-end gap-1"
-                                >
-                                    <Target class="w-3 h-3" /> Target
-                                </p>
-                                <p
-                                    class="text-sm font-black text-indigo-600 truncate"
-                                >
-                                    {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                                        {formatGermanAmount(
-                                            asset.activeVersion.subAssets.reduce(
-                                                (sum, sa) =>
-                                                    sum +
-                                                    (parseFloat(
-                                                        String(sa.targetValue),
-                                                    ) || 0),
-                                                0,
-                                            ),
-                                        )} €
-                                    {:else if asset.activeVersion.dumpingLoanId}
-                                        Dumps: {loans.find(
-                                            (l) =>
-                                                l.id ===
-                                                asset.activeVersion
-                                                    .dumpingLoanId,
-                                        )?.name || "Loading..."}
-                                    {:else}
-                                        {formatGermanAmount(
-                                            parseFloat(
-                                                String(asset.activeVersion.targetValue),
-                                            ),
-                                        )} €
-                                    {/if}
-                                </p>
-                                {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                                    <p
-                                        class="text-[8px] font-black text-indigo-500 uppercase tracking-[0.2em] mt-0.5"
-                                    >
-                                        Multiple Targets
-                                    </p>
-                                {/if}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {/each}
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>

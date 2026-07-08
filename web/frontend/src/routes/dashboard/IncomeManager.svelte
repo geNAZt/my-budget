@@ -72,6 +72,16 @@
     }
 
     let incomes = $state<(Income & { activeVersion: IncomeVersion })[]>([]);
+    let sortedIncomes = $derived(
+        [...incomes].sort((a, b) => {
+            const dateA = a.activeVersion?.startDate || "";
+            const dateB = b.activeVersion?.startDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return (a.name || "").localeCompare(b.name || "");
+        })
+    );
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -396,121 +406,73 @@
             </button>
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each incomes as income (income.id)}
-                <div
-                    transition:fade
-                    class="glass-card p-8 group hover:border-indigo-200/50 transition-all duration-300 relative overflow-hidden"
-                >
-                    <div
-                        class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500/0 via-indigo-500/20 to-indigo-500/0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-
-                    <div class="flex justify-between items-start mb-8">
-                        <div class="space-y-1">
-                            <h3
-                                class="text-xl font-black tracking-tight text-slate-900"
-                            >
-                                {income.name}
-                            </h3>
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]"
-                                >
-                                    {income.activeVersion?.intervalMonths === 1
-                                        ? "Monthly"
-                                        : income.activeVersion
-                                                .intervalMonths === 3
-                                          ? "Quarterly"
-                                          : "Yearly"}
-                                </span>
-                                <span
-                                    class="px-2 py-0.5 bg-slate-100 text-slate-400 rounded-md text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1"
-                                >
-                                    <History class="w-2.5 h-2.5" /> Latest
-                                </span>
-                                {#if income.activeVersion?.stopModificationId}
-                                    {@const mod = modifications.find(
-                                        (m) =>
-                                            m.id ===
-                                            income.activeVersion
-                                                .stopModificationId,
-                                    )}
-                                    <span
-                                        class="px-2 py-0.5 bg-amber-50 text-amber-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-1"
-                                        title="Stops when {mod?.description ||
-                                            'Modification'} triggers"
-                                    >
-                                        <Layers class="w-2.5 h-2.5" /> Auto-Stop
-                                    </span>
-                                {/if}
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() => editIncome(income)}
-                                class="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
-                                title="Edit (Create New Version)"
-                            >
-                                <Pencil class="w-4 h-4" />
-                            </button>
-                            <button
-                                onclick={() => {
-                                    incomeToDelete = income.id!;
-                                    showDeleteConfirm = true;
-                                }}
-                                class="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                title="Delete/Revert"
-                            >
-                                <Trash2 class="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div>
-                            <p
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                            >
-                                Value
-                            </p>
-                            <p class="text-3xl font-black text-slate-900">
-                                {formatGermanAmount(
-                                    income.activeVersion?.amount,
-                                )} €
-                            </p>
-                        </div>
-
-                        <div
-                            class="flex items-center gap-6 pt-6 border-t border-slate-100"
-                        >
-                            <div class="space-y-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1"
-                                >
-                                    <Calendar class="w-3 h-3" /> From
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {formatDate(
-                                        income.activeVersion?.startDate,
-                                    )}
-                                </p>
-                            </div>
-                            <ArrowRight class="w-4 h-4 text-slate-200" />
-                            <div class="space-y-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-1"
-                                >
-                                    <Clock class="w-3 h-3" /> To
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {formatDate(income.activeVersion?.endDate)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {/each}
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interval</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">From</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">To</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedIncomes as income (income.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4 font-bold text-slate-800">{income.name}</td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <div class="flex items-center gap-2">
+                                        <span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                            {income.activeVersion?.intervalMonths === 1
+                                                ? "Monthly"
+                                                : income.activeVersion?.intervalMonths === 3
+                                                  ? "Quarterly"
+                                                  : "Yearly"}
+                                        </span>
+                                        {#if income.activeVersion?.stopModificationId}
+                                            <span class="px-2 py-0.5 bg-amber-50 text-amber-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                                Auto-Stop
+                                            </span>
+                                        {/if}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(income.activeVersion?.startDate)}</td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(income.activeVersion?.endDate)}</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                        <span>€</span>
+                                        <span>{formatGermanAmount(income.activeVersion?.amount)}</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => editIncome(income)}
+                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
+                                            title="Edit (Create New Version)"
+                                        >
+                                            <Pencil class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => {
+                                                incomeToDelete = income.id!;
+                                                showDeleteConfirm = true;
+                                            }}
+                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Delete/Revert"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>

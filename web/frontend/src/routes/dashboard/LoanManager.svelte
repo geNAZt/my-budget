@@ -54,6 +54,16 @@
     }
 
     let loans = $state<Loan[]>([]);
+    let sortedLoans = $derived(
+        [...loans].sort((a, b) => {
+            const dateA = a.activeVersion?.startDate || "";
+            const dateB = b.activeVersion?.startDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return (a.name || "").localeCompare(b.name || "");
+        })
+    );
     let pools = $state<any[]>([]);
     let virtualAccounts = $state<any[]>([]);
     let isLoading = $state(true);
@@ -380,120 +390,76 @@
             >
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each loans || [] as loan (loan.id)}
-                <div
-                    transition:fade
-                    class="glass-card p-8 group hover:border-slate-400/50 transition-all duration-300 relative overflow-hidden"
-                >
-                    <div
-                        class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-slate-500/0 via-slate-500/20 to-slate-500/0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-                    <div class="flex justify-between items-start mb-6">
-                        <div class="space-y-1">
-                            <h3
-                                class="text-xl font-black tracking-tight text-slate-900"
-                            >
-                                {loan.name}
-                            </h3>
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]"
-                                >
-                                    {loan.activeVersion &&
-                                    loan.activeVersion.balloonLeftover > 0
-                                        ? "Balloon"
-                                        : loan.activeVersion?.isInterestOnly
-                                          ? "Interest-Only"
-                                          : "Standard"}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() => editLoan(loan)}
-                                class="p-2.5 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all"
-                                ><Pencil class="w-4 h-4" /></button
-                            >
-                            <button
-                                onclick={() => triggerDelete(loan.id!)}
-                                class="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                                ><Trash2 class="w-4 h-4" /></button
-                            >
-                        </div>
-                    </div>
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <p
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                                >
-                                    Principal
-                                </p>
-                                <p class="text-2xl font-black text-slate-900">
-                                    {formatGermanAmount(
-                                        loan.activeVersion?.amountLent || 0,
-                                    )} €
-                                </p>
-                            </div>
-                            <div>
-                                <p
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                                >
-                                    Interest
-                                </p>
-                                <p class="text-2xl font-black text-slate-900">
-                                    {formatGermanAmount(
-                                        loan.activeVersion?.interestRate || 0,
-                                    )}%
-                                </p>
-                            </div>
-                        </div>
-                        {#if loan.activeVersion?.nextLoanId}
-                            <div
-                                class="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl"
-                            >
-                                <Link class="w-3 h-3 text-emerald-600" />
-                                <span
-                                    class="text-[9px] font-black uppercase text-emerald-600 tracking-[0.2em]"
-                                    >Next: {loans.find(
-                                        (l) =>
-                                            l.id ===
-                                            loan.activeVersion?.nextLoanId,
-                                    )?.name || "Linked"}</span
-                                >
-                            </div>
-                        {/if}
-                        <div
-                            class="flex items-center gap-6 pt-6 border-t border-slate-100"
-                        >
-                            <div class="space-y-1 flex-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >
-                                    Started
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {formatDate(
-                                        loan.activeVersion?.startDate || null,
-                                    )}
-                                </p>
-                            </div>
-                            <div class="space-y-1 flex-1 text-right">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >
-                                    Runtime
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    {loan.activeVersion?.runtimeMonths || 0}{" "}
-                                    Months
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {/each}
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Started</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Runtime</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Principal</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedLoans as loan (loan.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4">
+                                    <div class="font-bold text-slate-800">{loan.name}</div>
+                                    {#if loan.activeVersion?.nextLoanId}
+                                        <div class="text-[9px] font-black text-emerald-600 uppercase tracking-wider mt-0.5">Linked</div>
+                                    {/if}
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                        {loan.activeVersion && loan.activeVersion.balloonLeftover > 0
+                                            ? "Balloon"
+                                            : loan.activeVersion?.isInterestOnly
+                                              ? "Interest-Only"
+                                              : "Standard"}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    {formatDate(loan.activeVersion?.startDate || null)}
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    {loan.activeVersion?.runtimeMonths || 0} Months
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    {formatGermanAmount(loan.activeVersion?.interestRate || 0)}%
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                        <span>€</span>
+                                        <span>{formatGermanAmount(loan.activeVersion?.amountLent || 0)}</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => editLoan(loan)}
+                                            class="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all border border-transparent hover:border-slate-200"
+                                            title="Edit (Create New Version)"
+                                        >
+                                            <Pencil class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => triggerDelete(loan.id!)}
+                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Delete/Revert"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>

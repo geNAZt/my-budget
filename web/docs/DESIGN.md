@@ -418,3 +418,25 @@ To streamline budgeting directly from the transaction feed, we introduce a wizar
      - Creates a transaction rule matching the explicit transaction ID using `rules::save` (assigning the rule field to `"TRANSACTION_ID"` and regex to the transaction's ID, targeting the newly created pool ID).
      - Creates a corresponding expense with the pool name via `expenses::save` WebSocket API (amount is set to the absolute transaction amount, pool ID is the new pool ID, due date is set to the active month start day, and it is linked to the current active scenario).
      - Closes the detail view and prompts a refresh of the page state.
+
+## 26. Dashboard Table Lists Redesign
+
+To improve UI usability and density, we convert the entity managers (Assets, Incomes, Expenses, Bills, Loans, Modifications, and Virtual Accounts) from card grid views to compact, clean proper table views.
+
+### Design Details
+1. **Sorted Lists**:
+   - Every list is sorted client-side before rendering.
+   - Sorting order: Primary: Start/Book date (ascending order). Secondary: Name (alphabetical/ascending order).
+   - If an entity does not have a start/book date (such as virtual accounts), we sort it alphabetically by name.
+   - For `incomes`, `bills`, `loans`, `assets`, `modifications`, the date field is `activeVersion.startDate`.
+   - For `expenses`, the date field is `activeVersion.dueDate`.
+   - For `modifications`, the secondary sort field is `description` since they do not have a `name` field.
+2. **Table UI Layout**:
+   - Replace the grid layout `<div class="grid ... gap-6">` with a responsive table wrapped in a `.glass-card` container.
+   - Clean, modern table headers with small uppercase labels: `text-[10px] font-black uppercase tracking-[0.2em] text-slate-400`.
+   - Table rows with generous horizontal and vertical padding for premium feel.
+3. **Rightmost Action Column**:
+   - The rightmost column of the table row is reserved for primary lifecycle actions: Edit (pencil icon) and Delete (trash icon).
+   - For `AssetManager.svelte`, we also place the duplicate button (copy icon) in the rightmost actions column next to edit/delete.
+4. **Header Add Button**:
+   - Ensure the "Add" button remains easily accessible in the header of each page/component.

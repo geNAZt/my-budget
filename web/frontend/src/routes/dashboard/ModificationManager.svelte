@@ -84,6 +84,16 @@
     }
 
     let mods = $state<Modification[]>([]);
+    let sortedMods = $derived(
+        [...mods].sort((a, b) => {
+            const dateA = a.activeVersion?.startDate || "";
+            const dateB = b.activeVersion?.startDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return (a.description || "").localeCompare(b.description || "");
+        })
+    );
     let isLoading = $state(true);
     let isSaving = $state(false);
     let error = $state<string | null>(null);
@@ -364,98 +374,68 @@
             >
         </div>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each mods as m (m.id)}
-                <div
-                    transition:fade
-                    class="glass-card p-8 group hover:border-indigo-200/50 transition-all duration-300 relative overflow-hidden"
-                >
-                    <div
-                        class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500/0 via-indigo-500/20 to-indigo-500/0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-                    <div class="flex justify-between items-start mb-6">
-                        <div class="space-y-1">
-                            <h3
-                                class="text-xl font-black tracking-tight text-slate-900"
-                            >
-                                {m.description}
-                            </h3>
-                            <div class="flex items-center gap-2">
-                                <span
-                                    class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]"
-                                >
-                                    {getTargetNames(m)}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                onclick={() => editMod(m)}
-                                class="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
-                                title="Refine (New Version)"
-                            >
-                                <Pencil class="w-4 h-4" />
-                            </button>
-                            <button
-                                onclick={() => {
-                                    modToDelete = m.id!;
-                                    showDeleteConfirm = true;
-                                }}
-                                class="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                title="Archive Modification"
-                            >
-                                <Trash2 class="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                    <div class="space-y-6">
-                        <div>
-                            <p
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1"
-                            >
-                                Adjustment
-                            </p>
-                            <p
-                                class="text-3xl font-black {(m.activeVersion?.amount ?? 0) >= 0
-                                    ? 'text-emerald-600'
-                                    : 'text-rose-600'}"
-                            >
-                                {(m.activeVersion?.amount ?? 0) >= 0
-                                    ? "+"
-                                    : ""}{formatGermanAmount(
-                                    m.activeVersion?.amount ?? 0,
-                                )} €
-                            </p>
-                        </div>
-                        <div
-                            class="flex items-center gap-6 pt-6 border-t border-slate-100"
-                        >
-                            <div class="space-y-1 flex-1">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >
-                                    Node Interval
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
+        <div class="glass-card overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left">
+                    <thead>
+                        <tr class="border-b border-slate-100 bg-slate-50/50">
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Description</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Targets</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interval</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Date</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Adjustment</th>
+                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedMods as m (m.id)}
+                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                                <td class="px-6 py-4 font-bold text-slate-800">{m.description}</td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
+                                        {getTargetNames(m)}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
                                     {m.activeVersion?.intervalMonths === 0
                                         ? "One-Time"
                                         : m.activeVersion?.intervalMonths + "m"}
-                                </p>
-                            </div>
-                            <div class="space-y-1 flex-1 text-right">
-                                <p
-                                    class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >
-                                    Date
-                                </p>
-                                <p class="text-xs font-bold text-slate-700">
+                                </td>
+                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
                                     {formatDate(m.activeVersion?.startDate)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {/each}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black {(m.activeVersion?.amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                                        <span>{(m.activeVersion?.amount ?? 0) >= 0 ? "+" : ""}</span>
+                                        <span>{formatGermanAmount(m.activeVersion?.amount ?? 0)} €</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="inline-flex gap-2">
+                                        <button
+                                            onclick={() => editMod(m)}
+                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
+                                            title="Refine (New Version)"
+                                        >
+                                            <Pencil class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onclick={() => {
+                                                modToDelete = m.id!;
+                                                showDeleteConfirm = true;
+                                            }}
+                                            class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-red-100"
+                                            title="Archive Modification"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
         </div>
     {/if}
 </div>
