@@ -509,3 +509,25 @@ To allow linking realtime (integrated bank) accounts to virtual ones, we dynamic
   - The starting balance is initialized to `0` at the start of each month.
   - All inflows and outflows of the month are fully booked to reveal the final net monthly change.
 
+## 7. Realtime Category Sums & Diff Detection
+To support realtime diff detection, we calculate and display a realtime sum for each financial category (Incomes, Bills, Events, Loans, Assets) alongside its planned sum in `BudgetSheet.svelte`.
+
+### Computation Rules
+1. **Real/Realtime Amount per Entry**:
+   - If an entry has a synced realtime balance (`entry.realtimeBalance !== undefined && entry.realtimeBalance !== null`), we use `entry.realtimeBalance` as its real amount.
+   - Otherwise (the entry is outstanding/unbooked), we use its planned `entry.amount`.
+2. **Category Sums**:
+   - The planned sum of a category is the sum of planned `amount` for all entries in that category.
+   - The real sum of a category is the sum of real/realtime amounts for all entries in that category.
+3. **Remainder Sum**:
+   - `realRemainder = realIncome - realBills - realExpenses - realLoans - realAssets` (adhering to sign conventions).
+4. **Presence Check**:
+   - The realtime sum of a category is displayed if at least one entry in that category has a synced realtime balance.
+
+### Display Format
+- We reuse the outstanding/parentheses format of the virtual account: `Planned (Real)`.
+- **Planned Component**: `€ {formatCurrency(planned)}` (existing layout).
+- **Real Component**: `(€ {formatCurrency(real)})` styled with `text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums ml-1` (visible only when realtime balances are present in the category).
+- This format is applied to both the top summary bar and the individual category table headers.
+
+

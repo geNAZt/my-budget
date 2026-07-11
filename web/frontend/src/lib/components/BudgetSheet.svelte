@@ -346,6 +346,32 @@
         });
     });
 
+    const getRealCategorySum = (entries: Entry[]) => {
+        return (entries || []).reduce((sum, entry) => {
+            const val = (entry.realtimeBalance !== undefined && entry.realtimeBalance !== null)
+                ? entry.realtimeBalance
+                : entry.amount;
+            return sum + val;
+        }, 0);
+    };
+
+    const hasRealtime = (entries: Entry[]) => {
+        return (entries || []).some(entry => entry.realtimeBalance !== undefined && entry.realtimeBalance !== null);
+    };
+
+    const realIncome = $derived(getRealCategorySum(breakdown.incomes));
+    const realBills = $derived(getRealCategorySum(breakdown.bills));
+    const realExpenses = $derived(getRealCategorySum(breakdown.expenses));
+    const realAssets = $derived(getRealCategorySum(breakdown.assets));
+    const realLoans = $derived(getRealCategorySum(breakdown.loans));
+    const realRemainder = $derived(realIncome - realBills - realExpenses - realLoans - realAssets);
+
+    const hasRealIncome = $derived(hasRealtime(breakdown.incomes));
+    const hasRealBills = $derived(hasRealtime(breakdown.bills));
+    const hasRealExpenses = $derived(hasRealtime(breakdown.expenses));
+    const hasRealAssets = $derived(hasRealtime(breakdown.assets));
+    const hasRealLoans = $derived(hasRealtime(breakdown.loans));
+
     function formatCurrency(val: number) {
         return val.toLocaleString("de-DE", {
             minimumFractionDigits: 2,
@@ -610,31 +636,51 @@
         >
             <span class="flex items-center gap-1.5"
                 ><span class="text-emerald-600 font-black">+</span> Incomes
-                <span class="font-black text-slate-900"
-                    >€ {formatCurrency(totalIncome)}</span
-                ></span
-            >
+                <span class="font-black text-slate-900 flex items-center gap-1"
+                    ><span>€ {formatCurrency(totalIncome)}</span>
+                    {#if hasRealIncome}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(realIncome)})
+                        </span>
+                    {/if}
+                </span
+            ></span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
             <span class="flex items-center gap-1.5"
                 ><span class="text-rose-500 font-black">-</span> Bills
-                <span class="font-black text-slate-900"
-                    >€ {formatCurrency(totalBills)}</span
-                ></span
-            >
+                <span class="font-black text-slate-900 flex items-center gap-1"
+                    ><span>€ {formatCurrency(totalBills)}</span>
+                    {#if hasRealBills}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(realBills)})
+                        </span>
+                    {/if}
+                </span
+            ></span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
             <span class="flex items-center gap-1.5"
                 ><span class="text-rose-500 font-black">-</span> Events
-                <span class="font-black text-slate-900"
-                    >€ {formatCurrency(totalExpenses)}</span
-                ></span
-            >
+                <span class="font-black text-slate-900 flex items-center gap-1"
+                    ><span>€ {formatCurrency(totalExpenses)}</span>
+                    {#if hasRealExpenses}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(realExpenses)})
+                        </span>
+                    {/if}
+                </span
+            ></span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
             <span class="flex items-center gap-1.5"
                 ><span class="text-rose-500 font-black">-</span> Loans
-                <span class="font-black text-slate-900"
-                    >€ {formatCurrency(totalLoans)}</span
-                ></span
-            >
+                <span class="font-black text-slate-900 flex items-center gap-1"
+                    ><span>€ {formatCurrency(totalLoans)}</span>
+                    {#if hasRealLoans}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(realLoans)})
+                        </span>
+                    {/if}
+                </span
+            ></span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
             <span class="flex items-center gap-1.5">
                 <span
@@ -644,9 +690,15 @@
                     >{totalAssets < 0 ? "+" : "-"}</span
                 >
                 Assets
-                <span class="font-black text-slate-900"
-                    >€ {formatCurrency(Math.abs(totalAssets))}</span
-                >
+                <span class="font-black text-slate-900 flex items-center gap-1"
+                    ><span>€ {formatCurrency(Math.abs(totalAssets))}</span>
+                    {#if hasRealAssets}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(Math.abs(realAssets))})
+                        </span>
+                    {/if}
+                </span
+            >
             </span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
             <span class="flex items-center gap-1.5"
@@ -657,10 +709,15 @@
                 <span
                     class="font-black {remainder >= 0
                         ? 'text-emerald-600'
-                        : 'text-rose-600'} text-xs"
-                    >€ {formatCurrency(remainder)}</span
-                ></span
-            >
+                        : 'text-rose-600'} text-xs flex items-center gap-1"
+                    ><span>€ {formatCurrency(remainder)}</span>
+                    {#if hasRealIncome || hasRealBills || hasRealExpenses || hasRealLoans || hasRealAssets}
+                        <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                            (€ {formatCurrency(realRemainder)})
+                        </span>
+                    {/if}
+                </span
+            ></span>
         </div>
 
         <!-- Additionally see the virtual account balances of the month -->
@@ -848,9 +905,14 @@
                     >
                         Income Sources
                     </h4>
-                    <span class="text-[10px] font-black text-emerald-600"
-                        >€ {formatCurrency(totalIncome)}</span
-                    >
+                    <span class="text-[10px] font-black text-emerald-600 flex items-center gap-1">
+                        <span>€ {formatCurrency(totalIncome)}</span>
+                        {#if hasRealIncome}
+                            <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                                (€ {formatCurrency(realIncome)})
+                            </span>
+                        {/if}
+                    </span>
                 </div>
                 <div class="p-0">
                     <table class="w-full text-left border-collapse table-fixed">
@@ -911,9 +973,14 @@
                     >
                         Liability: Bills
                     </h4>
-                    <span class="text-[10px] font-black text-rose-600"
-                        >€ {formatCurrency(totalBills)}</span
-                    >
+                    <span class="text-[10px] font-black text-rose-600 flex items-center gap-1">
+                        <span>€ {formatCurrency(totalBills)}</span>
+                        {#if hasRealBills}
+                            <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                                (€ {formatCurrency(realBills)})
+                            </span>
+                        {/if}
+                    </span>
                 </div>
                 <div class="p-0 max-h-[400px] overflow-y-auto">
                     <table class="w-full text-left border-collapse table-fixed">
@@ -977,9 +1044,14 @@
                     >
                         One-Time Events
                     </h4>
-                    <span class="text-[10px] font-black text-rose-600"
-                        >€ {formatCurrency(totalExpenses)}</span
-                    >
+                    <span class="text-[10px] font-black text-rose-600 flex items-center gap-1">
+                        <span>€ {formatCurrency(totalExpenses)}</span>
+                        {#if hasRealExpenses}
+                            <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                                (€ {formatCurrency(realExpenses)})
+                            </span>
+                        {/if}
+                    </span>
                 </div>
                 <div class="p-0">
                     <table class="w-full text-left border-collapse table-fixed">
@@ -1040,9 +1112,14 @@
                     >
                         Wealth Nodes
                     </h4>
-                    <span class="text-[10px] font-black text-emerald-700 dark:text-emerald-400"
-                        >Inflow: € {formatCurrency(totalAssets)}</span
-                    >
+                    <span class="text-[10px] font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                        <span>Inflow: € {formatCurrency(totalAssets)}</span>
+                        {#if hasRealAssets}
+                            <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                                (€ {formatCurrency(realAssets)})
+                            </span>
+                        {/if}
+                    </span>
                 </div>
                 <div class="p-0">
                     <table class="w-full text-left border-collapse table-fixed">
@@ -1245,9 +1322,14 @@
                     >
                         Loan Amortization
                     </h4>
-                    <span class="text-[10px] font-black text-rose-700 dark:text-rose-400"
-                        >€ {formatCurrency(totalLoans)}</span
-                    >
+                    <span class="text-[10px] font-black text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                        <span>€ {formatCurrency(totalLoans)}</span>
+                        {#if hasRealLoans}
+                            <span class="text-[9px] font-bold text-slate-400 dark:text-slate-500 tabular-nums">
+                                (€ {formatCurrency(realLoans)})
+                            </span>
+                        {/if}
+                    </span>
                 </div>
                 <div class="p-0">
                     <table class="w-full text-left border-collapse table-fixed">
