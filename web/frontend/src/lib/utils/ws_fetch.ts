@@ -471,3 +471,35 @@ export function tryProtoParse<T extends DescMessage>(
     return null;
   }
 }
+
+export function decode(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === "object" && "$typeName" in obj) {
+    try {
+      const typeName = obj.$typeName.split(".").pop();
+      const schemaName = typeName + "Schema";
+      const schema = (api as any)[schemaName];
+      if (schema) {
+        return toJson(schema, obj);
+      }
+    } catch (e) {
+      console.warn("[decode] Protobuf toJson fallback failed, falling back to JSON copy:", e);
+    }
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(decode);
+  }
+
+  if (typeof obj === "object") {
+    try {
+      return structuredClone(obj);
+    } catch {
+      return JSON.parse(JSON.stringify(obj));
+    }
+  }
+
+  return obj;
+}
+

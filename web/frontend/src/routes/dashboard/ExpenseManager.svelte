@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import {
         ExpenseListSchema,
         TransactionPoolListSchema,
@@ -8,41 +8,32 @@
         GenericIDSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
-    import { formatGermanAmount, parseGermanAmount } from "$lib/utils/format";
-    const decode = (obj: any) => {
-        if (!obj) return obj;
-        try {
-            return structuredClone(obj);
-        } catch (e) {
-            return JSON.parse(JSON.stringify(obj));
-        }
-    };
+    import { formatGermanAmount } from "$lib/utils/format";
+    import { toInputMonth, fromInputMonth } from "$lib/utils/date";
+
 
     import { onMount } from "svelte";
     import {
         Plus,
         Trash2,
         Calendar,
-        Euro,
-        ArrowRight,
-        Clock,
-        Loader2,
-        History,
-        Archive,
         Undo2,
+        Archive,
         Pencil,
         CreditCard,
-        ClipboardPaste,
-        CheckCircle2,
         AlertCircle,
-        Check,
-        Globe,
-        Languages,
     } from "@lucide/svelte";
-    import { fade, slide } from "svelte/transition";
+    import { fade } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
     import TimeSliceManager from "$lib/components/TimeSliceManager.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import CurrencyInput from "$lib/components/ui/CurrencyInput.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Modal from "$lib/components/ui/Modal.svelte";
+    import ConfirmModal from "$lib/components/ui/ConfirmModal.svelte";
+    import Table from "$lib/components/ui/Table.svelte";
 
     interface TimeSlice {
         id?: string;
@@ -97,14 +88,6 @@
         })),
     ]);
 
-    const virtualAccountOptions = $derived([
-        { id: "", label: "None / General" },
-        ...(virtualAccounts || []).map((va) => ({
-            id: va.id,
-            label: va.name,
-        })),
-    ]);
-
     const virtualAccountMultiOptions = $derived(
         (virtualAccounts || []).map((va) => ({
             id: va.id,
@@ -116,7 +99,6 @@
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
     let currentExpense = $state<Expense & { activeVersion: ExpenseVersion }>(createNewExpense() as any);
-    let amountInput = $state("");
     let expenseToDelete = $state<string | null>(null);
 
     function createNewExpense(): Expense & { activeVersion: ExpenseVersion } {
@@ -174,8 +156,6 @@
                     slices: [],
                 };
             }
-            currentExpense.activeVersion.amount =
-                parseGermanAmount(amountInput);
             const [, err] = await wsCall(
                 "expenses::save",
                 ExpenseSchema,
@@ -229,7 +209,6 @@
         if (!currentExpense.activeVersion.slices) {
             currentExpense.activeVersion.slices = [];
         }
-        amountInput = formatGermanAmount(currentExpense.activeVersion.amount);
         showAddModal = true;
     }
 
@@ -256,15 +235,7 @@
         }
     }
 
-    function toInputMonth(isoStr: string | null): string {
-        if (!isoStr) return "";
-        return isoStr.substring(0, 7); // "YYYY-MM"
-    }
 
-    function fromInputMonth(val: string): string {
-        if (!val) return "";
-        return val + "-01T00:00:00Z";
-    }
 
     function formatDate(dateStr: string | null) {
         if (!dateStr) return "Ongoing";
@@ -280,40 +251,28 @@
     });
 </script>
 
-<svelte:window onkeydown={(e) => {
-    if (e.key === 'Escape') {
-        showAddModal = false;
-        showDeleteConfirm = false;
-    }
-}} />
-
 <div class="space-y-8">
     <!-- Header -->
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6"
-    >
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-            <h2
-                class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500"
-            >
+            <h2 class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
                 Variable Expenses
             </h2>
             <p class="text-slate-500 font-medium text-sm">
                 One-time deterministic costs and variable liabilities.
             </p>
         </div>
-        <div class="flex gap-4">
-            <button
+        <div>
+            <Button
                 onclick={() => {
                     currentExpense = createNewExpense();
-                    amountInput = "";
                     showAddModal = true;
                 }}
-                class="btn-primary bg-rose-600 hover:bg-rose-700 shadow-rose-200"
+                class="bg-rose-600 hover:bg-rose-700 shadow-rose-100"
             >
                 <Plus class="w-5 h-5" />
                 Add Expense
-            </button>
+            </Button>
         </div>
     </div>
 
@@ -329,29 +288,25 @@
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
-            <button
+            <Button
                 onclick={fetchData}
-                class="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200"
+                class="bg-rose-600 text-white hover:bg-rose-700 shadow-rose-100"
             >
                 Retry
-            </button>
+            </Button>
         </div>
     {/if}
 
     {#if isLoading}
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 class="w-10 h-10 text-rose-600 animate-spin" />
-            <p
-                class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]"
-            >
+            <div class="w-10 h-10 border-4 border-t-rose-600 border-rose-100 rounded-full animate-spin"></div>
+            <p class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
                 Syncing Events...
             </p>
         </div>
     {:else if expenses.length === 0}
         <div class="glass-card p-20 text-center space-y-6">
-            <div
-                class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner"
-            >
+            <div class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner">
                 <CreditCard class="w-12 h-12 text-slate-300" />
             </div>
             <div class="space-y-2">
@@ -359,287 +314,191 @@
                     No Expenses Logged
                 </h3>
                 <p class="text-slate-500 max-w-xs mx-auto font-medium text-sm">
-                    Add one-time events like furniture, travel, or down
-                    payments.
+                    Add one-time events like furniture, travel, or down payments.
                 </p>
             </div>
-            <button
+            <Button
+                variant="secondary"
                 onclick={() => (showAddModal = true)}
-                class="btn-secondary mx-auto"
+                class="mx-auto"
             >
                 Initialize First Entry
-            </button>
+            </Button>
         </div>
     {:else}
-        <div class="glass-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-left">
-                    <thead>
-                        <tr class="border-b border-slate-100 bg-slate-50/50">
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Due Date</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each sortedExpenses as expense (expense.id)}
-                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
-                                <td class="px-6 py-4 font-bold text-slate-800">{expense.name}</td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    <span class="px-2 py-0.5 bg-rose-50 text-rose-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
-                                        One-Time
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(expense.activeVersion?.dueDate)}</td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
-                                        <span>€</span>
-                                        <span>{formatGermanAmount(expense.activeVersion?.amount)}</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <div class="inline-flex gap-2">
-                                        <button
-                                            onclick={() => editExpense(expense)}
-                                            class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100"
-                                            title="Edit (Create New Version)"
-                                        >
-                                            <Pencil class="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onclick={() => {
-                                                expenseToDelete = expense.id!;
-                                                showDeleteConfirm = true;
-                                            }}
-                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                            title="Delete/Revert"
-                                        >
-                                            <Trash2 class="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <Table>
+            {#snippet header()}
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Due Date</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+            {/snippet}
+            {#snippet body()}
+                {#each sortedExpenses as expense (expense.id)}
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                        <td class="px-6 py-4 font-bold text-slate-800">{expense.name}</td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            <Badge variant="error">One-Time</Badge>
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(expense.activeVersion?.dueDate)}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
+                                <span>€</span>
+                                <span>{formatGermanAmount(expense.activeVersion?.amount)}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="inline-flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => editExpense(expense)}
+                                    title="Edit (Create New Version)"
+                                    class="hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100"
+                                >
+                                    <Pencil class="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => triggerDelete(expense.id!)}
+                                    title="Delete/Revert"
+                                    class="hover:text-red-600 hover:bg-red-50 hover:border-red-100"
+                                >
+                                    <Trash2 class="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </td>
+                    </tr>
+                {/each}
+            {/snippet}
+        </Table>
     {/if}
 </div>
 
 <!-- Add/Edit Modal -->
-{#if showAddModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
+<Modal
+    bind:open={showAddModal}
+    title="{currentExpense.id ? 'Refine' : 'New'} One-Time Expense"
+    subtitle={currentExpense.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this deterministic event.'}
+>
+    <form
+        onsubmit={(e) => {
+            e.preventDefault();
+            saveExpense();
+        }}
+        class="space-y-8"
     >
-        <div
-            transition:slide
-            class="w-full max-w-lg bg-white rounded-[30px] shadow-2xl relative overflow-hidden"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <button
-                onclick={() => (showAddModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-            >
-                <Plus class="w-6 h-6 rotate-45" />
-            </button>
-
-            <div class="p-10 space-y-10">
-                <div>
-                    <h3
-                        class="text-2xl font-black text-slate-900 tracking-tight"
-                    >
-                        {currentExpense.id ? "Refine" : "New"} One-Time Expense
-                    </h3>
-                    <p class="text-slate-500 font-medium text-sm">
-                        {currentExpense.id
-                            ? "Changes will be saved as a new immutable version."
-                            : "Define parameters for this deterministic event."}
-                    </p>
-                </div>
-
-                <form
-                    onsubmit={(e) => {
-                        e.preventDefault();
-                        saveExpense();
-                    }}
-                    class="space-y-8"
-                >
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Label</label
-                                >
-                                <input
-                                    bind:value={currentExpense.name}
-                                    placeholder="e.g. New Furniture"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                    required
-                                />
-                            </div>
-                            <SearchableMultiSelect
-                                label="Planned Account Link"
-                                options={virtualAccountMultiOptions}
-                                bind:values={currentExpense.accountIds}
-                                placeholder="Select accounts..."
-                            />
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <SearchableDropdown
-                                label="Realtime Pool Link"
-                                options={poolOptions}
-                                bind:value={currentExpense.poolId}
-                                placeholder="None / Uncategorized"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Amount (€)</label
-                            >
-                            <div class="relative">
-                                <div
-                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
-                                >
-                                    <Euro class="w-4 h-4 text-slate-400" />
-                                </div>
-                                <input
-                                    type="text"
-                                    bind:value={amountInput}
-                                    placeholder="1.234,56"
-                                    class="block w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Due Month</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentExpense.activeVersion.dueDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentExpense.activeVersion.dueDate =
-                                        fromInputMonth(e.target.value))}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div class="border-t border-slate-100 pt-8">
-                        <TimeSliceManager
-                            bind:slices={currentExpense.activeVersion.slices}
-                            label="Time Variations (Makes Recurring)"
-                        />
-                    </div>
-
-                    <div class="pt-6">
-                        <button
-                            disabled={isSaving}
-                            class="btn-primary w-full py-4 text-lg shadow-2xl shadow-indigo-100 bg-indigo-600 hover:bg-indigo-700"
-                        >
-                            {#if isSaving}
-                                <Loader2 class="w-6 h-6 animate-spin" />
-                                <span>Versioning Data...</span>
-                            {:else}
-                                <span>Save as New Version</span>
-                            {/if}
-                        </button>
-                    </div>
-                </form>
+        <div class="space-y-6">
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    label="Label"
+                    bind:value={currentExpense.name}
+                    placeholder="e.g. New Furniture"
+                    required
+                />
+                <SearchableMultiSelect
+                    label="Planned Account Link"
+                    options={virtualAccountMultiOptions}
+                    bind:values={currentExpense.accountIds}
+                    placeholder="Select accounts..."
+                />
+            </div>
+            <div class="grid grid-cols-2 gap-6">
+                <SearchableDropdown
+                    label="Realtime Pool Link"
+                    options={poolOptions}
+                    bind:value={currentExpense.poolId}
+                    placeholder="None / Uncategorized"
+                />
             </div>
         </div>
-    </div>
-{/if}
+
+        <div class="grid grid-cols-2 gap-6">
+            <CurrencyInput
+                label="Amount (€)"
+                bind:value={currentExpense.activeVersion.amount}
+                required
+            />
+            <Input
+                type="month"
+                label="Due Month"
+                value={toInputMonth(currentExpense.activeVersion.dueDate)}
+                oninput={(e: any) => (currentExpense.activeVersion.dueDate = fromInputMonth(e.target.value))}
+                required
+            />
+        </div>
+
+        <div class="border-t border-slate-100 pt-8 dark:border-slate-800">
+            <TimeSliceManager
+                bind:slices={currentExpense.activeVersion.slices}
+                label="Time Variations (Makes Recurring)"
+            />
+        </div>
+
+        <div class="pt-6">
+            <Button
+                type="submit"
+                variant="primary"
+                loading={isSaving}
+                loadingLabel="Versioning Data..."
+                class="w-full py-4 text-lg"
+            >
+                Save as New Version
+            </Button>
+        </div>
+    </form>
+</Modal>
 
 <!-- Deletion Confirmation Modal -->
-{#if showDeleteConfirm}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-md bg-white rounded-[30px] shadow-2xl p-10 relative overflow-hidden"
+<ConfirmModal
+    bind:open={showDeleteConfirm}
+    title="Manage Lifecycle"
+    description="How should the WealthEngine handle this deletion?"
+>
+    <div class="grid grid-cols-1 gap-4">
+        <button
+            onclick={() => confirmDelete("revert")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-indigo-100 hover:bg-indigo-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
         >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <div class="text-center space-y-2 mb-8">
-                <h3 class="text-2xl font-black text-slate-900">
-                    Manage Lifecycle
-                </h3>
-                <p class="text-slate-500 font-medium text-sm">
-                    How should the WealthEngine handle this deletion?
+            <div class="p-3 bg-indigo-100 dark:bg-indigo-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Undo2 class="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+                <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
+                    Revert to Previous
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Delete only the latest version record.
                 </p>
             </div>
+        </button>
 
-            <div class="grid grid-cols-1 gap-4">
-                <button
-                    onclick={() => confirmDelete("revert")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-indigo-100 hover:bg-indigo-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-indigo-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Undo2 class="w-6 h-6 text-indigo-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-slate-900 leading-tight">
-                            Revert to Previous
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Delete only the latest version record.
-                        </p>
-                    </div>
-                </button>
-
-                <button
-                    onclick={() => confirmDelete("full")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-rose-100 hover:bg-rose-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-rose-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Archive class="w-6 h-6 text-rose-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-slate-900 leading-tight">
-                            Full Archive
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Hide this expense and all versions.
-                        </p>
-                    </div>
-                </button>
+        <button
+            onclick={() => confirmDelete("full")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-rose-100 hover:bg-rose-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
+        >
+            <div class="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Archive class="w-6 h-6 text-rose-600 dark:text-rose-400" />
             </div>
-
-            <button
-                onclick={() => {
-                    showDeleteConfirm = false;
-                    expenseToDelete = null;
-                }}
-                class="w-full mt-8 py-3 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] hover:text-slate-900 transition-colors"
-            >
-                Cancel Action
-            </button>
-        </div>
+            <div>
+                <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
+                    Full Archive
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Hide this expense and all versions.
+                </p>
+            </div>
+        </button>
     </div>
-{/if}
+
+    <Button
+        variant="secondary"
+        onclick={() => {
+            showDeleteConfirm = false;
+            expenseToDelete = null;
+        }}
+        class="mt-8 w-full"
+    >
+        Cancel Action
+    </Button>
+</ConfirmModal>

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import {
         LoanListSchema,
         TransactionPoolListSchema,
@@ -8,25 +8,31 @@
         GenericIDSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
-    import { formatGermanAmount, parseGermanAmount } from "$lib/utils/format";
-    const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
+    import { formatGermanAmount } from "$lib/utils/format";
+    import { toInputMonth, fromInputMonth } from "$lib/utils/date";
+
 
     import { onMount } from "svelte";
     import {
         Plus,
         Trash2,
-        Loader2,
-        Archive,
         Undo2,
+        Archive,
         Pencil,
         AlertCircle,
         HandCoins,
-        Link,
     } from "@lucide/svelte";
 
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import CurrencyInput from "$lib/components/ui/CurrencyInput.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Modal from "$lib/components/ui/Modal.svelte";
+    import ConfirmModal from "$lib/components/ui/ConfirmModal.svelte";
+    import Table from "$lib/components/ui/Table.svelte";
 
     interface LoanVersion {
         id?: string;
@@ -78,14 +84,6 @@
         })),
     ]);
 
-    const virtualAccountOptions = $derived([
-        { id: "", label: "None / General" },
-        ...(virtualAccounts || []).map((va) => ({
-            id: va.id,
-            label: va.name,
-        })),
-    ]);
-
     const virtualAccountMultiOptions = $derived(
         (virtualAccounts || []).map((va) => ({
             id: va.id,
@@ -97,10 +95,6 @@
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
     let currentLoan = $state<Loan>(createNewLoan());
-    let amountInput = $state("");
-    let interestInput = $state("");
-    let balloonInput = $state("");
-    let penaltyInput = $state("");
     let loanToDelete = $state<string | null>(null);
 
     function createNewLoan(): Loan {
@@ -158,17 +152,6 @@
         if (!currentLoan.name) return;
         isSaving = true;
         try {
-            if (currentLoan.activeVersion) {
-                currentLoan.activeVersion.amountLent =
-                    parseGermanAmount(amountInput);
-                currentLoan.activeVersion.interestRate =
-                    parseGermanAmount(interestInput);
-                currentLoan.activeVersion.balloonLeftover =
-                    parseGermanAmount(balloonInput);
-                currentLoan.activeVersion.earlyPayoffPenalty =
-                    parseGermanAmount(penaltyInput);
-            }
-
             const [, err] = await wsCall(
                 "loans::save",
                 LoanSchema,
@@ -196,19 +179,13 @@
                               nextLoanId:
                                   currentLoan.activeVersion.nextLoanId || "",
                               balloonLeftover:
-                                  currentLoan.activeVersion.balloonLeftover ||
-                                  0,
+                                  currentLoan.activeVersion.balloonLeftover || 0,
                               isInterestOnly:
-                                  currentLoan.activeVersion.isInterestOnly ||
-                                  false,
+                                  currentLoan.activeVersion.isInterestOnly || false,
                               earlyPayoffPenalty:
-                                  currentLoan.activeVersion
-                                      .earlyPayoffPenalty || 0,
-                              createdAt:
-                                  currentLoan.activeVersion.createdAt || "",
+                                  currentLoan.activeVersion.earlyPayoffPenalty || 0,
                           }
                         : undefined,
-                    linkToScenarios: currentLoan.linkToScenarios || [],
                 },
                 [ErrorSchema],
             ).one();
@@ -238,19 +215,6 @@
                 earlyPayoffPenalty: 1,
             };
         }
-        if (!currentLoan.accountIds) currentLoan.accountIds = [];
-
-        amountInput = formatGermanAmount(currentLoan.activeVersion.amountLent);
-        interestInput = formatGermanAmount(
-            currentLoan.activeVersion.interestRate,
-        );
-        balloonInput = formatGermanAmount(
-            currentLoan.activeVersion.balloonLeftover,
-        );
-        penaltyInput = formatGermanAmount(
-            currentLoan.activeVersion.earlyPayoffPenalty,
-        );
-
         showAddModal = true;
     }
 
@@ -277,15 +241,7 @@
         }
     }
 
-    function toInputMonth(isoStr: string | null): string {
-        if (!isoStr) return "";
-        return isoStr.substring(0, 7); // "YYYY-MM"
-    }
 
-    function fromInputMonth(val: string): string {
-        if (!val) return "";
-        return val + "-01T00:00:00Z";
-    }
 
     function formatDate(dateStr: string | null) {
         if (!dateStr) return "Ongoing";
@@ -301,40 +257,27 @@
     });
 </script>
 
-<svelte:window onkeydown={(e) => {
-    if (e.key === 'Escape') {
-        showAddModal = false;
-        showDeleteConfirm = false;
-    }
-}} />
-
 <div class="space-y-8">
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6"
-    >
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-            <h2
-                class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500"
-            >
-                Loan Management
+            <h2 class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
+                Liability Nodes
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                Deterministic amortization models and liability chains.
+                Amortization schedules and debt structures.
             </p>
         </div>
-        <div class="flex gap-4">
-            <button
+        <div>
+            <Button
                 onclick={() => {
                     currentLoan = createNewLoan();
-                    amountInput = "";
-                    interestInput = "";
-                    balloonInput = "";
                     showAddModal = true;
                 }}
-                class="btn-primary bg-slate-900 shadow-slate-200"
             >
-                <Plus class="w-5 h-5" /> Add Loan
-            </button>
+                <Plus class="w-5 h-5" />
+                Add Loan
+            </Button>
         </div>
     </div>
 
@@ -350,526 +293,353 @@
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
-            <button
+            <Button
                 onclick={fetchData}
-                class="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200"
+                class="bg-rose-600 text-white hover:bg-rose-700 shadow-rose-200"
             >
                 Retry
-            </button>
+            </Button>
         </div>
     {/if}
 
     {#if isLoading}
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 class="w-10 h-10 text-slate-900 animate-spin" />
-            <p
-                class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]"
-            >
-                Calculating Amortization Node...
+            <div class="w-10 h-10 border-4 border-t-indigo-600 border-indigo-100 rounded-full animate-spin"></div>
+            <p class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
+                Syncing Debts...
             </p>
         </div>
-    {:else if (loans || []).length === 0}
+    {:else if loans.length === 0}
         <div class="glass-card p-20 text-center space-y-6">
-            <div
-                class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner"
-            >
+            <div class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner">
                 <HandCoins class="w-12 h-12 text-slate-300" />
             </div>
             <div class="space-y-2">
                 <h3 class="text-xl font-black text-slate-900">
-                    No Active Liabilities
+                    No Liabilities Logged
                 </h3>
                 <p class="text-slate-500 max-w-xs mx-auto font-medium text-sm">
-                    Add your loans to start tracking automated debt repayment.
+                    Keep track of loans, mortgage schedules, or amortization flows.
                 </p>
             </div>
-            <button
+            <Button
+                variant="secondary"
                 onclick={() => (showAddModal = true)}
-                class="btn-secondary mx-auto"
-                >Initialize First Loan</button
+                class="mx-auto"
             >
+                Initialize First Entry
+            </Button>
         </div>
     {:else}
-        <div class="glass-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-left">
-                    <thead>
-                        <tr class="border-b border-slate-100 bg-slate-50/50">
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Started</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Runtime</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Principal</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each sortedLoans as loan (loan.id)}
-                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
-                                <td class="px-6 py-4">
-                                    <div class="font-bold text-slate-800">{loan.name}</div>
-                                    {#if loan.activeVersion?.nextLoanId}
-                                        <div class="text-[9px] font-black text-emerald-600 uppercase tracking-wider mt-0.5">Linked</div>
-                                    {/if}
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
-                                        {loan.activeVersion && loan.activeVersion.balloonLeftover > 0
-                                            ? "Balloon"
-                                            : loan.activeVersion?.isInterestOnly
-                                              ? "Interest-Only"
-                                              : "Standard"}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {formatDate(loan.activeVersion?.startDate || null)}
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {loan.activeVersion?.runtimeMonths || 0} Months
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {formatGermanAmount(loan.activeVersion?.interestRate || 0)}%
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
-                                        <span>€</span>
-                                        <span>{formatGermanAmount(loan.activeVersion?.amountLent || 0)}</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <div class="inline-flex gap-2">
-                                        <button
-                                            onclick={() => editLoan(loan)}
-                                            class="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all border border-transparent hover:border-slate-200"
-                                            title="Edit (Create New Version)"
-                                        >
-                                            <Pencil class="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onclick={() => triggerDelete(loan.id!)}
-                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                            title="Delete/Revert"
-                                        >
-                                            <Trash2 class="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <Table>
+            {#snippet header()}
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Started</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Runtime</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Principal</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+            {/snippet}
+            {#snippet body()}
+                {#each sortedLoans as loan (loan.id)}
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                        <td class="px-6 py-4">
+                            <div class="font-bold text-slate-800 dark:text-slate-100">{loan.name}</div>
+                            {#if loan.activeVersion?.nextLoanId}
+                                <div class="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mt-0.5">Linked</div>
+                            {/if}
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            <Badge variant="slate">
+                                {loan.activeVersion && loan.activeVersion.balloonLeftover > 0
+                                    ? "Balloon"
+                                    : loan.activeVersion?.isInterestOnly
+                                      ? "Interest-Only"
+                                      : "Standard"}
+                            </Badge>
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(loan.activeVersion?.startDate || null)}</td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">{loan.activeVersion?.runtimeMonths || 0} Months</td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatGermanAmount(loan.activeVersion?.interestRate || 0)}%</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900 dark:text-slate-100">
+                                <span>€</span>
+                                <span>{formatGermanAmount(loan.activeVersion?.amountLent || 0)}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="inline-flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => editLoan(loan)}
+                                    title="Edit (Create New Version)"
+                                    class="hover:text-slate-900 hover:bg-slate-50 hover:border-slate-200"
+                                >
+                                    <Pencil class="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => triggerDelete(loan.id!)}
+                                    title="Delete/Revert"
+                                    class="hover:text-red-600 hover:bg-red-50 hover:border-red-100"
+                                >
+                                    <Trash2 class="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </td>
+                    </tr>
+                {/each}
+            {/snippet}
+        </Table>
     {/if}
 </div>
 
 <!-- Add Modal -->
-{#if showAddModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
+<Modal
+    bind:open={showAddModal}
+    title="{currentLoan.id ? 'Refine' : 'New'} Liability Node"
+    subtitle="Define deterministic amortization parameters."
+    maxWidth="max-w-2xl"
+>
+    <form
+        onsubmit={(e) => {
+            e.preventDefault();
+            saveLoan();
+        }}
+        class="space-y-8"
     >
-        <div
-            transition:slide
-            class="w-full max-w-2xl bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] overflow-y-auto"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <button
-                onclick={() => (showAddModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-                ><Plus class="w-6 h-6 rotate-45" /></button
-            >
-            <div class="p-10 space-y-10">
-                <div>
-                    <h3
-                        class="text-2xl font-black text-slate-900 tracking-tight"
-                    >
-                        {currentLoan.id ? "Refine" : "New"} Liability Node
-                    </h3>
-                    <p class="text-slate-500 font-medium text-sm">
-                        Define deterministic amortization parameters.
-                    </p>
-                </div>
-                <form
-                    onsubmit={(e) => {
-                        e.preventDefault();
-                        saveLoan();
-                    }}
-                    class="space-y-8"
-                >
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Loan Identity</label
-                                >
-                                <input
-                                    bind:value={currentLoan.name}
-                                    placeholder="e.g. SWK Loan"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                                    required
-                                />
-                            </div>
-                            <SearchableMultiSelect
-                                label="Planned Account Link"
-                                options={virtualAccountMultiOptions}
-                                bind:values={currentLoan.accountIds}
-                                placeholder="Select accounts..."
-                            />
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <SearchableDropdown
-                                label="Realtime Pool Link"
-                                options={poolOptions}
-                                bind:value={currentLoan.poolId}
-                                placeholder="None / Uncategorized"
-                            />
-                        </div>
-                    </div>
-                    {#if currentLoan.activeVersion}
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Principal (€)</label
-                                ><input
-                                    type="text"
-                                    bind:value={amountInput}
-                                    placeholder="50.000,00"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                    required
-                                />
-                            </div>
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Interest %</label
-                                ><input
-                                    type="text"
-                                    bind:value={interestInput}
-                                    placeholder="5,83"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Runtime (Months)</label
-                                ><input
-                                    type="number"
-                                    bind:value={currentLoan.activeVersion
-                                        .runtimeMonths}
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                    required
-                                />
-                            </div>
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Start Month</label
-                                >
-                                <input
-                                    type="month"
-                                    value={toInputMonth(
-                                        currentLoan.activeVersion.startDate,
-                                    )}
-                                    oninput={(e: any) =>
-                                        (currentLoan.activeVersion!.startDate =
-                                            fromInputMonth(e.target.value))}
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Balloon Leftover (€)</label
-                                ><input
-                                    type="text"
-                                    bind:value={balloonInput}
-                                    placeholder="0,00"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                />
-                            </div>
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Remainder Start</label
-                                >
-                                <input
-                                    type="month"
-                                    value={toInputMonth(
-                                        currentLoan.activeVersion
-                                            .remainderStartDate,
-                                    )}
-                                    oninput={(e: any) =>
-                                        (currentLoan.activeVersion!.remainderStartDate =
-                                            e.target.value
-                                                ? fromInputMonth(e.target.value)
-                                                : null)}
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                />
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Early Payoff Penalty %</label
-                                ><input
-                                    type="text"
-                                    bind:value={penaltyInput}
-                                    placeholder="1,00"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                />
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3 ml-1">
-                            <input
-                                type="checkbox"
-                                bind:checked={currentLoan.activeVersion
-                                    .isInterestOnly}
-                                class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <span
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"
-                                >Interest Only</span
-                            >
-                        </div>
-
-                        <!-- Loan Replacement Section -->
-                        <div
-                            class="space-y-4 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm"
-                        >
-                            <div class="flex items-center justify-between">
-                                <div class="space-y-0.5">
-                                    <label
-                                        class="text-sm font-black text-slate-900"
-                                        >Enable Loan Replacement</label
-                                    >
-                                    <p
-                                        class="text-[10px] font-medium text-slate-500"
-                                    >
-                                        Link to another loan configuration for
-                                        rollover.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onclick={() => {
-                                        if (
-                                            currentLoan.activeVersion!
-                                                .nextLoanId
-                                        ) {
-                                            currentLoan.activeVersion!.nextLoanId =
-                                                null;
-                                        } else {
-                                            const firstOther = loans.find(
-                                                (l) => l.id !== currentLoan.id,
-                                            );
-                                            if (firstOther) {
-                                                currentLoan.activeVersion!.nextLoanId =
-                                                    firstOther.id!;
-
-                                                // Trigger date sync
-                                                const startDate = new Date(
-                                                    currentLoan.activeVersion!.startDate,
-                                                );
-                                                const endDate = new Date(
-                                                    startDate.setMonth(
-                                                        startDate.getMonth() +
-                                                            currentLoan
-                                                                .activeVersion!
-                                                                .runtimeMonths,
-                                                    ),
-                                                );
-                                                const endDateStr =
-                                                    endDate
-                                                        .toISOString()
-                                                        .substring(0, 7) +
-                                                    "-01T00:00:00Z";
-                                                if (firstOther.activeVersion) {
-                                                    firstOther.activeVersion.startDate =
-                                                        endDateStr;
-                                                }
-                                            }
-                                        }
-                                    }}
-                                    class="w-12 h-6 rounded-full transition-all relative {currentLoan
-                                        .activeVersion.nextLoanId
-                                        ? 'bg-indigo-600 shadow-lg shadow-indigo-100'
-                                        : 'bg-slate-200'}"
-                                >
-                                    <div
-                                        class="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all {currentLoan
-                                            .activeVersion.nextLoanId
-                                            ? 'translate-x-6'
-                                            : ''}"
-                                    ></div>
-                                </button>
-                            </div>
-
-                            {#if currentLoan.activeVersion.nextLoanId}
-                                <div class="space-y-2" transition:slide>
-                                    <label
-                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >Next Loan in Chain</label
-                                    >
-                                    <select
-                                        bind:value={currentLoan.activeVersion
-                                            .nextLoanId}
-                                        onchange={() => {
-                                            const nextLoan = loans.find(
-                                                (l) =>
-                                                    l.id ===
-                                                    currentLoan.activeVersion!
-                                                        .nextLoanId,
-                                            );
-                                            if (nextLoan) {
-                                                const startDate = new Date(
-                                                    currentLoan.activeVersion!
-                                                        .startDate,
-                                                );
-                                                const endDate = new Date(
-                                                    startDate.setMonth(
-                                                        startDate.getMonth() +
-                                                            currentLoan
-                                                                .activeVersion!
-                                                                .runtimeMonths,
-                                                    ),
-                                                );
-                                                const endDateStr =
-                                                    endDate
-                                                        .toISOString()
-                                                        .substring(0, 7) +
-                                                    "-01T00:00:00Z";
-
-                                                // Update in local state for immediate feedback
-                                                if (nextLoan.activeVersion) {
-                                                    nextLoan.activeVersion.startDate =
-                                                        endDateStr;
-                                                }
-                                            }
-                                        }}
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                                    >
-                                        {#each loans.filter((l) => l.id !== currentLoan.id) as loan}
-                                            <option value={loan.id}
-                                                >{loan.name}</option
-                                            >
-                                        {/each}
-                                    </select>
-                                </div>
-                            {/if}
-                        </div>
-                    {/if}
-
-                    <div class="pt-6">
-                        <button
-                            disabled={isSaving}
-                            class="btn-primary w-full py-4 text-lg shadow-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100"
-                            >Commit Liability Node</button
-                        >
-                    </div>
-                </form>
+        <div class="space-y-6">
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    label="Loan Identity"
+                    bind:value={currentLoan.name}
+                    placeholder="e.g. SWK Loan"
+                    required
+                />
+                <SearchableMultiSelect
+                    label="Planned Account Link"
+                    options={virtualAccountMultiOptions}
+                    bind:values={currentLoan.accountIds}
+                    placeholder="Select accounts..."
+                />
+            </div>
+            <div class="grid grid-cols-2 gap-6">
+                <SearchableDropdown
+                    label="Realtime Pool Link"
+                    options={poolOptions}
+                    bind:value={currentLoan.poolId}
+                    placeholder="None / Uncategorized"
+                />
             </div>
         </div>
-    </div>
-{/if}
 
-<!-- Delete Modal (Standard) -->
-{#if showDeleteConfirm}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
-    >
-        <div
-            transition:slide
-            class="w-full max-md bg-white rounded-[30px] shadow-2xl p-10 relative overflow-hidden"
+        {#if currentLoan.activeVersion}
+            <div class="grid grid-cols-2 gap-6">
+                <CurrencyInput
+                    label="Principal (€)"
+                    bind:value={currentLoan.activeVersion.amountLent}
+                    required
+                />
+                <Input
+                    type="number"
+                    step="0.01"
+                    label="Interest %"
+                    bind:value={currentLoan.activeVersion.interestRate}
+                    placeholder="5,83"
+                    required
+                />
+            </div>
+
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    type="number"
+                    label="Runtime (Months)"
+                    bind:value={currentLoan.activeVersion.runtimeMonths}
+                    required
+                />
+                <Input
+                    type="month"
+                    label="Start Month"
+                    value={toInputMonth(currentLoan.activeVersion.startDate)}
+                    oninput={(e: any) => (currentLoan.activeVersion!.startDate = fromInputMonth(e.target.value))}
+                    required
+                />
+            </div>
+
+            <div class="grid grid-cols-2 gap-6">
+                <CurrencyInput
+                    label="Balloon Leftover (€)"
+                    bind:value={currentLoan.activeVersion.balloonLeftover}
+                    required={false}
+                />
+                <Input
+                    type="month"
+                    label="Remainder Start"
+                    value={toInputMonth(currentLoan.activeVersion.remainderStartDate)}
+                    oninput={(e: any) => (currentLoan.activeVersion!.remainderStartDate = e.target.value ? fromInputMonth(e.target.value) : null)}
+                />
+            </div>
+
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    type="number"
+                    step="0.01"
+                    label="Early Payoff Penalty %"
+                    bind:value={currentLoan.activeVersion.earlyPayoffPenalty}
+                    placeholder="1,00"
+                />
+            </div>
+
+            <div class="flex items-center gap-3 ml-1">
+                <input
+                    type="checkbox"
+                    bind:checked={currentLoan.activeVersion.isInterestOnly}
+                    class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                    Interest Only
+                </span>
+            </div>
+
+            <!-- Loan Replacement Section -->
+            <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-0.5">
+                        <label class="text-sm font-black text-slate-900 dark:text-slate-100">
+                            Enable Loan Replacement
+                        </label>
+                        <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            Link to another loan configuration for rollover.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onclick={() => {
+                            if (currentLoan.activeVersion!.nextLoanId) {
+                                currentLoan.activeVersion!.nextLoanId = null;
+                            } else {
+                                const firstOther = loans.find((l) => l.id !== currentLoan.id);
+                                if (firstOther) {
+                                    currentLoan.activeVersion!.nextLoanId = firstOther.id!;
+
+                                    // Trigger date sync
+                                    const startDate = new Date(currentLoan.activeVersion!.startDate);
+                                    const endDate = new Date(
+                                        startDate.setMonth(
+                                            startDate.getMonth() + currentLoan.activeVersion!.runtimeMonths,
+                                        ),
+                                    );
+                                    const endDateStr = endDate.toISOString().substring(0, 7) + "-01T00:00:00Z";
+                                    if (firstOther.activeVersion) {
+                                        firstOther.activeVersion.startDate = endDateStr;
+                                    }
+                                }
+                            }
+                        }}
+                        class="w-12 h-6 rounded-full transition-all relative {currentLoan.activeVersion.nextLoanId ? 'bg-indigo-600 shadow-lg shadow-indigo-100 dark:shadow-none' : 'bg-slate-200 dark:bg-slate-700'}"
+                    >
+                        <div class="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all {currentLoan.activeVersion.nextLoanId ? 'translate-x-6' : ''}"></div>
+                    </button>
+                </div>
+
+                {#if currentLoan.activeVersion.nextLoanId}
+                    <div class="space-y-2" transition:slide>
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                            Next Loan in Chain
+                        </label>
+                        <select
+                            bind:value={currentLoan.activeVersion.nextLoanId}
+                            onchange={() => {
+                                const nextLoan = loans.find((l) => l.id === currentLoan.activeVersion!.nextLoanId);
+                                if (nextLoan) {
+                                    const startDate = new Date(currentLoan.activeVersion!.startDate);
+                                    const endDate = new Date(
+                                        startDate.setMonth(
+                                            startDate.getMonth() + currentLoan.activeVersion!.runtimeMonths,
+                                        ),
+                                    );
+                                    const endDateStr = endDate.toISOString().substring(0, 7) + "-01T00:00:00Z";
+                                    if (nextLoan.activeVersion) {
+                                        nextLoan.activeVersion.startDate = endDateStr;
+                                    }
+                                }
+                            }}
+                            class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                        >
+                            {#each loans.filter((l) => l.id !== currentLoan.id) as loan}
+                                <option value={loan.id}>{loan.name}</option>
+                            {/each}
+                        </select>
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
+        <div class="pt-6">
+            <Button
+                type="submit"
+                variant="primary"
+                loading={isSaving}
+                loadingLabel="Saving..."
+                class="w-full py-4 text-lg"
+            >
+                Commit Liability Node
+            </Button>
+        </div>
+    </form>
+</Modal>
+
+<!-- Delete Modal -->
+<ConfirmModal
+    bind:open={showDeleteConfirm}
+    title="Liability Lifecycle"
+    description="How should the WealthEngine handle this deletion?"
+>
+    <div class="grid grid-cols-1 gap-4">
+        <button
+            onclick={() => confirmDelete("revert")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-indigo-100 hover:bg-indigo-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
         >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <div class="text-center space-y-2 mb-8">
-                <h3 class="text-2xl font-black text-slate-900">
-                    Liability Lifecycle
-                </h3>
-                <p class="text-slate-500 font-medium text-sm">
-                    Deterministic removal action.
+            <div class="p-3 bg-indigo-100 dark:bg-indigo-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Undo2 class="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+                <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
+                    Revert Version
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Delete only the latest version record.
                 </p>
             </div>
-            <div class="grid grid-cols-1 gap-4">
-                <button
-                    onclick={() => confirmDelete("revert")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-indigo-100 hover:bg-indigo-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-indigo-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Undo2 class="w-6 h-6 text-indigo-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-slate-900 leading-tight">
-                            Revert Version
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Delete only the latest version record.
-                        </p>
-                    </div></button
-                ><button
-                    onclick={() => confirmDelete("full")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-rose-100 hover:bg-rose-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-rose-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Archive class="w-6 h-6 text-rose-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-rose-600 leading-tight">
-                            Node Archive
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Hide this liability and all versions.
-                        </p>
-                    </div></button
-                >
+        </button>
+
+        <button
+            onclick={() => confirmDelete("full")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-50 hover:border-rose-100 hover:bg-rose-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
+        >
+            <div class="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Archive class="w-6 h-6 text-rose-600 dark:text-rose-400" />
             </div>
-            <button
-                onclick={() => {
-                    showDeleteConfirm = false;
-                    loanToDelete = null;
-                }}
-                class="w-full mt-8 py-3 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] hover:text-slate-900 transition-colors"
-                >Cancel Action</button
-            >
-        </div>
+            <div>
+                <p class="font-black text-rose-600 dark:text-rose-400 leading-tight">
+                    Node Archive
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Hide this liability and all versions.
+                </p>
+            </div>
+        </button>
     </div>
-{/if}
 
-<style>
-    @reference "../../app.css";
-
-    .glass-card {
-        @apply bg-white border border-slate-100 rounded-[32px] shadow-sm;
-    }
-
-    .btn-primary {
-        @apply px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xl;
-    }
-
-    .btn-secondary {
-        @apply px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-all active:scale-95 shadow-sm;
-    }
-</style>
+    <Button
+        variant="secondary"
+        onclick={() => {
+            showDeleteConfirm = false;
+            loanToDelete = null;
+        }}
+        class="mt-8 w-full"
+    >
+        Cancel Action
+    </Button>
+</ConfirmModal>

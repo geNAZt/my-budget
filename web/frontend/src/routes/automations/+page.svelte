@@ -1055,9 +1055,6 @@ console.log("Current budget sheet loaded:", budget);
 
 <style>
     @reference "../../app.css";
-    .glass-card {
-        @apply bg-white border border-slate-100 rounded-[32px] shadow-sm hover:shadow-xl hover:shadow-indigo-100/20 transition-all duration-500;
-    }
 
     .btn-primary {
         @apply px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 hover:shadow-xl hover:shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 border border-slate-900;

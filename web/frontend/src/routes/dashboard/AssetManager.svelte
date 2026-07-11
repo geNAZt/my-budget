@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import {
         AssetListSchema,
         LoanListSchema,
@@ -12,50 +12,34 @@
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
     import { formatGermanAmount, parseGermanAmount } from "$lib/utils/format";
-    const decode = (val: any) => {
-        if (!val) return val;
-        if (typeof val === "string") {
-            return (globalThis as any)["JS" + "ON"].parse(val);
-        }
-        try {
-            return structuredClone(val);
-        } catch (e) {
-            return JSON.parse(JSON.stringify(val));
-        }
-    };
+    import { toInputMonth, fromInputMonth } from "$lib/utils/date";
+
 
     import { onMount } from "svelte";
     import {
         Plus,
         Trash2,
-        Calendar,
-        Euro,
-        ArrowRight,
-        Clock,
-        Loader2,
-        History,
-        Archive,
         Undo2,
+        Archive,
         Pencil,
         Copy,
         PieChart,
-        CheckCircle2,
         AlertCircle,
-        Check,
-        Target,
-        TrendingUp,
-        LineChart,
-        BarChart3,
         Activity,
-        Waves,
         Layers,
-        ShieldCheck,
     } from "@lucide/svelte";
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
     import SubAssetForm from "./assets/components/SubAssetForm.svelte";
     import EtfConfigForm from "./assets/components/EtfConfigForm.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import CurrencyInput from "$lib/components/ui/CurrencyInput.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Modal from "$lib/components/ui/Modal.svelte";
+    import ConfirmModal from "$lib/components/ui/ConfirmModal.svelte";
+    import Table from "$lib/components/ui/Table.svelte";
 
     interface HistoryStitchingSegment {
         provider: string;
@@ -82,7 +66,7 @@
     interface SubAsset {
         id: string;
         name: string;
-        targetValue: string | number; // Handling frontend string input and backend number. We can cast it.
+        targetValue: string | number;
         amountPerMonth: number;
         isRemainderConsumer: boolean;
         remainderStartDate: string | null;
@@ -157,14 +141,6 @@
         ...(pools || []).map((p) => ({
             id: p.id,
             label: p.name,
-        })),
-    ]);
-
-    const virtualAccountOptions = $derived([
-        { id: "", label: "None / General" },
-        ...(virtualAccounts || []).map((va) => ({
-            id: va.id,
-            label: va.name,
         })),
     ]);
 
@@ -261,7 +237,7 @@
 
     function parseNumeric(val: string | number, locale: "DE" | "US"): number {
         if (typeof val === "number") return val;
-        if (typeof val === "number") return val; if (!val) return 0;
+        if (!val) return 0;
         if (locale === "DE") return parseGermanAmount(val);
         let clean = val.toString().trim().replace(/,/g, "");
         return parseFloat(clean) || 0;
@@ -383,68 +359,71 @@
                             currentAsset.activeVersion.interestInterval ||
                             "YEARLY",
                         amountPerMonth:
-                            parseFloat(
-                                currentAsset.activeVersion.amountPerMonth as any,
-                            ) || 0,
+                            currentAsset.activeVersion.amountPerMonth || 0,
                         remainderStartDate:
                             currentAsset.activeVersion.remainderStartDate || "",
                         startDate: currentAsset.activeVersion.startDate || "",
                         endDate: currentAsset.activeVersion.endDate || "",
-                        useForPassiveIncome: !!currentAsset.activeVersion.useForPassiveIncome,
+                        useForPassiveIncome:
+                            !!currentAsset.activeVersion.useForPassiveIncome,
                         etfConfig: (
                             currentAsset.activeVersion.etfConfig || []
-                        ).map((t: any) => ({
+                        ).map((t) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
                             conversionTracker: t.conversionTracker || "",
                             historyProvider: t.historyProvider || "",
-                            percentage: parseFloat(t.percentage) || 0,
-                            ter: parseFloat(t.ter) || 0,
-                            stitchingSegments: (t.stitchingSegments || []).map((seg: any) => ({
+                            percentage: parseFloat(t.percentage as any) || 0,
+                            ter: parseFloat(t.ter as any) || 0,
+                            stitchingSegments: (
+                                t.stitchingSegments || []
+                            ).map((seg) => ({
                                 provider: seg.provider || "",
                                 lookupTicker: seg.lookupTicker || "",
-                                conversionTracker: seg.conversionTracker || "",
+                                conversionTracker:
+                                    seg.conversionTracker || "",
                             })),
                         })),
                         penalties: (
                             currentAsset.activeVersion.penalties || []
-                        ).map((p: any) => ({
+                        ).map((p) => ({
                             name: p.name || "",
-                            triggerType: p.triggerType || "",
-                            percentage: parseFloat(p.percentage) || 0,
+                            triggerType: p.triggerType || "WITHDRAWAL",
+                            percentage: p.percentage || 0,
                         })),
                         subAssets: (
                             currentAsset.activeVersion.subAssets || []
-                        ).map((s: any) => ({
-                            id: s.id || "",
-                            name: s.name || "",
-                            targetValue: parseNumeric(s.targetValue, "DE") || 0,
-                            amountPerMonth: parseNumeric(s.amountPerMonth, "DE") || 0,
-                            isRemainderConsumer: !!s.isRemainderConsumer,
-                            remainderStartDate: s.remainderStartDate || "",
-                            dumpingLoanId: s.dumpingLoanId || "",
-                            startDate: s.startDate || "",
-                            endDate: s.endDate || "",
-                            earliestDumpDate: s.earliestDumpDate || "",
-                            expenseId: s.expenseId || "",
-                            remainderPriority: Number(s.remainderPriority) || 0,
+                        ).map((sa) => ({
+                            id: sa.id || "",
+                            name: sa.name || "",
+                            targetValue:
+                                parseFloat(sa.targetValue as any) || 0,
+                            amountPerMonth: sa.amountPerMonth || 0,
+                            isRemainderConsumer: !!sa.isRemainderConsumer,
+                            remainderStartDate: sa.remainderStartDate || "",
+                            dumpingLoanId: sa.dumpingLoanId || "",
+                            startDate: sa.startDate || "",
+                            endDate: sa.endDate || "",
+                            earliestDumpDate: sa.earliestDumpDate || "",
+                            expenseId: sa.expenseId || "",
+                            remainderPriority: sa.remainderPriority || 0,
                         })),
                     },
                 },
-                [AssetSchema],
+                [ErrorSchema],
             ).one();
             if (err) throw err;
-
-            await fetchData();
             showAddModal = false;
+            await fetchData();
         } catch (err: any) {
-            alert(err.message);
+            error = err.message;
         } finally {
             isSaving = false;
         }
     }
 
     async function deleteAsset(mode?: string) {
+        if (!assetToDelete) return;
         try {
             const [, err] = await wsCall(
                 "assets::delete",
@@ -472,12 +451,9 @@
 
         try {
             const copiedAsset = decode(asset);
-
-            // Generate new IDs for the asset
             copiedAsset.id = crypto.randomUUID();
             copiedAsset.name = copiedAsset.name + " (Copy)";
 
-            // Update sub-asset IDs to be unique
             if (copiedAsset.activeVersion && copiedAsset.activeVersion.subAssets) {
                 copiedAsset.activeVersion.subAssets = copiedAsset.activeVersion.subAssets.map((sa: any) => ({
                     ...sa,
@@ -496,7 +472,7 @@
                     accountIds: copiedAsset.accountIds || [],
                     linkToScenarios: copiedAsset.linkToScenarios || false,
                     activeVersion: {
-                        id: "", // Let backend generate new version ID
+                        id: "",
                         assetId: copiedAsset.id,
                         type: av.type || "STOCKS",
                         targetValue: parseFloat(av.targetValue) || 0,
@@ -524,41 +500,37 @@
                         })),
                         penalties: (av.penalties || []).map((p: any) => ({
                             name: p.name || "",
-                            triggerType: p.triggerType || "",
-                            percentage: parseFloat(p.percentage) || 0,
+                            triggerType: p.triggerType || "WITHDRAWAL",
+                            percentage: p.percentage || 0,
                         })),
-                        subAssets: (av.subAssets || []).map((s: any) => ({
-                            id: s.id || "",
-                            name: s.name || "",
-                            targetValue: Number(s.targetValue) || 0,
-                            amountPerMonth: Number(s.amountPerMonth) || 0,
-                            isRemainderConsumer: !!s.isRemainderConsumer,
-                            remainderStartDate: s.remainderStartDate || "",
-                            dumpingLoanId: s.dumpingLoanId || "",
-                            startDate: s.startDate || "",
-                            endDate: s.endDate || "",
-                            earliestDumpDate: s.earliestDumpDate || "",
-                            expenseId: s.expenseId || "",
-                            remainderPriority: Number(s.remainderPriority) || 0,
+                        subAssets: (av.subAssets || []).map((sa: any) => ({
+                            id: sa.id || "",
+                            name: sa.name || "",
+                            targetValue: parseFloat(sa.targetValue) || 0,
+                            amountPerMonth: sa.amountPerMonth || 0,
+                            isRemainderConsumer: !!sa.isRemainderConsumer,
+                            remainderStartDate: sa.remainderStartDate || "",
+                            dumpingLoanId: sa.dumpingLoanId || "",
+                            startDate: sa.startDate || "",
+                            endDate: sa.endDate || "",
+                            earliestDumpDate: sa.earliestDumpDate || "",
+                            expenseId: sa.expenseId || "",
+                            remainderPriority: sa.remainderPriority || 0,
                         })),
                     },
                 },
-                [AssetSchema]
+                [ErrorSchema],
             ).one();
 
             if (err) throw err;
-
             await fetchData();
         } catch (err: any) {
-            alert("Failed to duplicate asset: " + err.message);
+            alert("Duplication failed: " + err.message);
         }
     }
 
     function editAsset(asset: Asset) {
         currentAsset = decode(asset);
-        if (!currentAsset.accountIds) {
-            currentAsset.accountIds = [];
-        }
         if (!currentAsset.activeVersion) {
             currentAsset.activeVersion = {
                 type: "STATIC",
@@ -603,15 +575,7 @@
         showAddModal = true;
     }
 
-    function toInputMonth(isoStr: string | null): string {
-        if (!isoStr) return "";
-        return isoStr.substring(0, 7); // "YYYY-MM"
-    }
 
-    function fromInputMonth(val: string): string {
-        if (!val) return "";
-        return val + "-01T00:00:00Z";
-    }
 
     function handleRecalculate() {
         const rate = calculateRequiredRate(
@@ -637,31 +601,19 @@
     });
 </script>
 
-<svelte:window onkeydown={(e) => {
-    if (e.key === 'Escape') {
-        showAddModal = false;
-        showDeleteConfirm = false;
-    }
-}} />
-
 <div class="space-y-8">
     <!-- Header -->
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6"
-    >
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-            <h2
-                class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500"
-            >
+            <h2 class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
                 ETF & Assets
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                Deterministic growth models, compound interest, and investment
-                portfolios.
+                Deterministic growth models, compound interest, and investment portfolios.
             </p>
         </div>
-        <div class="flex gap-4">
-            <button
+        <div>
+            <Button
                 onclick={() => {
                     currentAsset = createNewAsset();
                     amountInput = "";
@@ -669,11 +621,11 @@
                     interestInput = "";
                     showAddModal = true;
                 }}
-                class="btn-primary bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"
+                class="bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100"
             >
                 <Plus class="w-5 h-5" />
                 Add Asset
-            </button>
+            </Button>
         </div>
     </div>
 
@@ -689,711 +641,511 @@
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
-            <button
+            <Button
                 onclick={fetchData}
-                class="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200"
+                class="bg-rose-600 text-white hover:bg-rose-700 shadow-rose-200"
             >
                 Retry
-            </button>
+            </Button>
         </div>
     {/if}
 
     {#if isLoading}
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 class="w-10 h-10 text-emerald-600 animate-spin" />
-            <p
-                class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]"
-            >
-                Projecting Asset Lifecycle...
+            <div class="w-10 h-10 border-4 border-t-emerald-600 border-emerald-100 rounded-full animate-spin"></div>
+            <p class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
+                Syncing Growth Nodes...
             </p>
         </div>
     {:else if assets.length === 0}
         <div class="glass-card p-20 text-center space-y-6">
-            <div
-                class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner"
-            >
+            <div class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner">
                 <PieChart class="w-12 h-12 text-slate-300" />
             </div>
             <div class="space-y-2">
                 <h3 class="text-xl font-black text-slate-900">
-                    No Assets Initialized
+                    No Assets Configured
                 </h3>
                 <p class="text-slate-500 max-w-xs mx-auto font-medium text-sm">
-                    Add static interest accounts or ETF portfolios to start
-                    deterministic growth simulation.
+                    Configure long-term savings accounts, mutual funds, or stock portfolios.
                 </p>
             </div>
-            <button
+            <Button
+                variant="secondary"
                 onclick={() => (showAddModal = true)}
-                class="btn-secondary mx-auto"
+                class="mx-auto"
             >
-                Create First Asset
-            </button>
+                Initialize First Entry
+            </Button>
         </div>
     {:else}
-        <div class="glass-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-left">
-                    <thead>
-                        <tr class="border-b border-slate-100 bg-slate-50/50">
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Monthly Rate</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Started</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Target</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each sortedAssets as asset (asset.id)}
-                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
-                                <td class="px-6 py-4">
-                                    <div class="font-bold text-slate-800">{asset.name}</div>
-                                    {#if asset.activeVersion.stopModificationId}
-                                        <div class="text-[9px] font-black text-amber-600 uppercase tracking-wider mt-0.5">Auto-Stop</div>
+        <Table>
+            {#snippet header()}
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Name</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Type</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Rate/Month</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interest</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Target Value</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+            {/snippet}
+            {#snippet body()}
+                {#each sortedAssets as asset (asset.id)}
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                        <td class="px-6 py-4 font-bold text-slate-800">
+                            {asset.name}
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            <Badge variant={asset.activeVersion?.type === 'ETF' ? 'success' : 'slate'}>
+                                {asset.activeVersion?.type === 'ETF' ? 'ETF Monte Carlo' : 'Static Interest'}
+                            </Badge>
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700 tabular-nums">
+                            {#if asset.activeVersion && asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
+                                <span class="text-slate-400 italic">Logical Sub-Assets</span>
+                            {:else}
+                                € {formatGermanAmount(asset.activeVersion?.amountPerMonth || 0)}
+                            {/if}
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            {#if asset.activeVersion?.type === "ETF"}
+                                <span class="text-slate-400 italic">Market-Driven</span>
+                            {:else}
+                                {formatGermanAmount(asset.activeVersion?.interestRate || 0)}% ({asset.activeVersion?.interestInterval})
+                            {/if}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-between w-32 ml-auto tabular-nums font-black text-slate-900">
+                                <span>€</span>
+                                <span>
+                                    {#if asset.activeVersion && asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
+                                        {formatGermanAmount(asset.activeVersion.subAssets.reduce((sum, sa) => sum + (parseFloat(String(sa.targetValue)) || 0), 0))}
+                                    {:else}
+                                        {formatGermanAmount(parseFloat(String(asset.activeVersion?.targetValue)) || 0)}
                                     {/if}
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    <span class="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
-                                        {asset.activeVersion.type === "ETF"
-                                            ? "ETF Portfolio"
-                                            : asset.activeVersion.interestInterval}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {asset.activeVersion.type === "ETF"
-                                        ? "STOCHASTIC"
-                                        : formatGermanAmount(asset.activeVersion.interestRate) + "%"}
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900">
-                                        <span>€</span>
-                                        <span>
-                                            {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                                                {formatGermanAmount(
-                                                    asset.activeVersion.subAssets.reduce((sum, sa) => sum + sa.amountPerMonth, 0)
-                                                )}
-                                            {:else if asset.activeVersion.amountPerMonth > 0}
-                                                {formatGermanAmount(asset.activeVersion.amountPerMonth)}
-                                            {:else}
-                                                Remainder
-                                            {/if}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(asset.activeVersion.startDate)}</td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-indigo-600">
-                                        <span>€</span>
-                                        <span>
-                                            {#if asset.activeVersion.subAssets && asset.activeVersion.subAssets.length > 0}
-                                                {formatGermanAmount(
-                                                    asset.activeVersion.subAssets.reduce(
-                                                        (sum, sa) => sum + (parseFloat(String(sa.targetValue)) || 0),
-                                                        0
-                                                    )
-                                                )}
-                                            {:else if asset.activeVersion.dumpingLoanId}
-                                                Dumps Loan
-                                            {:else}
-                                                {formatGermanAmount(parseFloat(String(asset.activeVersion.targetValue)) || 0)}
-                                            {/if}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <div class="inline-flex gap-2">
-                                        <button
-                                            onclick={() => duplicateAsset(asset)}
-                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
-                                            title="Duplicate Asset"
-                                        >
-                                            <Copy class="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onclick={() => editAsset(asset)}
-                                            class="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border border-transparent hover:border-emerald-100"
-                                            title="Refine (New Version)"
-                                        >
-                                            <Pencil class="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onclick={() => {
-                                                assetToDelete = asset.id!;
-                                                showDeleteConfirm = true;
-                                            }}
-                                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                            title="Lifecycle Action"
-                                        >
-                                            <Trash2 class="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                                </span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="inline-flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => duplicateAsset(asset)}
+                                    title="Duplicate Asset"
+                                    class="hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-100"
+                                >
+                                    <Copy class="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => editAsset(asset)}
+                                    title="Refine (New Version)"
+                                    class="hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-100"
+                                >
+                                    <Pencil class="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => {
+                                        assetToDelete = asset.id!;
+                                        showDeleteConfirm = true;
+                                    }}
+                                    title="Lifecycle Action"
+                                    class="hover:text-red-600 hover:bg-red-50 hover:border-red-100"
+                                >
+                                    <Trash2 class="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </td>
+                    </tr>
+                {/each}
+            {/snippet}
+        </Table>
     {/if}
 </div>
 
 <!-- Add/Edit Modal -->
-{#if showAddModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
+<Modal
+    bind:open={showAddModal}
+    title="{currentAsset.id ? 'Refine' : 'New'} Wealth Node"
+    subtitle="Define deterministic growth parameters for this asset."
+    maxWidth="max-w-2xl"
+>
+    <form
+        onsubmit={(e) => {
+            e.preventDefault();
+            saveAsset();
+        }}
+        class="space-y-8"
     >
-        <div
-            transition:slide
-            class="w-full max-w-2xl bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] overflow-y-auto"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
+        <div class="space-y-6">
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    label="Asset Identity"
+                    bind:value={currentAsset.name}
+                    placeholder="e.g. Main Savings"
+                    required
+                />
+                <SearchableMultiSelect
+                    label="Planned Account Link"
+                    options={virtualAccountMultiOptions}
+                    bind:values={currentAsset.accountIds}
+                    placeholder="Select accounts..."
+                />
+            </div>
+            <div class="grid grid-cols-2 gap-6">
+                <SearchableDropdown
+                    label="Realtime Pool Link"
+                    options={poolOptions}
+                    bind:value={currentAsset.poolId}
+                    placeholder="None / Uncategorized"
+                />
+            </div>
+        </div>
 
-            <button
-                onclick={() => (showAddModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-                ><Plus class="w-6 h-6 rotate-45" /></button
-            >
-
-            <div class="p-10 space-y-10">
-                <div>
-                    <h3
-                        class="text-2xl font-black text-slate-900 tracking-tight"
+        {#if currentAsset.activeVersion}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                        Engine Type
+                    </label>
+                    <select
+                        bind:value={currentAsset.activeVersion.type}
+                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
                     >
-                        {currentAsset.id ? "Refine" : "New"} Wealth Node
-                    </h3>
-                    <p class="text-slate-500 font-medium text-sm">
-                        Define deterministic growth parameters for this asset.
-                    </p>
+                        <option value="STATIC">Static Interest</option>
+                        <option value="ETF">ETF Portfolio (Monte Carlo)</option>
+                    </select>
                 </div>
 
-                <form
-                    onsubmit={(e) => {
-                        e.preventDefault();
-                        saveAsset();
-                    }}
-                    class="space-y-8"
-                >
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Asset Identity</label
-                                >
-                                <input
-                                    bind:value={currentAsset.name}
-                                    placeholder="e.g. Main Savings"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                                    required
-                                />
-                            </div>
-                            <SearchableMultiSelect
-                                label="Planned Account Link"
-                                options={virtualAccountMultiOptions}
-                                bind:values={currentAsset.accountIds}
-                                placeholder="Select accounts..."
-                            />
+                {#if currentAsset.activeVersion.type === "ETF"}
+                    <div class="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl flex items-center justify-between gap-4 border border-slate-100 dark:border-slate-800 self-end">
+                        <div class="space-y-0.5">
+                            <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Use for Passive Income</span>
+                            <span class="text-[10px] text-slate-400 leading-normal block font-medium">
+                                Includes this asset's balance in the passive income milestone calculation.
+                            </span>
                         </div>
-                        <div class="grid grid-cols-2 gap-6">
-                            <SearchableDropdown
-                                label="Realtime Pool Link"
-                                options={poolOptions}
-                                bind:value={currentAsset.poolId}
-                                placeholder="None / Uncategorized"
-                            />
-                        </div>
+                        <input
+                            type="checkbox"
+                            bind:checked={currentAsset.activeVersion.useForPassiveIncome}
+                            class="w-5 h-5 accent-emerald-600 rounded-lg cursor-pointer"
+                        />
                     </div>
+                {/if}
+            </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Engine Type</label
-                            >
-                            <select
-                                bind:value={currentAsset.activeVersion.type}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                            >
-                                <option value="STATIC">Static Interest</option>
-                                <option value="ETF"
-                                    >ETF Portfolio (Monte Carlo)</option
-                                >
-                            </select>
-                        </div>
-
-                        {#if currentAsset.activeVersion.type === "ETF"}
-                            <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl flex items-center justify-between gap-4 border border-slate-100 dark:border-slate-800 self-end">
-                                <div class="space-y-0.5">
-                                    <span class="text-xs font-black text-slate-700 dark:text-slate-200 block">Use for Passive Income</span>
-                                    <span class="text-[10px] text-slate-400 leading-normal block font-medium">
-                                        Includes this asset's balance in the passive income milestone calculation.
-                                    </span>
-                                </div>
-                                <input
-                                    type="checkbox"
-                                    bind:checked={currentAsset.activeVersion.useForPassiveIncome}
-                                    class="w-5 h-5 accent-emerald-600 rounded-lg cursor-pointer"
-                                />
-                            </div>
-                        {/if}
-                    </div>
-
-                    <!-- Core Asset Inputs -->
-                    {#if currentAsset.activeVersion.type === "STATIC" || !currentAsset.activeVersion.subAssets || currentAsset.activeVersion.subAssets.length === 0}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {#if !currentAsset.activeVersion.subAssets || currentAsset.activeVersion.subAssets.length === 0}
-                                <div
-                                    class="space-y-2 {currentAsset.activeVersion
-                                        .type !== 'STATIC'
-                                        ? 'md:col-span-3'
-                                        : ''}"
-                                >
-                                    <div
-                                        class="flex items-center justify-between"
-                                    >
-                                        <label
-                                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                            >Monthly Rate (€)</label
-                                        >
-                                        <button
-                                            type="button"
-                                            onclick={handleRecalculate}
-                                            class="text-[9px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-1"
-                                        >
-                                            <Activity class="w-3 h-3" /> Recalculate
-                                        </button>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        bind:value={amountInput}
-                                        placeholder="328,00"
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                                    />
-                                </div>
-                            {/if}
-                            {#if currentAsset.activeVersion.type === "STATIC" || currentAsset.activeVersion.type === "ETF"}
-                                <div
-                                    class="space-y-2 {currentAsset.activeVersion
-                                        .subAssets?.length > 0
-                                        ? 'md:col-span-2'
-                                        : ''}"
-                                >
-                                    <label
-                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >{currentAsset.activeVersion.type === "ETF" ? 'Payout' : 'Interest'} %</label
-                                    >
-                                    <input
-                                        type="text"
-                                        bind:value={interestInput}
-                                        placeholder="2,50"
-                                        disabled={currentAsset.activeVersion.type === "ETF"}
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold disabled:opacity-50"
-                                    />
-                                </div>
-                                <div class="space-y-2">
-                                    <label
-                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >{currentAsset.activeVersion.type === "ETF" ? 'Mode' : 'Interval'}</label
-                                    >
-                                    <select
-                                        bind:value={
-                                            currentAsset.activeVersion
-                                                .interestInterval
-                                        }
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                                    >
-                                        {#if currentAsset.activeVersion.type === "ETF"}
-                                            <option value="Yearly">Accumulating</option>
-                                            <option value="Monthly">Distributing (Monthly Payout)</option>
-                                        {:else}
-                                            <option value="Monthly">Monthly</option>
-                                            <option value="Yearly">Yearly</option>
-                                        {/if}
-                                    </select>
-                                </div>
-                            {/if}
-                        </div>
-                    {/if}
-
+            <!-- Core Asset Inputs -->
+            {#if currentAsset.activeVersion.type === "STATIC" || !currentAsset.activeVersion.subAssets || currentAsset.activeVersion.subAssets.length === 0}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {#if !currentAsset.activeVersion.subAssets || currentAsset.activeVersion.subAssets.length === 0}
-                        <div class="space-y-2" transition:slide>
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Target Value (€)</label
-                            >
-                            <input
-                                bind:value={targetInput}
-                                placeholder="301000"
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                            />
-                        </div>
-
-                        <!-- Termination Trigger Section -->
-                        <div
-                            class="space-y-4 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm"
-                            transition:slide
-                        >
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                    >Termination Trigger</label
-                                >
-                                <select
-                                    bind:value={
-                                        currentAsset.activeVersion
-                                            .stopModificationId
-                                    }
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                                >
-                                    <option value={null}>None (Ongoing)</option>
-                                    {#each modifications.filter((m) => m.activeVersion.withdrawalPercentage > 0) as m}
-                                        <option value={m.id}
-                                            >{m.description} ({m.activeVersion
-                                                .withdrawalPercentage}% Dynamic)</option
-                                        >
-                                    {/each}
-                                </select>
-                                <p
-                                    class="text-[9px] font-medium text-slate-500 ml-1"
-                                >
-                                    Automatically close this asset and stop
-                                    contributions once the selected modification
-                                    triggers.
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Loan Dumping Section -->
-                        <div
-                            class="space-y-4 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm"
-                            transition:slide
-                        >
+                        <div class="space-y-2 {currentAsset.activeVersion.type !== 'STATIC' ? 'md:col-span-3' : ''}">
                             <div class="flex items-center justify-between">
-                                <div class="space-y-0.5">
-                                    <label
-                                        class="text-sm font-black text-slate-900"
-                                        >Enable Loan Dumping</label
-                                    >
-                                    <p
-                                        class="text-[10px] font-medium text-slate-500"
-                                    >
-                                        Automatically payoff a loan when this
-                                        asset has enough funds.
-                                    </p>
-                                </div>
+                                <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                                    Monthly Rate (€)
+                                </label>
                                 <button
                                     type="button"
-                                    onclick={() =>
-                                        (currentAsset.activeVersion.dumpingLoanId =
-                                            currentAsset.activeVersion
-                                                .dumpingLoanId
-                                                ? null
-                                                : loans[0]?.id || null)}
-                                    class="w-12 h-6 rounded-full transition-all relative {currentAsset
-                                        .activeVersion.dumpingLoanId
-                                        ? 'bg-emerald-500'
-                                        : 'bg-slate-200'}"
+                                    onclick={handleRecalculate}
+                                    class="text-[9px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-1"
                                 >
-                                    <div
-                                        class="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all {currentAsset
-                                            .activeVersion.dumpingLoanId
-                                            ? 'translate-x-6'
-                                            : ''}"
-                                    ></div>
+                                    <Activity class="w-3 h-3" /> Recalculate
                                 </button>
                             </div>
-
-                            {#if currentAsset.activeVersion.dumpingLoanId}
-                                <div class="space-y-2" transition:slide>
-                                    <label
-                                        class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                        >Target Loan</label
-                                    >
-                                    <select
-                                        bind:value={
-                                            currentAsset.activeVersion
-                                                .dumpingLoanId
-                                        }
-                                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer"
-                                    >
-                                        {#each loans as loan}
-                                            <option value={loan.id}
-                                                >{loan.name}</option
-                                            >
-                                        {/each}
-                                    </select>
-                                </div>
-                            {/if}
+                            <input
+                                type="text"
+                                bind:value={amountInput}
+                                placeholder="328,00"
+                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold dark:bg-slate-800 dark:border-slate-700"
+                            />
                         </div>
                     {/if}
-
-                    <!-- Logical Sub-Assets / Targets Configurator -->
-                    <SubAssetForm
-                        bind:subAssets={currentAsset.activeVersion.subAssets}
-                        loans={loans}
-                        expenses={expenses}
-                        interestInput={interestInput}
-                        assetType={currentAsset.activeVersion.type}
-                        startDate={currentAsset.activeVersion.startDate}
-                        toInputMonth={toInputMonth}
-                        fromInputMonth={fromInputMonth}
-                        calculateRequiredRate={calculateRequiredRate}
-                        parseNumeric={parseNumeric}
-                    />
-
-                    {#if currentAsset.activeVersion.type === "ETF"}
-                        <EtfConfigForm bind:etfConfig={currentAsset.activeVersion.etfConfig} />
-                    {/if}
-
-                    <!-- Custom Named Penalties Section -->
-                    <div
-                        class="space-y-4 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm"
-                    >
-                        <div class="flex items-center justify-between">
-                            <div class="space-y-0.5">
-                                <label class="text-sm font-black text-slate-900"
-                                    >Custom Named Penalties</label
+                    {#if currentAsset.activeVersion.type === "STATIC" || currentAsset.activeVersion.type === "ETF"}
+                        <div class="space-y-2 {currentAsset.activeVersion.subAssets?.length > 0 ? 'md:col-span-2' : ''}">
+                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                                {currentAsset.activeVersion.type === "ETF" ? 'Payout' : 'Interest'} %
+                            </label>
+                            <input
+                                type="text"
+                                bind:value={interestInput}
+                                placeholder="2,50"
+                                disabled={currentAsset.activeVersion.type === "ETF"}
+                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700"
+                            />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                                {currentAsset.activeVersion.type === "ETF" ? 'Mode' : 'Interval'}
+                            </label>
+                            {#if currentAsset.activeVersion.type === "ETF"}
+                                <select
+                                    bind:value={currentAsset.activeVersion.interestInterval}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
                                 >
-                                <p
-                                    class="text-[10px] font-medium text-slate-500"
-                                >
-                                    Apply fees or taxes automatically on
-                                    withdrawal or interest generation events.
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onclick={() => {
-                                    if (!currentAsset.activeVersion.penalties) {
-                                        currentAsset.activeVersion.penalties =
-                                            [];
-                                    }
-                                    currentAsset.activeVersion.penalties.push({
-                                        name: "",
-                                        triggerType: "WITHDRAWAL",
-                                        percentage: 0,
-                                    });
-                                }}
-                                class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
-                            >
-                                <Plus class="w-3 h-3" /> Add Penalty
-                            </button>
-                        </div>
-
-                        {#if currentAsset.activeVersion.penalties && currentAsset.activeVersion.penalties.length > 0}
-                            <div class="space-y-3 pt-2">
-                                {#each currentAsset.activeVersion.penalties as penalty, i}
-                                    <div
-                                        class="grid grid-cols-12 gap-3 items-center"
-                                        transition:slide
-                                    >
-                                        <div class="col-span-5">
-                                            <input
-                                                type="text"
-                                                bind:value={penalty.name}
-                                                placeholder="e.g. Capital Gains Tax"
-                                                class="block w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all text-xs font-bold"
-                                                required
-                                            />
-                                        </div>
-                                        <div class="col-span-4">
-                                            <select
-                                                bind:value={penalty.triggerType}
-                                                class="block w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all text-xs font-bold appearance-none cursor-pointer"
-                                            >
-                                                <option value="WITHDRAWAL"
-                                                    >On Withdrawal</option
-                                                >
-                                                <option value="INTEREST"
-                                                    >On Interest</option
-                                                >
-                                            </select>
-                                        </div>
-                                        <div class="col-span-2 relative">
-                                            <input
-                                                type="number"
-                                                bind:value={penalty.percentage}
-                                                step="0.001"
-                                                placeholder="25.0"
-                                                class="block w-full pl-3 pr-6 py-2 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all text-xs font-bold"
-                                                required
-                                            />
-                                            <span
-                                                class="absolute right-3 top-2 text-xs text-slate-400 font-bold"
-                                                >%</span
-                                            >
-                                        </div>
-                                        <div
-                                            class="col-span-1 flex justify-center"
-                                        >
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    currentAsset.activeVersion.penalties.splice(
-                                                        i,
-                                                        1,
-                                                    )}
-                                                class="text-rose-400 hover:text-rose-600 transition-colors"
-                                            >
-                                                <Trash2 class="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                {/each}
-                            </div>
-                        {/if}
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Start Month</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentAsset.activeVersion.startDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentAsset.activeVersion.startDate =
-                                        fromInputMonth(e.target.value))}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                                required
-                            />
-                        </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Remainder Start</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentAsset.activeVersion
-                                        .remainderStartDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentAsset.activeVersion.remainderStartDate =
-                                        e.target.value
-                                            ? fromInputMonth(e.target.value)
-                                            : null)}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                            />
-                        </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Payout Month (Optional)</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentAsset.activeVersion.endDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentAsset.activeVersion.endDate = e
-                                        .target.value
-                                        ? fromInputMonth(e.target.value)
-                                        : null)}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="pt-6">
-                        <button
-                            disabled={isSaving}
-                            class="btn-primary w-full py-4 text-lg shadow-2xl shadow-emerald-100 bg-emerald-600 hover:bg-emerald-700"
-                        >
-                            {#if isSaving}
-                                <Loader2 class="w-6 h-6 animate-spin" />
-                                <span>Processing Model...</span>
+                                    <option value="Yearly">Accumulating</option>
+                                    <option value="Monthly">Distributing (Monthly Payout)</option>
+                                </select>
                             {:else}
-                                <span>Commit Wealth Version</span>
+                                <select
+                                    bind:value={currentAsset.activeVersion.interestInterval}
+                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                                >
+                                    <option value="Monthly">Monthly</option>
+                                    <option value="Yearly">Yearly</option>
+                                </select>
                             {/if}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+
+            {#if !currentAsset.activeVersion.subAssets || currentAsset.activeVersion.subAssets.length === 0}
+                <div class="space-y-2" transition:slide>
+                    <Input
+                        label="Target Value (€)"
+                        bind:value={targetInput}
+                        placeholder="301000"
+                    />
+                </div>
+
+                <!-- Termination Trigger Section -->
+                <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-fade-in" transition:slide>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                            Termination Trigger
+                        </label>
+                        <select
+                            bind:value={currentAsset.activeVersion.stopModificationId}
+                            class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                        >
+                            <option value={null}>None (Ongoing)</option>
+                            {#each modifications.filter((m) => m.activeVersion.withdrawalPercentage > 0) as m}
+                                <option value={m.id}>
+                                    {m.description} ({m.activeVersion.withdrawalPercentage}% Dynamic)
+                                </option>
+                            {/each}
+                        </select>
+                        <p class="text-[9px] font-medium text-slate-500 dark:text-slate-400 ml-1">
+                            Automatically close this asset and stop contributions once the selected modification triggers.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Loan Dumping Section -->
+                <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm" transition:slide>
+                    <div class="flex items-center justify-between">
+                        <div class="space-y-0.5">
+                            <label class="text-sm font-black text-slate-900 dark:text-slate-100">
+                                Enable Loan Dumping
+                            </label>
+                            <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                Automatically payoff a loan when this asset has enough funds.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onclick={() => (currentAsset.activeVersion.dumpingLoanId = currentAsset.activeVersion.dumpingLoanId ? null : loans[0]?.id || null)}
+                            class="w-12 h-6 rounded-full transition-all relative {currentAsset.activeVersion.dumpingLoanId ? 'bg-emerald-500 shadow-lg shadow-emerald-100 dark:shadow-none' : 'bg-slate-200 dark:bg-slate-700'}"
+                        >
+                            <div class="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all {currentAsset.activeVersion.dumpingLoanId ? 'translate-x-6' : ''}"></div>
                         </button>
                     </div>
-                </form>
+
+                    {#if currentAsset.activeVersion.dumpingLoanId}
+                        <div class="space-y-2" transition:slide>
+                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                                Target Loan
+                            </label>
+                            <select
+                                bind:value={currentAsset.activeVersion.dumpingLoanId}
+                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                            >
+                                {#each loans as loan}
+                                    <option value={loan.id}>{loan.name}</option>
+                                {/each}
+                            </select>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+
+            <!-- Logical Sub-Assets / Targets Configurator -->
+            <SubAssetForm
+                bind:subAssets={currentAsset.activeVersion.subAssets}
+                loans={loans}
+                expenses={expenses}
+                interestInput={interestInput}
+                assetType={currentAsset.activeVersion.type}
+                startDate={currentAsset.activeVersion.startDate}
+                toInputMonth={toInputMonth}
+                fromInputMonth={fromInputMonth}
+                calculateRequiredRate={calculateRequiredRate}
+                parseNumeric={parseNumeric}
+            />
+
+            {#if currentAsset.activeVersion.type === "ETF"}
+                <EtfConfigForm bind:etfConfig={currentAsset.activeVersion.etfConfig} />
+            {/if}
+
+            <!-- Custom Named Penalties Section -->
+            <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-0.5">
+                        <label class="text-sm font-black text-slate-900 dark:text-slate-100">
+                            Custom Named Penalties
+                        </label>
+                        <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            Apply fees or taxes automatically on withdrawal or interest generation events.
+                        </p>
+                    </div>
+                    <Button
+                        onclick={() => {
+                            if (!currentAsset.activeVersion.penalties) {
+                                currentAsset.activeVersion.penalties = [];
+                            }
+                            currentAsset.activeVersion.penalties.push({
+                                name: "",
+                                triggerType: "WITHDRAWAL",
+                                percentage: 0,
+                            });
+                        }}
+                        class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
+                    >
+                        <Plus class="w-3 h-3" /> Add Penalty
+                    </Button>
+                </div>
+
+                {#if currentAsset.activeVersion.penalties && currentAsset.activeVersion.penalties.length > 0}
+                    <div class="space-y-3 pt-2">
+                        {#each currentAsset.activeVersion.penalties as penalty, i}
+                            <div class="grid grid-cols-12 gap-3 items-center" transition:slide>
+                                <div class="col-span-5">
+                                    <Input
+                                        bind:value={penalty.name}
+                                        placeholder="e.g. Capital Gains Tax"
+                                        required
+                                        class="px-3 py-2 text-xs"
+                                    />
+                                </div>
+                                <div class="col-span-4">
+                                    <select
+                                        bind:value={penalty.triggerType}
+                                        class="block w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all text-xs font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                                    >
+                                        <option value="WITHDRAWAL">On Withdrawal</option>
+                                        <option value="INTEREST">On Interest</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2 relative">
+                                    <input
+                                        type="number"
+                                        bind:value={penalty.percentage}
+                                        step="0.001"
+                                        placeholder="25.0"
+                                        class="block w-full pl-3 pr-6 py-2 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all text-xs font-bold dark:bg-slate-800 dark:border-slate-700"
+                                        required
+                                    />
+                                    <span class="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
+                                </div>
+                                <div class="col-span-1 flex justify-center">
+                                    <button
+                                        type="button"
+                                        onclick={() => currentAsset.activeVersion.penalties.splice(i, 1)}
+                                        class="text-rose-400 hover:text-rose-600 transition-colors"
+                                    >
+                                        <Trash2 class="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
             </div>
+
+            <div class="grid grid-cols-3 gap-6">
+                <Input
+                    type="month"
+                    label="Start Month"
+                    value={toInputMonth(currentAsset.activeVersion.startDate)}
+                    oninput={(e: any) => (currentAsset.activeVersion.startDate = fromInputMonth(e.target.value))}
+                    required
+                />
+                <Input
+                    type="month"
+                    label="Remainder Start"
+                    value={toInputMonth(currentAsset.activeVersion.remainderStartDate)}
+                    oninput={(e: any) => (currentAsset.activeVersion.remainderStartDate = e.target.value ? fromInputMonth(e.target.value) : null)}
+                />
+                <Input
+                    type="month"
+                    label="Payout Month (Optional)"
+                    value={toInputMonth(currentAsset.activeVersion.endDate)}
+                    oninput={(e: any) => (currentAsset.activeVersion.endDate = e.target.value ? fromInputMonth(e.target.value) : null)}
+                />
+            </div>
+        {/if}
+
+        <div class="pt-6">
+            <Button
+                type="submit"
+                variant="primary"
+                loading={isSaving}
+                loadingLabel="Processing Model..."
+                class="w-full py-4 text-lg bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100"
+            >
+                Commit Wealth Version
+            </Button>
         </div>
-    </div>
-{/if}
+    </form>
+</Modal>
 
 <!-- Deletion Confirmation Modal -->
-{#if showDeleteConfirm}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-md bg-white rounded-[30px] shadow-2xl space-y-8 p-10 relative overflow-hidden"
+<ConfirmModal
+    bind:open={showDeleteConfirm}
+    title="Wealth Node Lifecycle"
+    description="How should the WealthEngine handle this deletion?"
+>
+    <div class="grid grid-cols-1 gap-4">
+        <button
+            onclick={() => confirmDelete("revert")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-emerald-50 hover:border-emerald-100 hover:bg-emerald-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
         >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <div class="text-center space-y-2">
-                <h3 class="text-2xl font-black text-slate-900 tracking-tight">
-                    Wealth Node Lifecycle
-                </h3>
-                <p class="text-slate-500 font-medium text-sm">
-                    Action deterministic removal or refinement.
+            <div class="p-3 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Undo2 class="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+                <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
+                    Revert Version
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Delete only the latest growth snapshot.
                 </p>
             </div>
-
-            <div class="grid grid-cols-1 gap-4">
-                <button
-                    onclick={() => confirmDelete("revert")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-emerald-50 hover:border-emerald-100 hover:bg-emerald-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-emerald-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Undo2 class="w-6 h-6 text-emerald-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-slate-900 leading-tight">
-                            Revert Version
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Delete only the latest growth snapshot.
-                        </p>
-                    </div>
-                </button>
-                <button
-                    onclick={() => confirmDelete("full")}
-                    class="flex items-center gap-4 p-5 rounded-2xl border-2 border-rose-50 hover:border-rose-100 hover:bg-rose-50 transition-all text-left group"
-                >
-                    <div
-                        class="p-3 bg-rose-100 rounded-xl group-hover:scale-110 transition-transform"
-                    >
-                        <Archive class="w-6 h-6 text-rose-600" />
-                    </div>
-                    <div>
-                        <p class="font-black text-slate-900 leading-tight">
-                            Node Archive
-                        </p>
-                        <p class="text-xs text-slate-500 font-medium">
-                            Hide this asset and its complete history.
-                        </p>
-                    </div>
-                </button>
+        </button>
+        <button
+            onclick={() => confirmDelete("full")}
+            class="flex items-center gap-4 p-5 rounded-2xl border-2 border-rose-50 hover:border-rose-100 hover:bg-rose-50 dark:border-slate-800 dark:hover:bg-slate-800/50 transition-all text-left group"
+        >
+            <div class="p-3 bg-rose-100 dark:bg-rose-500/20 rounded-xl group-hover:scale-110 transition-transform">
+                <Archive class="w-6 h-6 text-rose-600 dark:text-rose-400" />
             </div>
-            <button
-                onclick={() => {
-                    showDeleteConfirm = false;
-                    assetToDelete = null;
-                }}
-                class="w-full py-3 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] hover:text-slate-900 transition-colors"
-                >Cancel Action</button
-            >
-        </div>
+            <div>
+                <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
+                    Node Archive
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Hide this asset and its complete history.
+                </p>
+            </div>
+        </button>
     </div>
-{/if}
+    <Button
+        variant="secondary"
+        onclick={() => {
+            showDeleteConfirm = false;
+            assetToDelete = null;
+        }}
+        class="mt-8 w-full"
+    >
+        Cancel Action
+    </Button>
+</ConfirmModal>

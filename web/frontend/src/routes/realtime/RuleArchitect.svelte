@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import {
         TransactionPoolSchema,
         TransactionRuleSchema,
         GenericIDSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
-    const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
 
     import {
         Plus,

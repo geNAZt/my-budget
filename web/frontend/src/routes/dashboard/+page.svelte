@@ -13,6 +13,7 @@
     import BudgetSheet from "$lib/components/BudgetSheet.svelte";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
     import { wsCall } from "$lib/utils/ws_fetch";
+    import { resolveActiveScenario, savePreferredScenario } from "$lib/utils/scenario";
     import {
         ScenarioListSchema,
         AuthSuccessResponseSchema,
@@ -122,17 +123,8 @@
             scenarios = resp?.scenarios ?? [];
 
             if (scenarios.length > 0 && !selectedScenarioId) {
-                const preferredId =
-                    auth.user?.dashboardScenarioId ||
-                    localStorage.getItem("dashboard_scenario_id");
-                if (
-                    preferredId &&
-                    scenarios.some((s) => s.id === preferredId)
-                ) {
-                    selectedScenarioId = preferredId;
-                } else {
-                    selectedScenarioId = scenarios[0].id;
-                }
+                const active = resolveActiveScenario(scenarios);
+                selectedScenarioId = active?.id || scenarios[0]?.id || null;
             }
             if (selectedScenarioId) {
                 await loadCurrentMonthBudgetSheet(selectedScenarioId);
@@ -146,7 +138,7 @@
 
     async function handleScenarioChange(id: string) {
         selectedScenarioId = id;
-        localStorage.setItem("dashboard_scenario_id", id);
+        savePreferredScenario(id);
 
         // Persist to user profile if logged in
         if (auth.isAuthenticated) {

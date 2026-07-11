@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import {
         ModificationListSchema,
         AssetListSchema,
@@ -8,33 +8,30 @@
         GenericIDSchema,
         ErrorSchema,
     } from "$lib/gen/api_pb.js";
-    const decode = (obj: any) => JSON.parse(JSON.stringify(obj));
+    import { toInputMonth, fromInputMonth } from "$lib/utils/date";
+
 
     import { onMount } from "svelte";
     import {
         Plus,
         Trash2,
-        Calendar,
-        Euro,
-        ArrowRight,
-        Clock,
-        Loader2,
-        History,
-        Archive,
         Undo2,
+        Archive,
         Pencil,
-        Settings2,
-        Layers,
-        Hammer,
-        Target,
-        Percent,
-        Activity,
-        X,
         AlertCircle,
+        Settings2,
     } from "@lucide/svelte";
-    import { fade, slide } from "svelte/transition";
+    import { fade } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
-    import { formatGermanAmount, parseGermanAmount } from "$lib/utils/format";
+    import SearchableMultiSelect from "$lib/components/SearchableMultiSelect.svelte";
+    import { formatGermanAmount } from "$lib/utils/format";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import CurrencyInput from "$lib/components/ui/CurrencyInput.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Modal from "$lib/components/ui/Modal.svelte";
+    import ConfirmModal from "$lib/components/ui/ConfirmModal.svelte";
+    import Table from "$lib/components/ui/Table.svelte";
 
     interface ModificationVersion {
         id?: string;
@@ -56,15 +53,7 @@
         activeVersion?: ModificationVersion;
     }
 
-    function toInputMonth(isoStr: string | null | undefined): string {
-        if (!isoStr) return "";
-        return isoStr.substring(0, 7); // "YYYY-MM"
-    }
 
-    function fromInputMonth(val: string): string {
-        if (!val) return "";
-        return val + "-01T00:00:00Z";
-    }
 
     function formatDate(dateStr: string | null | undefined): string {
         if (!dateStr) return "Ongoing";
@@ -73,14 +62,6 @@
             year: "numeric",
             month: "2-digit",
         });
-    }
-
-    function parseNumeric(val: string | number, locale: "DE" | "US"): number {
-        if (typeof val === "number") return val;
-        if (!val) return 0;
-        if (locale === "DE") return parseGermanAmount(val);
-        let clean = val.toString().trim().replace(/,/g, "");
-        return parseFloat(clean) || 0;
     }
 
     let mods = $state<Modification[]>([]);
@@ -107,22 +88,19 @@
         { id: "LOAN", label: "Liability Node" },
     ];
 
-    const intervalOptions = [
-        { id: "0", label: "One-Time" },
-        { id: "1", label: "Monthly" },
-        { id: "12", label: "Yearly" },
-    ];
-
     const loanOptions = $derived([
         { id: "", label: "Select Target..." },
         ...(allLoans || []).map((l) => ({ id: l.id, label: l.name })),
     ]);
 
+    const assetMultiOptions = $derived(
+        (allAssets || []).map((a) => ({ id: a.id, label: a.name }))
+    );
+
     // Modal State
     let showAddModal = $state(false);
     let showDeleteConfirm = $state(false);
     let currentMod = $state<Modification & { activeVersion: ModificationVersion }>(createNewMod() as any);
-    let amountInput = $state("");
     let modToDelete = $state<string | null>(null);
 
     function createNewMod(): Modification & { activeVersion: ModificationVersion } {
@@ -139,7 +117,7 @@
                 withdrawalPercentage: 0,
                 startDate: monthStr,
                 endDate: null,
-                intervalMonths: "0" as any,
+                intervalMonths: 0,
             },
         } as any;
     }
@@ -179,8 +157,6 @@
         )
             return;
 
-        currentMod.activeVersion.amount = parseNumeric(amountInput, "DE");
-
         isSaving = true;
         try {
             const [, err] = await wsCall(
@@ -202,15 +178,17 @@
                         startDate: currentMod.activeVersion.startDate || "",
                         endDate: currentMod.activeVersion.endDate || "",
                         intervalMonths:
-                            Number(currentMod.activeVersion.intervalMonths) || 0,
+                            parseInt(
+                                currentMod.activeVersion.intervalMonths as any,
+                            ) || 0,
                         createdAt: currentMod.activeVersion.createdAt || "",
                     },
                 },
                 [ErrorSchema],
             ).one();
             if (err) throw err;
-            await fetchData();
             showAddModal = false;
+            await fetchData();
         } catch (err: any) {
             error = err.message;
         } finally {
@@ -226,27 +204,18 @@
                 withdrawalPercentage: 0,
                 startDate: new Date().toISOString(),
                 endDate: null,
-                intervalMonths: "0" as any,
+                intervalMonths: 0,
             };
-        } else {
-            currentMod.activeVersion.intervalMonths = String(currentMod.activeVersion.intervalMonths) as any;
         }
-        if (!currentMod.targetIds) currentMod.targetIds = [];
-        amountInput = formatGermanAmount(currentMod.activeVersion.amount);
         showAddModal = true;
     }
 
-    function toggleAsset(id: string) {
-        if (currentMod.targetIds.includes(id)) {
-            currentMod.targetIds = currentMod.targetIds.filter(
-                (tid) => tid !== id,
-            );
-        } else {
-            currentMod.targetIds = [...currentMod.targetIds, id];
-        }
+    function triggerDelete(id: string) {
+        modToDelete = id;
+        showDeleteConfirm = true;
     }
 
-    async function deleteMod(mode: "revert" | "full") {
+    async function deleteMod(mode?: string) {
         if (!modToDelete) return;
         try {
             const [, err] = await wsCall(
@@ -264,68 +233,53 @@
         }
     }
 
-    function getTargetNames(m: Modification) {
-        if (m.targetType === "LOAN") {
-            return (
-                allLoans.find((l) => l.id === m.targetId)?.name ||
-                "Unknown Loan"
-            );
+    function getTargetName(mod: Modification): string {
+        if (mod.targetType === "LOAN") {
+            const loan = allLoans.find((l) => l.id === mod.targetId);
+            return loan ? loan.name : "Unknown Liability";
+        } else {
+            if (!mod.targetIds || mod.targetIds.length === 0) return "Global";
+            const names = mod.targetIds.map((id) => {
+                const asset = allAssets.find((a) => a.id === id);
+                return asset ? asset.name : "Unknown Asset";
+            });
+            return names.join(", ");
         }
-        if (m.targetIds && m.targetIds.length > 0) {
-            if (m.targetIds.length === 1) {
-                return (
-                    allAssets.find((a) => a.id === m.targetIds[0])?.name ||
-                    "Unknown Asset"
-                );
-            }
-            return `${m.targetIds.length} Assets`;
-        }
-        return (
-            allAssets.find((a) => a.id === m.targetId)?.name || "Unknown Asset"
-        );
     }
 
-    onMount(fetchData);
+    onMount(() => {
+        fetchData();
+    });
 </script>
 
-<svelte:window onkeydown={(e) => {
-    if (e.key === 'Escape') {
-        showAddModal = false;
-        showDeleteConfirm = false;
-    }
-}} />
-
 <div class="space-y-8">
-    <div
-        class="flex flex-col md:flex-row md:items-center justify-between gap-6"
-    >
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-            <h2
-                class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500"
-            >
-                Balance Modifications
+            <h2 class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
+                Adjustments
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                Targeted adjustments for deterministic asset and loan growth.
+                Strategic rules, extra loan repayments, and targeted portfolio actions.
             </p>
         </div>
-        <div class="flex gap-4">
-            <button
+        <div>
+            <Button
                 onclick={() => {
                     currentMod = createNewMod();
-                    amountInput = "";
                     showAddModal = true;
                 }}
-                class="btn-primary"
-                ><Plus class="w-5 h-5" /> Add Modification</button
             >
+                <Plus class="w-5 h-5" />
+                Add Adjustment
+            </Button>
         </div>
     </div>
 
     {#if error}
         <div
             transition:fade
-            class="glass-card p-6 border-rose-200 bg-rose-50/50 flex items-center gap-4 text-rose-600"
+            class="glass-card p-6 border-rose-200 bg-rose-50/50 flex items-center gap-4 text-rose-600 animate-fade-in"
         >
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
@@ -334,406 +288,256 @@
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
-            <button
+            <Button
                 onclick={fetchData}
-                class="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200"
+                class="bg-rose-600 text-white hover:bg-rose-700 shadow-rose-200"
             >
                 Retry
-            </button>
+            </Button>
         </div>
     {/if}
 
     {#if isLoading}
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 class="w-10 h-10 text-indigo-600 animate-spin" />
-            <p
-                class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]"
-            >
-                Syncing Adjustments...
+            <div class="w-10 h-10 border-4 border-t-indigo-600 border-indigo-100 rounded-full animate-spin"></div>
+            <p class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
+                Syncing Strategic Rules...
             </p>
         </div>
     {:else if mods.length === 0}
         <div class="glass-card p-20 text-center space-y-6">
-            <div
-                class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner"
-            >
-                <Hammer class="w-12 h-12 text-slate-300" />
+            <div class="inline-flex items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-inner">
+                <Settings2 class="w-12 h-12 text-slate-300" />
             </div>
             <div class="space-y-2">
                 <h3 class="text-xl font-black text-slate-900">
-                    No Modifications Active
+                    No Strategic Rules Active
                 </h3>
                 <p class="text-slate-500 max-w-xs mx-auto font-medium text-sm">
-                    Add adjustments for specific loans or assets to model
-                    real-world transactions.
+                    Create adjustments for extra principal payments or scheduled asset additions.
                 </p>
             </div>
-            <button
+            <Button
+                variant="secondary"
                 onclick={() => (showAddModal = true)}
-                class="btn-secondary mx-auto">Initialize First Mod</button
+                class="mx-auto"
             >
+                Create First Entry
+            </Button>
         </div>
     {:else}
-        <div class="glass-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-left">
-                    <thead>
-                        <tr class="border-b border-slate-100 bg-slate-50/50">
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Description</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Targets</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Interval</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Date</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Adjustment</th>
-                            <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each sortedMods as m (m.id)}
-                            <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
-                                <td class="px-6 py-4 font-bold text-slate-800">{m.description}</td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[9px] font-black uppercase tracking-[0.2em]">
-                                        {getTargetNames(m)}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {m.activeVersion?.intervalMonths === 0
-                                        ? "One-Time"
-                                        : m.activeVersion?.intervalMonths + "m"}
-                                </td>
-                                <td class="px-6 py-4 text-xs font-bold text-slate-700">
-                                    {formatDate(m.activeVersion?.startDate)}
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black {(m.activeVersion?.amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
-                                        <span>{(m.activeVersion?.amount ?? 0) >= 0 ? "+" : ""}</span>
-                                        <span>{formatGermanAmount(m.activeVersion?.amount ?? 0)} €</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <div class="inline-flex gap-2">
-                                        <button
-                                            onclick={() => editMod(m)}
-                                            class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-transparent hover:border-indigo-100"
-                                            title="Refine (New Version)"
-                                        >
-                                            <Pencil class="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onclick={() => {
-                                                modToDelete = m.id!;
-                                                showDeleteConfirm = true;
-                                            }}
-                                            class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-red-100"
-                                            title="Archive Modification"
-                                        >
-                                            <Trash2 class="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <Table>
+            {#snippet header()}
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Description</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Target Type</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Target Node(s)</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Timeline</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
+            {/snippet}
+            {#snippet body()}
+                {#each sortedMods as mod (mod.id)}
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors last:border-b-0">
+                        <td class="px-6 py-4 font-bold text-slate-800">
+                            {mod.description}
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            <Badge variant={mod.targetType === 'LOAN' ? 'error' : 'success'}>
+                                {mod.targetType === 'LOAN' ? 'Extra Repayment' : 'Asset Addition'}
+                            </Badge>
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700 max-w-[200px] truncate">
+                            {getTargetName(mod)}
+                        </td>
+                        <td class="px-6 py-4 text-xs font-bold text-slate-700">
+                            {formatDate(mod.activeVersion?.startDate)} → {formatDate(mod.activeVersion?.endDate)}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-between w-28 ml-auto tabular-nums font-black text-slate-900 dark:text-slate-100">
+                                {#if mod.activeVersion && mod.activeVersion.withdrawalPercentage > 0}
+                                    <span class="text-xs text-slate-400 italic">Dynamic</span>
+                                    <span>{formatGermanAmount(mod.activeVersion.withdrawalPercentage)}%</span>
+                                {:else}
+                                    <span>€</span>
+                                    <span>{formatGermanAmount(mod.activeVersion?.amount || 0)}</span>
+                                {/if}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="inline-flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => editMod(mod)}
+                                    title="Edit (Create New Version)"
+                                    class="hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-100"
+                                >
+                                    <Pencil class="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => triggerDelete(mod.id!)}
+                                    title="Delete/Revert"
+                                    class="hover:text-red-600 hover:bg-red-50 hover:border-red-100"
+                                >
+                                    <Trash2 class="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </td>
+                    </tr>
+                {/each}
+            {/snippet}
+        </Table>
     {/if}
 </div>
 
-<!-- Delete Confirmation Modal -->
-{#if showDeleteConfirm}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-md bg-white rounded-[30px] shadow-2xl p-10 relative overflow-hidden"
-        >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
-
-            <div class="text-center mb-8">
-                <div
-                    class="inline-flex items-center justify-center p-4 bg-rose-50 text-rose-600 rounded-2xl mb-6"
-                >
-                    <Trash2 class="w-8 h-8" />
-                </div>
-                <h3 class="text-2xl font-black text-slate-900 mb-2">
-                    Archive Modification?
-                </h3>
-                <p class="text-slate-500 font-medium text-sm">
-                    This will stop applying this adjustment to future
-                    projections. History is preserved.
-                </p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <button
-                    onclick={() => (showDeleteConfirm = false)}
-                    class="btn-secondary">Keep</button
-                >
-                <button
-                    onclick={() => deleteMod("full")}
-                    class="btn-primary bg-rose-600 hover:bg-rose-700 border-rose-600 shadow-rose-100"
-                    >Archive</button
-                >
-            </div>
-            <button
-                onclick={() => deleteMod("revert")}
-                class="w-full mt-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-indigo-600 transition-colors"
-                >Revert Latest Version Only</button
-            >
-        </div>
-    </div>
-{/if}
-
 <!-- Add/Edit Modal -->
-{#if showAddModal}
-    <div
-        transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
-    >
-        <div
-            transition:slide
-            class="w-full max-w-lg bg-white rounded-[30px] shadow-2xl relative max-h-[90vh] flex flex-col overflow-hidden"
+<Modal
+    bind:open={showAddModal}
+    title="{currentMod.id ? 'Refine' : 'New'} Strategic Rule"
+    subtitle="Configure targeted additions, payments, or liquidation triggers."
+>
+    {#if currentMod.activeVersion}
+        <form
+            onsubmit={(e) => {
+                e.preventDefault();
+                saveMod();
+            }}
+            class="space-y-8"
         >
-            <div
-                class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-            ></div>
+            <Input
+                label="Rule Description"
+                bind:value={currentMod.description}
+                placeholder="e.g. Annual Vacation Fund, Principal Repayment..."
+                required
+            />
 
-            <button
-                onclick={() => (showAddModal = false)}
-                class="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors"
-            >
-                <Plus class="w-6 h-6 rotate-45" />
-            </button>
-
-            <div class="p-10 space-y-10 overflow-y-auto">
-                <div>
-                    <h3
-                        class="text-2xl font-black text-slate-900 tracking-tight"
+            <div class="grid grid-cols-2 gap-6">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                        Target Type
+                    </label>
+                    <select
+                        bind:value={currentMod.targetType}
+                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
                     >
-                        {currentMod.id ? "Refine" : "New"} Modification
-                    </h3>
-                    <p class="text-slate-500 font-medium text-sm">
-                        {currentMod.id
-                            ? "Changes will be saved as a new immutable version."
-                            : "Target specific nodes for balance adjustments."}
-                    </p>
+                        {#each typeOptions as opt}
+                            <option value={opt.id}>{opt.label}</option>
+                        {/each}
+                    </select>
                 </div>
 
-                <form
-                    onsubmit={(e) => {
-                        e.preventDefault();
-                        saveMod();
-                    }}
-                    class="space-y-8"
-                >
-                    <div class="grid grid-cols-2 gap-6">
+                <div class="space-y-2">
+                    {#if currentMod.targetType === "LOAN"}
                         <SearchableDropdown
-                            label="Target Type"
-                            options={typeOptions}
-                            bind:value={currentMod.targetType}
+                            label="Target Liability Node"
+                            options={loanOptions}
+                            bind:value={currentMod.targetId}
+                            placeholder="Select Target Loan..."
                         />
-
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Target Node</label
-                            >
-                            {#if currentMod.targetType === "LOAN"}
-                                <SearchableDropdown
-                                    options={loanOptions}
-                                    bind:value={currentMod.targetId}
-                                    placeholder="Select Liability..."
-                                />
-                            {:else}
-                                <div
-                                    class="space-y-2 max-h-40 overflow-y-auto p-3 bg-white border border-slate-200 rounded-xl shadow-inner custom-scrollbar"
-                                >
-                                    {#each allAssets as a}
-                                        <label
-                                            class="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={currentMod.targetIds.includes(
-                                                    a.id,
-                                                )}
-                                                onchange={() =>
-                                                    toggleAsset(a.id)}
-                                                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                            />
-                                            <span
-                                                class="text-[11px] font-bold text-slate-700"
-                                                >{a.name}</span
-                                            >
-                                        </label>
-                                    {/each}
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
-
-                    <div class="space-y-2">
-                        <label
-                            class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >Description</label
-                        >
-                        <input
-                            bind:value={currentMod.description}
-                            placeholder="e.g. Sondertilgung"
-                            class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold"
-                            required
+                    {:else}
+                        <SearchableMultiSelect
+                            label="Target Asset Node(s)"
+                            options={assetMultiOptions}
+                            bind:values={currentMod.targetIds}
+                            placeholder="Select Assets..."
                         />
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                            >
-                                {currentMod.activeVersion.withdrawalPercentage >
-                                0
-                                    ? "Min. Threshold (€)"
-                                    : "Adjustment (€)"}
-                            </label>
-                            <input
-                                type="text"
-                                bind:value={amountInput}
-                                placeholder="+5.000,00"
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                required
-                            />
-                        </div>
-
-                        <SearchableDropdown
-                            label="Interval"
-                            options={intervalOptions}
-                            bind:value={
-                                currentMod.activeVersion.intervalMonths as any
-                            }
-                        />
-                    </div>
-
-                    {#if currentMod.targetType === "ASSET"}
-                        <div
-                            class="space-y-4 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm"
-                            transition:slide
-                        >
-                            <div class="space-y-2">
-                                <label
-                                    class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 flex items-center gap-2"
-                                >
-                                    <Percent class="w-3 h-3" /> Dynamic Withdrawal
-                                    (%)
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    bind:value={
-                                        currentMod.activeVersion
-                                            .withdrawalPercentage
-                                    }
-                                    placeholder="3,5"
-                                    class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                />
-                                <p
-                                    class="text-[9px] font-medium text-slate-500 ml-1"
-                                >
-                                    If set, it will withdraw this % annually
-                                    (split monthly) if the balance is >=
-                                    Threshold.
-                                </p>
-                            </div>
-                        </div>
                     {/if}
-
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >Start Month</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentMod.activeVersion.startDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentMod.activeVersion.startDate =
-                                        fromInputMonth(e.target.value))}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                                required
-                            />
-                        </div>
-                        <div class="space-y-2">
-                            <label
-                                class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1"
-                                >End Month (Optional)</label
-                            >
-                            <input
-                                type="month"
-                                value={toInputMonth(
-                                    currentMod.activeVersion.endDate,
-                                )}
-                                oninput={(e: any) =>
-                                    (currentMod.activeVersion.endDate = e.target
-                                        .value
-                                        ? fromInputMonth(e.target.value)
-                                        : null)}
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="pt-6">
-                        <button
-                            disabled={isSaving}
-                            class="btn-primary w-full py-4 text-lg shadow-2xl shadow-indigo-100 bg-indigo-600 hover:bg-indigo-700"
-                        >
-                            {#if isSaving}
-                                <Loader2 class="w-6 h-6 animate-spin" />
-                                <span>Versioning Adjustments...</span>
-                            {:else}
-                                <span>Save as New Version</span>
-                            {/if}
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
-        </div>
+
+            <div class="grid grid-cols-2 gap-6">
+                <CurrencyInput
+                    label="Rate Amount (€)"
+                    bind:value={currentMod.activeVersion.amount}
+                    required={currentMod.activeVersion.withdrawalPercentage === 0}
+                />
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                        Frequency
+                    </label>
+                    <select
+                        bind:value={currentMod.activeVersion.intervalMonths}
+                        class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
+                    >
+                        <option value={0}>One-Time (Due in Start Month)</option>
+                        <option value={1}>Monthly</option>
+                        <option value={12}>Yearly</option>
+                    </select>
+                </div>
+            </div>
+
+            {#if currentMod.targetType === "ASSET" && currentMod.activeVersion.intervalMonths > 0}
+                <div class="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                            Dynamic Withdrawal Percentage (%)
+                        </label>
+                        <div class="relative">
+                            <Input
+                                type="number"
+                                step="0.01"
+                                bind:value={currentMod.activeVersion.withdrawalPercentage}
+                                placeholder="e.g. 4.00"
+                            />
+                        </div>
+                        <p class="text-[9px] font-medium text-slate-500 dark:text-slate-400 ml-1">
+                            Use this for dynamic payouts (like safe withdrawal rates). Leave at 0% for fixed monetary amounts.
+                        </p>
+                    </div>
+                </div>
+            {/if}
+
+            <div class="grid grid-cols-2 gap-6">
+                <Input
+                    type="month"
+                    label="Start Month"
+                    value={toInputMonth(currentMod.activeVersion.startDate)}
+                    oninput={(e: any) => (currentMod.activeVersion.startDate = fromInputMonth(e.target.value))}
+                    required
+                />
+                {#if currentMod.activeVersion.intervalMonths > 0}
+                    <Input
+                        type="month"
+                        label="End Month (Optional)"
+                        value={toInputMonth(currentMod.activeVersion.endDate)}
+                        oninput={(e: any) => (currentMod.activeVersion.endDate = e.target.value ? fromInputMonth(e.target.value) : null)}
+                    />
+                {/if}
+            </div>
+
+            <div class="pt-6">
+                <Button
+                    type="submit"
+                    variant="primary"
+                    loading={isSaving}
+                    loadingLabel="Versioning Data..."
+                    class="w-full py-4 text-lg"
+                >
+                    Save as New Version
+                </Button>
+            </div>
+        </form>
+    {/if}
+</Modal>
+
+<!-- Deletion Confirmation Modal -->
+<ConfirmModal
+    bind:open={showDeleteConfirm}
+    title="Archive Modification?"
+    description="This will stop applying this adjustment to future projections. History is preserved."
+>
+    <div class="grid grid-cols-2 gap-4">
+        <Button variant="secondary" onclick={() => (showDeleteConfirm = false)}>
+            Keep
+        </Button>
+        <Button variant="danger" onclick={() => deleteMod("full")}>
+            Archive
+        </Button>
     </div>
-{/if}
-
-<style>
-    @reference "../../app.css";
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 4px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 10px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: #cbd5e1;
-    }
-
-    .btn-primary {
-        @apply px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2;
-    }
-
-    .btn-secondary {
-        @apply px-6 py-3 bg-slate-50 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-100 transition-all active:scale-95 border border-slate-100 flex items-center justify-center gap-2;
-    }
-
-    .glass-card {
-        @apply bg-white border border-slate-100 rounded-[32px] shadow-sm;
-    }
-</style>
+    <button
+        onclick={() => deleteMod("revert")}
+        class="w-full mt-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-indigo-600 transition-colors"
+    >
+        Revert Latest Version Only
+    </button>
+</ConfirmModal>
