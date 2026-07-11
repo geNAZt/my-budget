@@ -161,11 +161,14 @@
 
     async function fetchTrackerCharts() {
         try {
-            const [resp, err] = await wsCall("assets::gettrackercharts", {
-                range: selectedTrackerRange,
-            }, GetTrackerChartsRequestSchema, [
-                TrackerChartsResponseSchema,
-            ]).one();
+            const [resp, err] = await wsCall(
+                "assets::gettrackercharts",
+                GetTrackerChartsRequestSchema,
+                {
+                    range: selectedTrackerRange,
+                },
+                [TrackerChartsResponseSchema],
+            ).one();
             if (err) throw err;
             trackerCharts = resp && resp.charts ? resp.charts : [];
         } catch (err: any) {
