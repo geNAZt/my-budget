@@ -95,20 +95,23 @@
 
     async function loadSyncRuns() {
         isLoadingRuns = true;
+        runs = [];
         try {
-            const [res, err] = await wsCall(
+            const callResult = wsCall(
                 "system::sync_runs",
                 null,
                 null,
-                [api.SyncRunListSchema],
+                [api.SyncRunSchema],
                 { timeout: 60000 }
-            ).one();
-            if (err) {
-                console.error("[SYNC_LOGS] Failed to load sync runs:", err);
-                return;
-			}
-            if (res && res.runs) {
-                runs = res.runs;
+            );
+            for await (const [run, err] of callResult.many()) {
+                if (err) {
+                    console.error("[SYNC_LOGS] Failed to load sync runs chunk:", err);
+                    break;
+                }
+                if (run) {
+                    runs.push(run);
+                }
             }
         } catch (err) {
             console.error("[SYNC_LOGS] Failed to load sync runs:", err);
