@@ -986,7 +986,7 @@ console.log("Current budget sheet loaded:", budget);
 <!-- Fullscreen Modal Overlay -->
 {#if isFullscreen}
     <div
-        class="fixed inset-0 z-[999] bg-slate-950/95 backdrop-blur-lg flex flex-col p-8 space-y-6"
+        class="fixed inset-0 z-[999] bg-slate-950 flex flex-col p-8 space-y-6"
         transition:fade
     >
         <div

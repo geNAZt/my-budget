@@ -390,7 +390,7 @@
 <!-- Add/Edit Modal -->
 {#if showAddModal}
     <div
-        class="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4"
+        class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4"
         transition:fade
     >
         <div
@@ -547,7 +547,7 @@
 <!-- Delete Confirmation Modal -->
 {#if showDeleteConfirm}
     <div
-        class="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[110] flex items-center justify-center p-4"
+        class="fixed inset-0 bg-slate-900/60 z-[110] flex items-center justify-center p-4"
         transition:fade
     >
         <div

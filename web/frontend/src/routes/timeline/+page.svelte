@@ -2607,7 +2607,7 @@
 
 <!-- Expense Modal Details -->
 {#if showExpenseModal && selectedExpenseObj}
-    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4" transition:fade>
+    <div class="fixed inset-0 bg-slate-900/80 z-[999] flex items-center justify-center p-4" transition:fade>
         <div class="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
             <div class="p-6 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                 <div class="flex items-center gap-2">
@@ -2909,7 +2909,7 @@
 
 <!-- Asset Editor Modal -->
 {#if showAssetModal && editingAssetObj}
-    <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4" transition:fade>
+    <div class="fixed inset-0 bg-slate-900/80 z-[999] flex items-center justify-center p-4" transition:fade>
         <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
             <div class="p-6 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                 <div class="flex items-center gap-2">

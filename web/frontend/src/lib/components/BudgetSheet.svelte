@@ -687,7 +687,7 @@
 
                         <!-- Premium Tooltip Popover -->
                         <div
-                            class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 absolute left-0 top-full mt-2 w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border border-slate-100 dark:border-slate-800/60 rounded-2xl shadow-xl z-[150] p-4 text-left pointer-events-auto"
+                            class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 absolute left-0 top-full mt-2 w-80 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800/60 rounded-2xl shadow-xl z-[150] p-4 text-left pointer-events-auto"
                         >
                             <!-- Top accent color bar -->
                             <div

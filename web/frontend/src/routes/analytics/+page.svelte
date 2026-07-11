@@ -2118,7 +2118,7 @@
                     <div class="flex-1 relative min-h-[350px]">
                         {#if Object.values(loadingProjections).some((x) => x)}
                             <div
-                                class="absolute inset-0 flex flex-col items-center justify-center space-y-4 bg-white/50 backdrop-blur-sm z-10 rounded-2xl"
+                                class="absolute inset-0 flex flex-col items-center justify-center space-y-4 bg-white/90 z-10 rounded-2xl"
                             >
                                 <Loader2
                                     class="w-10 h-10 text-indigo-600 animate-spin"

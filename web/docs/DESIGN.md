@@ -469,9 +469,9 @@ To address high GPU usage when the application is open (even when idle), we impl
 - **Problem**: Monaco Editor is configured with `automaticLayout: true`, which spawns a continuous polling loop (using `requestAnimationFrame` or `setInterval`) to check the container size. This keeps both CPU and GPU active constantly even when the editor is idle.
 - **Solution**: Set `automaticLayout: false` in `MonacoEditor.svelte` and register a native browser `ResizeObserver` on the editor's container. The observer calls `editor.layout()` only when container bounds actually change, and is cleanly disconnected in `onDestroy()`.
 
-### 2. Glassmorphism CSS Composite Layer Promotion
-- **Problem**: Elements with CSS `backdrop-filter: blur(...)` (such as `.glass-card` and `.glass-nav`) require the browser's graphics engine to perform expensive copy-blur-composite operations. When page content scrolls, loaders spin, or pulsing animations occur, the GPU repaints the entire blurred area on every frame.
-- **Solution**: Add `transform: translateZ(0)` and `backface-visibility: hidden` to `.glass-card` and `.glass-nav` in `web/frontend/src/app.css` to promote them to their own GPU layers. This allows the browser to cache the composited layer instead of recalculating the blur filter continuously.
+### 2. GPU Rendering Optimizations (Removing Backdrop Blur & Animations)
+- **Problem**: Elements using CSS `backdrop-filter: blur(...)` (such as `.glass-card`, `.glass-nav`, and modal backdrop overlays) require the browser's graphics engine to perform expensive copy-blur-composite operations. When page content scrolls or updates, the GPU repaints the blurred regions continuously, causing high GPU utilization. Additionally, hover-based duplicate transaction highlighting and animated warning status elements trigger continuous paint cycles.
+- **Solution**: Remove all `backdrop-blur` class references across the frontend layout and components. Replace glassmorphic layers with clean solid or semi-opaque flat backgrounds, and remove GPU layer promotion overrides (`transform: translateZ(0)`). Completely remove duplicate warnings, sibling highlighting, and animated warning/copy icons displayed when hovering over transactions in the realtime view. Remove unnecessary `animate-pulse` classes from transaction warning badges to prevent idle repaints.
 
 ## 29. Linking Realtime Accounts to Virtual Accounts
 

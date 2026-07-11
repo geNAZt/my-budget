@@ -516,10 +516,6 @@
         hoveredTxId &&
             transactions.find((t) => t.id === hoveredTxId)?.potentialLinkId,
     );
-    const hoveredDuplicateKey = $derived(
-        hoveredTxId &&
-            transactions.find((t) => t.id === hoveredTxId)?.duplicateKey,
-    );
 
     const deniedTransactions = $derived(
         transactionToEdit && transactionToEdit.deniedDuplicateIds
@@ -1956,10 +1952,6 @@
                                 {@const isHovered = tx.id === hoveredTxId}
                                 {@const isLinkTarget =
                                     tx.id === hoveredTargetId}
-                                {@const isDuplicateSibling =
-                                    hoveredDuplicateKey &&
-                                    tx.duplicateKey === hoveredDuplicateKey &&
-                                    tx.id !== hoveredTxId}
 
                                 <div
                                     onclick={() => openTransactionEdit(tx)}
@@ -1972,54 +1964,9 @@
                                         openTransactionEdit(tx)}
                                     class="w-full flex items-center gap-6 p-5 bg-white border rounded-3xl transition-all group text-left cursor-pointer relative
                                    {isHovered
-                                        ? 'z-20 scale-[1.01] shadow-xl shadow-slate-200/50'
-                                        : ''}
-                                   {isHovered && hoveredTargetId
-                                        ? 'border-indigo-600 ring-2 ring-indigo-600/10'
-                                        : ''}
-                                   {isHovered && hoveredDuplicateKey
-                                        ? 'border-amber-500 ring-2 ring-amber-500/10'
-                                        : ''}
-                                   {isLinkTarget
-                                        ? 'border-indigo-600 ring-2 ring-indigo-600/10 shadow-lg shadow-indigo-100/50 z-10 scale-[1.01]'
-                                        : ''}
-                                   {isDuplicateSibling
-                                        ? 'border-amber-500 ring-2 ring-amber-500/10 shadow-lg shadow-amber-100/50 z-10 scale-[1.01]'
-                                        : ''}
-                                   {!isHovered &&
-                                    !isLinkTarget &&
-                                    !isDuplicateSibling
-                                        ? 'border-slate-100 hover:border-indigo-200'
-                                        : ''}"
+                                        ? 'border-indigo-400'
+                                        : 'border-slate-100'}"
                                 >
-                                    {#if isHovered && hoveredTargetId}
-                                        <div
-                                            class="absolute -left-10 top-1/2 -translate-y-1/2 text-indigo-600 animate-pulse hidden lg:block"
-                                        >
-                                            <Activity class="w-6 h-6" />
-                                        </div>
-                                    {/if}
-                                    {#if isLinkTarget}
-                                        <div
-                                            class="absolute -left-10 top-1/2 -translate-y-1/2 text-indigo-500 animate-bounce-x hidden lg:block"
-                                        >
-                                            <ArrowRight class="w-6 h-6" />
-                                        </div>
-                                    {/if}
-                                    {#if isHovered && hoveredDuplicateKey}
-                                        <div
-                                            class="absolute -left-10 top-1/2 -translate-y-1/2 text-amber-500 animate-pulse hidden lg:block"
-                                        >
-                                            <AlertTriangle class="w-6 h-6" />
-                                        </div>
-                                    {/if}
-                                    {#if isDuplicateSibling}
-                                        <div
-                                            class="absolute -left-10 top-1/2 -translate-y-1/2 text-amber-500 animate-bounce-x hidden lg:block"
-                                        >
-                                            <Copy class="w-6 h-6" />
-                                        </div>
-                                    {/if}
                                     <div class="flex-1 min-w-0">
                                         <div
                                             class="flex items-center gap-3 mb-1"
@@ -2055,7 +2002,7 @@
                                             {/if}
                                             {#if tx.isPotentialDuplicate}
                                                 <span
-                                                    class="flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-200/50 text-[8px] font-black rounded-lg uppercase animate-pulse"
+                                                    class="flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-200/50 text-[8px] font-black rounded-lg uppercase"
                                                     title="Potential duplicate detected (same day, same amount, same description & accounts)"
                                                 >
                                                     <AlertTriangle
@@ -2066,7 +2013,7 @@
                                             {/if}
                                             {#if tx.hasWrongExternalId}
                                                 <span
-                                                    class="flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-600 border border-rose-200/50 text-[8px] font-black rounded-lg uppercase animate-pulse"
+                                                    class="flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-600 border border-rose-200/50 text-[8px] font-black rounded-lg uppercase"
                                                     title="Incorrect external ID in DB: {tx.externalId} (Expected True ID: {tx.correctExternalId})"
                                                 >
                                                     <AlertTriangle
@@ -2476,7 +2423,7 @@
 <!-- Transaction Edit Modal -->
 {#if showTransactionEdit}
     <div
-        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60"
         transition:fade
     >
         <div
@@ -2798,7 +2745,7 @@
 <!-- Budget Generation Wizard Modal -->
 {#if showWizard}
     <div
-        class="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+        class="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-900/60"
         transition:fade
     >
         <div
@@ -2927,7 +2874,7 @@
 
 {#if showRuleArchitect}
     <div
-        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm"
+        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60"
         transition:fade
     >
         <div

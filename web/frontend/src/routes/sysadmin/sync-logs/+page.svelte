@@ -301,7 +301,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             
             <!-- Left Pane: Runs List -->
-            <div class="lg:col-span-5 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl p-6 h-[750px] flex flex-col space-y-4">
+            <div class="lg:col-span-5 bg-slate-900 border border-slate-800/80 rounded-2xl p-6 h-[750px] flex flex-col space-y-4">
                 <div class="flex items-center justify-between">
                     <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Sync Runs History ({filteredRuns().length})</h2>
                     {#if isLoadingRuns}
@@ -382,7 +382,7 @@
             </div>
 
             <!-- Right Pane: Details, Transactions & Raw Logs -->
-            <div class="lg:col-span-7 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl p-6 h-[750px] flex flex-col">
+            <div class="lg:col-span-7 bg-slate-900 border border-slate-800/80 rounded-2xl p-6 h-[750px] flex flex-col">
                 {#if isLoadingDetails}
                     <div class="h-full flex flex-col items-center justify-center space-y-4">
                         <div class="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>

@@ -843,7 +843,7 @@
 {#if showAddModal}
     <div
         transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
     >
         <div
             transition:slide
@@ -1329,7 +1329,7 @@
 {#if showDeleteConfirm}
     <div
         transition:fade={{ duration: 200 }}
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60"
     >
         <div
             transition:slide

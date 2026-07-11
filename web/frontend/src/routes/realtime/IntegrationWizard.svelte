@@ -261,7 +261,7 @@
 </script>
 
 <div
-    class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6"
+    class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6"
     transition:fade
 >
     <div

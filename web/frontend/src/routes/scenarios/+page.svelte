@@ -1243,7 +1243,7 @@
 {#if selectedMonthIndex !== null && projectionResult.months[selectedMonthIndex]}
     {@const month = projectionResult.months[selectedMonthIndex]}
     <div
-        class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8"
+        class="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 md:p-8"
         transition:fade={{ duration: 150 }}
     >
         <!-- Modal Container -->
@@ -1327,7 +1327,7 @@
 <!-- Logic Configuration Modal Overlay -->
 {#if showScopeModal && activeScenario}
     <div
-        class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 md:p-8"
+        class="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 md:p-8"
         transition:fade={{ duration: 150 }}
     >
         <!-- Modal Container -->
@@ -1659,7 +1659,7 @@
 {/if}
 
 {#if showDeleteConfirm}
-    <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" transition:fade>
+    <div class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-4" transition:fade>
         <div class="glass-card max-w-md w-full p-8 space-y-6 shadow-2xl" transition:slide>
             <div class="flex items-center gap-4 text-rose-600">
                 <div class="p-3 bg-rose-50 rounded-2xl">

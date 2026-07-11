@@ -300,7 +300,7 @@
         <!-- Recovery Lockdown Overlay -->
         {#if isRecovery}
             <div
-                class="fixed inset-0 bg-slate-900/80 backdrop-blur-2xl z-[1000] flex items-center justify-center p-6"
+                class="fixed inset-0 bg-slate-950 z-[1000] flex items-center justify-center p-6"
                 transition:fade
             >
                 <div
