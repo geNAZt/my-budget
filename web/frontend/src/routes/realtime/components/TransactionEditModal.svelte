@@ -79,14 +79,20 @@
             <SearchableDropdown
                 label="Source Account"
                 options={accountOptions}
-                bind:value={transactionToEdit.sourceAccountId}
+                value={transactionToEdit.sourceAccountId}
+                onchange={(val) => {
+                    transactionToEdit.sourceAccountId = val;
+                }}
                 placeholder="Select source..."
             />
 
             <SearchableDropdown
                 label="Destination Account"
                 options={accountOptions}
-                bind:value={transactionToEdit.destinationAccountId}
+                value={transactionToEdit.destinationAccountId}
+                onchange={(val) => {
+                    transactionToEdit.destinationAccountId = val;
+                }}
                 placeholder="Select destination..."
             />
         </div>
@@ -152,7 +158,10 @@
             <SearchableMultiSelect
                 label="Assigned Pools"
                 options={poolOptions}
-                bind:values={transactionToEdit.poolIds}
+                values={transactionToEdit.poolIds || []}
+                onchange={(vals) => {
+                    transactionToEdit.poolIds = vals;
+                }}
                 placeholder="Select pools..."
             />
         </div>
