@@ -66,14 +66,14 @@
     }>();
 </script>
 
-<Modal
-    bind:open={open}
-    title="Modify Transaction Flow"
-    subtitle="Update account mapping and deterministic metadata."
-    maxWidthClass="max-w-xl"
-    zIndexClass="z-[100]"
->
-    {#if transactionToEdit}
+{#if open && transactionToEdit}
+    <Modal
+        bind:open={open}
+        title="Modify Transaction Flow"
+        subtitle="Update account mapping and deterministic metadata."
+        maxWidthClass="max-w-xl"
+        zIndexClass="z-[100]"
+    >
         <!-- Source / Destination Accounts Selection -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <SearchableDropdown
@@ -344,5 +344,5 @@
                 <span>Apply Flow Changes</span>
             </button>
         </div>
-    {/if}
-</Modal>
+    </Modal>
+{/if}
