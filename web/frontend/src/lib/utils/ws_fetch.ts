@@ -224,6 +224,10 @@ export function onWsEvent<T extends DescMessage>(
 // Define the tuple types for clean Go-style error handling
 export type Tuple<T> = [data: T, error: null] | [data: null, error: Error];
 
+export interface WsCallConfig {
+  timeout?: number;
+}
+
 /**
  * Modern fully asynchronous wrapper utility.
  * Returns an execution chain offering .one() and .many() Go-style variants.
@@ -233,8 +237,10 @@ export function wsCall<T extends DescMessage, R extends DescMessage[]>(
   schema?: T | null | any,
   body?: MessageInitShape<T> | null | any,
   responseSchemas?: R,
+  config?: WsCallConfig,
 ): any {
   const id = "req_" + Math.random().toString(36).substring(2, 11);
+  const timeoutMs = config?.timeout ?? 15000;
 
   // Binary serializing handled immediately at call point using provided schema context
   let bodyBytes = new Uint8Array();
@@ -259,10 +265,10 @@ export function wsCall<T extends DescMessage, R extends DescMessage[]>(
             requests.delete(id);
             resolve([
               null,
-              new Error(`Request to ${path} timed out after 15000ms`),
+              new Error(`Request to ${path} timed out after ${timeoutMs}ms`),
             ]);
           }
-        }, 15000);
+        }, timeoutMs);
 
         sendRequest({
           id,

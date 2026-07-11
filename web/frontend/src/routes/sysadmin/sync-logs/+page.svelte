@@ -100,7 +100,8 @@
                 "system::sync_runs",
                 null,
                 null,
-                [api.SyncRunListSchema]
+                [api.SyncRunListSchema],
+                { timeout: 60000 }
             ).one();
             if (err) {
                 console.error("[SYNC_LOGS] Failed to load sync runs:", err);
@@ -127,7 +128,8 @@
                 "system::sync_run_details",
                 api.SyncRunDetailsRequestSchema,
                 { correlationId },
-                [api.SyncRunDetailsResponseSchema]
+                [api.SyncRunDetailsResponseSchema],
+                { timeout: 60000 }
             ).one();
             if (err) {
                 console.error("[SYNC_LOGS] Failed to load details:", err);
