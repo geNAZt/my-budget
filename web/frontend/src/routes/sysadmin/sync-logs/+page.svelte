@@ -22,6 +22,17 @@
     import { fade, slide } from "svelte/transition";
 
     let runs = $state<any[]>([]);
+    let metrics = $state<any>(null);
+
+    function formatBytes(bytes: number | bigint): string {
+        const b = Number(bytes);
+        if (b === 0) return "0 B";
+        const k = 1024;
+        const sizes = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(b) / Math.log(k));
+        return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    }
+
     let selectedCorrelationId = $state<string>("");
     let selectedRunDetails = $state<any>(null);
     let isLoadingRuns = $state(false);
@@ -96,6 +107,7 @@
     async function loadSyncRuns() {
         isLoadingRuns = true;
         runs = [];
+        metrics = null;
         try {
             const callResult = wsCall(
                 "system::sync_runs",
@@ -110,12 +122,22 @@
                     break;
                 }
                 if (run) {
-                    runs.push(run);
-                    runs = runs.sort((a, b) => {
-                        const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-                        const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-                        return tB - tA;
-                    });
+                    if (run.isMetrics) {
+                        metrics = run.metrics;
+                    } else {
+                        const existingIdx = runs.findIndex(r => r.correlationId === run.correlationId);
+                        if (existingIdx !== -1) {
+                            runs[existingIdx].transactionCount = run.transactionCount;
+                            runs[existingIdx].status = run.status;
+                        } else {
+                            runs.push(run);
+                        }
+                        runs = runs.sort((a, b) => {
+                            const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                            const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                            return tB - tA;
+                        });
+                    }
                 }
             }
         } catch (err) {
@@ -322,6 +344,27 @@
                     {/if}
                 </div>
 
+                {#if metrics}
+                    <div class="grid grid-cols-2 gap-3 p-3 bg-slate-950/60 border border-slate-800/60 rounded-xl text-[9px] font-bold text-slate-400 shadow-inner">
+                        <div class="space-y-0.5">
+                            <div class="text-slate-500 uppercase tracking-wider text-[8px]">CPU Utilization</div>
+                            <div class="text-indigo-400 font-mono">{metrics.cpuUtilization.toFixed(1)}%</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="text-slate-500 uppercase tracking-wider text-[8px]">Mem RSS</div>
+                            <div class="text-indigo-400 font-mono">{formatBytes(metrics.memoryRssBytes)}</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="text-slate-500 uppercase tracking-wider text-[8px]">File IO Ops</div>
+                            <div class="text-indigo-400 font-mono">{metrics.fileIoReadOperations} reads ({formatBytes(metrics.fileIoReadBytes)})</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="text-slate-500 uppercase tracking-wider text-[8px]">IO Wait Time</div>
+                            <div class="text-indigo-400 font-mono">{metrics.totalIoDurationMs}ms</div>
+                        </div>
+                    </div>
+                {/if}
+
                 <!-- Run Cards Container -->
                 <div class="flex-1 overflow-y-auto space-y-3 pr-1">
                     {#if filteredRuns().length === 0}
@@ -375,7 +418,12 @@
                                     </span>
 
                                     <!-- Transaction Discovered Count -->
-                                    {#if run.transactionCount > 0}
+                                    {#if run.transactionCount === -1}
+                                        <span class="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                                            <div class="w-2.5 h-2.5 border border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                                            Scanning...
+                                        </span>
+                                    {:else if run.transactionCount > 0}
                                         <span class="text-[10px] font-bold text-indigo-300 bg-indigo-500/15 border border-indigo-500/20 px-2 py-0.5 rounded-md">
                                             {run.transactionCount} txs detected
                                         </span>

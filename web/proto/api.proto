@@ -796,6 +796,14 @@ message SystemLogRequest {
   string container_id = 1;
 }
 
+message SyncPerformanceMetrics {
+  int64 file_io_read_bytes = 1;
+  int32 file_io_read_operations = 2;
+  double cpu_utilization = 3;
+  uint64 memory_rss_bytes = 4;
+  int64 total_io_duration_ms = 5;
+}
+
 message SyncRun {
   string correlation_id = 1;
   string integration_id = 2;
@@ -805,6 +813,8 @@ message SyncRun {
   string status = 6;
   int32 transaction_count = 7;
   bool has_log_files = 8;
+  SyncPerformanceMetrics metrics = 9;
+  bool is_metrics = 10;
 }
 
 message SyncRunList {

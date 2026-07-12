@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/genazt/my-budget-script/web/backend/internal/api"
@@ -247,7 +249,30 @@ func (sys *System) Logs(s *api.WebsocketSession, reqID string, req *apiproto.Sys
 	}
 }
 
-// SyncRuns lists all sync runs (logs) for the authenticated user
+type syncMetrics struct {
+	mu           sync.Mutex
+	ioBytes      int64
+	ioOps        int64
+	ioDurationNs int64
+}
+
+// Helper to get CPU time and Memory RSS
+func getCPUTimeAndMemory() (time.Duration, uint64) {
+	var rusage syscall.Rusage
+	var cpuTime time.Duration
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &rusage); err == nil {
+		userSec := rusage.Utime.Sec
+		userUsec := rusage.Utime.Usec
+		sysSec := rusage.Stime.Sec
+		sysUsec := rusage.Stime.Usec
+		cpuTime = time.Duration(userSec+sysSec)*time.Second + time.Duration(userUsec+sysUsec)*time.Microsecond
+	}
+
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	return cpuTime, memStats.Sys
+}
+
 // SyncRuns lists all sync runs (logs) for the authenticated user
 func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.Empty) {
 	userID, _ := s.GetAuth()
@@ -269,8 +294,39 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 	// Load user integrations for fallback matching
 	userInts, _ := sys.loadUserIntegrations(userID)
 
-	// Read logs directory
-	entries, err := os.ReadDir(logsDir)
+	metrics := &syncMetrics{}
+
+	readFileWithMetrics := func(filePath string) ([]byte, error) {
+		start := time.Now()
+		content, err := os.ReadFile(filePath)
+		duration := time.Since(start)
+
+		metrics.mu.Lock()
+		metrics.ioOps++
+		if err == nil {
+			metrics.ioBytes += int64(len(content))
+		}
+		metrics.ioDurationNs += duration.Nanoseconds()
+		metrics.mu.Unlock()
+
+		return content, err
+	}
+
+	readDirWithMetrics := func(dirPath string) ([]os.DirEntry, error) {
+		start := time.Now()
+		entries, err := os.ReadDir(dirPath)
+		duration := time.Since(start)
+
+		metrics.mu.Lock()
+		metrics.ioOps++
+		metrics.ioDurationNs += duration.Nanoseconds()
+		metrics.mu.Unlock()
+
+		return entries, err
+	}
+
+	// Gather all directories
+	entries, err := readDirWithMetrics(logsDir)
 	if err != nil {
 		if !s.IsClosed() {
 			sys.handler.SendResponse(s, reqID, nil, true)
@@ -278,21 +334,226 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 		return
 	}
 
-	var directories []os.DirEntry
+	type folderTask struct {
+		correlationID   string
+		runDir          string
+		timestampStr    string
+		respFiles       []string
+		integrationID   string
+		integrationName string
+		serviceType     string
+		isEmpty         bool
+	}
+
+	var tasks []folderTask
+
 	for _, entry := range entries {
-		if entry.IsDir() {
-			directories = append(directories, entry)
+		if !entry.IsDir() {
+			continue
 		}
+		correlationID := entry.Name()
+		runDir := filepath.Join(logsDir, correlationID)
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		timestampStr := info.ModTime().Format(time.RFC3339)
+
+		// List files in the folder (fast readDirWithMetrics)
+		runFiles, err := readDirWithMetrics(runDir)
+		if err != nil {
+			continue
+		}
+
+		var respFiles []string
+		var reqFiles []string
+		for _, f := range runFiles {
+			if f.IsDir() {
+				continue
+			}
+			name := f.Name()
+			if strings.HasSuffix(name, "_resp.json") {
+				respFiles = append(respFiles, filepath.Join(runDir, name))
+			} else if strings.HasSuffix(name, "_req.json") {
+				reqFiles = append(reqFiles, filepath.Join(runDir, name))
+			}
+		}
+
+		isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
+
+		// Cleanup empty logs older than 24h
+		if isEmpty && time.Since(info.ModTime()) > 24*time.Hour {
+			os.RemoveAll(runDir)
+			continue
+		}
+
+		// Skip empty runs
+		if isEmpty {
+			continue
+		}
+
+		// Fallback guess: guess/match based on user's integrations and log files
+		matches := respFiles
+		if len(matches) == 0 {
+			matches = reqFiles
+		}
+		if len(matches) == 0 {
+			continue
+		}
+
+		detectedST := ""
+		firstFile := filepath.Base(matches[0])
+		if strings.Contains(firstFile, "gocardless") {
+			detectedST = "GOCARDLESS"
+		} else if strings.Contains(firstFile, "enablebanking") {
+			detectedST = "ENABLEBANKING"
+		} else if strings.Contains(firstFile, "trading212") {
+			detectedST = "TRADING212"
+		}
+		if detectedST == "" {
+			continue
+		}
+
+		integrationID := ""
+		integrationName := ""
+		serviceType := detectedST
+
+		var candidateInts []userIntegration
+		for _, ui := range userInts {
+			if ui.ServiceType == detectedST {
+				candidateInts = append(candidateInts, ui)
+			}
+		}
+		if len(candidateInts) == 1 {
+			integrationID = candidateInts[0].ID
+			integrationName = candidateInts[0].Name
+		} else if len(candidateInts) > 1 {
+			content, err := readFileWithMetrics(matches[0])
+			if err == nil {
+				contentStr := string(content)
+				for i := range candidateInts {
+					ui := &candidateInts[i]
+					if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
+						integrationID = ui.ID
+						integrationName = ui.Name
+						break
+					}
+					for _, accID := range ui.AccountIDs {
+						if accID != "" && strings.Contains(contentStr, accID) {
+							integrationID = ui.ID
+							integrationName = ui.Name
+							break
+						}
+					}
+				}
+			}
+			if integrationID == "" {
+				integrationID = candidateInts[0].ID
+				integrationName = candidateInts[0].Name
+			}
+		}
+
+		// Initial emit immediately before parsing JSON (TransactionCount: -1 triggers frontend spinner)
+		initialRun := &apiproto.SyncRun{
+			CorrelationId:    correlationID,
+			IntegrationId:    integrationID,
+			IntegrationName:  integrationName,
+			ServiceType:      serviceType,
+			Timestamp:        timestampStr,
+			Status:           "IN_PROGRESS",
+			TransactionCount: -1,
+			HasLogFiles:      !isEmpty,
+		}
+
+		if s.IsClosed() {
+			return
+		}
+		_ = sys.handler.SendResponse(s, reqID, initialRun, false)
+
+		tasks = append(tasks, folderTask{
+			correlationID:   correlationID,
+			runDir:          runDir,
+			timestampStr:    timestampStr,
+			respFiles:       respFiles,
+			integrationID:   integrationID,
+			integrationName: integrationName,
+			serviceType:     serviceType,
+			isEmpty:         isEmpty,
+		})
 	}
 
-	numWorkers := 16
-	if len(directories) < numWorkers {
-		numWorkers = len(directories)
+	doneChan := make(chan struct{})
+
+	// Start 1-second metrics collector loop
+	go func() {
+		metricsTicker := time.NewTicker(1 * time.Second)
+		defer metricsTicker.Stop()
+
+		lastCPU, _ := getCPUTimeAndMemory()
+		lastTime := time.Now()
+
+		for {
+			select {
+			case <-metricsTicker.C:
+				now := time.Now()
+				elapsed := now.Sub(lastTime)
+				if elapsed <= 0 {
+					continue
+				}
+
+				currentCPU, currentRSS := getCPUTimeAndMemory()
+				cpuDelta := currentCPU - lastCPU
+
+				numCores := runtime.NumCPU()
+				cpuPercent := (float64(cpuDelta) / float64(elapsed)) * 100.0 / float64(numCores)
+				if cpuPercent > 100.0 {
+					cpuPercent = 100.0
+				}
+				if cpuPercent < 0 {
+					cpuPercent = 0
+				}
+
+				lastCPU = currentCPU
+				lastTime = now
+
+				metrics.mu.Lock()
+				ioOps := metrics.ioOps
+				ioBytes := metrics.ioBytes
+				ioDurationMs := metrics.ioDurationNs / int64(time.Millisecond)
+				metrics.mu.Unlock()
+
+				metricMsg := &apiproto.SyncRun{
+					IsMetrics: true,
+					Metrics: &apiproto.SyncPerformanceMetrics{
+						FileIoReadBytes:      ioBytes,
+						FileIoReadOperations: int32(ioOps),
+						CpuUtilization:       cpuPercent,
+						MemoryRssBytes:       currentRSS,
+						TotalIoDurationMs:    ioDurationMs,
+					},
+				}
+
+				if s.IsClosed() {
+					return
+				}
+				_ = sys.handler.SendResponse(s, reqID, metricMsg, false)
+
+			case <-doneChan:
+				return
+			}
+		}
+	}()
+
+	// Process using up to 4 concurrent worker goroutines
+	numWorkers := 4
+	if len(tasks) < numWorkers {
+		numWorkers = len(tasks)
 	}
 
-	taskChan := make(chan os.DirEntry, len(directories))
-	for _, entry := range directories {
-		taskChan <- entry
+	taskChan := make(chan folderTask, len(tasks))
+	for _, t := range tasks {
+		taskChan <- t
 	}
 	close(taskChan)
 
@@ -301,145 +562,42 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for entry := range taskChan {
-				correlationID := entry.Name()
-				runDir := filepath.Join(logsDir, correlationID)
-
-				info, err := entry.Info()
-				if err != nil {
-					continue
-				}
-
-				timestampStr := info.ModTime().Format(time.RFC3339)
-
-				// List files in the folder (fast os.ReadDir)
-				runFiles, err := os.ReadDir(runDir)
-				if err != nil {
-					continue
-				}
-
-				var respFiles []string
-				var reqFiles []string
-				for _, f := range runFiles {
-					if f.IsDir() {
-						continue
-					}
-					name := f.Name()
-					if strings.HasSuffix(name, "_resp.json") {
-						respFiles = append(respFiles, filepath.Join(runDir, name))
-					} else if strings.HasSuffix(name, "_req.json") {
-						reqFiles = append(reqFiles, filepath.Join(runDir, name))
-					}
-				}
-
-				isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
-
-				// Cleanup empty logs older than 24h
-				if isEmpty && time.Since(info.ModTime()) > 24*time.Hour {
-					os.RemoveAll(runDir)
-					continue
-				}
-
-				// Skip empty runs
-				if isEmpty {
-					continue
-				}
-
-				// Fallback guess: guess/match based on user's integrations and log files
-				matches := respFiles
-				if len(matches) == 0 {
-					matches = reqFiles
-				}
-				if len(matches) == 0 {
-					continue
-				}
-
-				detectedST := ""
-				firstFile := filepath.Base(matches[0])
-				if strings.Contains(firstFile, "gocardless") {
-					detectedST = "GOCARDLESS"
-				} else if strings.Contains(firstFile, "enablebanking") {
-					detectedST = "ENABLEBANKING"
-				} else if strings.Contains(firstFile, "trading212") {
-					detectedST = "TRADING212"
-				}
-				if detectedST == "" {
-					continue
-				}
-
-				integrationID := ""
-				integrationName := ""
-				serviceType := detectedST
-
-				var candidateInts []userIntegration
-				for _, ui := range userInts {
-					if ui.ServiceType == detectedST {
-						candidateInts = append(candidateInts, ui)
-					}
-				}
-				if len(candidateInts) == 1 {
-					integrationID = candidateInts[0].ID
-					integrationName = candidateInts[0].Name
-				} else if len(candidateInts) > 1 {
-					content, err := os.ReadFile(matches[0])
-					if err == nil {
-						contentStr := string(content)
-						for i := range candidateInts {
-							ui := &candidateInts[i]
-							if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
-								integrationID = ui.ID
-								integrationName = ui.Name
-								break
-							}
-							for _, accID := range ui.AccountIDs {
-								if accID != "" && strings.Contains(contentStr, accID) {
-									integrationID = ui.ID
-									integrationName = ui.Name
-									break
-								}
-							}
-						}
-					}
-					if integrationID == "" {
-						integrationID = candidateInts[0].ID
-						integrationName = candidateInts[0].Name
-					}
-				}
-
-				// Parse response files in the folder to count transactions
+			for task := range taskChan {
 				txCount := int32(0)
-				for _, rf := range respFiles {
-					if content, err := os.ReadFile(rf); err == nil {
+				for _, rf := range task.respFiles {
+					if content, err := readFileWithMetrics(rf); err == nil {
 						var dump struct {
 							Body interface{} `json:"body"`
 						}
 						if err := json.Unmarshal(content, &dump); err == nil && dump.Body != nil {
-							detected := parseTransactionsFromJSON(strings.ToLower(serviceType), dump.Body)
+							detected := parseTransactionsFromJSON(strings.ToLower(task.serviceType), dump.Body)
 							txCount += int32(len(detected))
 						}
 					}
 				}
 
-				run := &apiproto.SyncRun{
-					CorrelationId:    correlationID,
-					IntegrationId:    integrationID,
-					IntegrationName:  integrationName,
-					ServiceType:      serviceType,
-					Timestamp:        timestampStr,
+				// Emit transaction count update
+				updatedRun := &apiproto.SyncRun{
+					CorrelationId:    task.correlationID,
+					IntegrationId:    task.integrationID,
+					IntegrationName:  task.integrationName,
+					ServiceType:      task.serviceType,
+					Timestamp:        task.timestampStr,
 					Status:           "COMPLETED",
 					TransactionCount: txCount,
-					HasLogFiles:      !isEmpty,
+					HasLogFiles:      !task.isEmpty,
 				}
 
 				if s.IsClosed() {
 					return
 				}
-				_ = sys.handler.SendResponse(s, reqID, run, false)
+				_ = sys.handler.SendResponse(s, reqID, updatedRun, false)
 			}
 		}()
 	}
 
 	wg.Wait()
+	close(doneChan)
 
 	// Send terminal done signal
 	if !s.IsClosed() {
