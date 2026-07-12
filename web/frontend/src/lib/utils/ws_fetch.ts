@@ -99,7 +99,7 @@ export function connect(): Promise<void> {
           const req = requests.get(streamMsg.id);
           console.log(`[WS] Received Response for ID: ${streamMsg.id}, path: ${req?.path || "unknown"}, done: ${streamMsg.done}, bytes: ${streamMsg.data ? streamMsg.data.length : 0}`);
           if (req) {
-            if (streamMsg.data) {
+            if (streamMsg.data && streamMsg.data.length > 0) {
               let decodedPayload: any = null;
               let parseSuccessful = false;
 

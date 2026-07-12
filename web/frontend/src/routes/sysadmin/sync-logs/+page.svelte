@@ -92,40 +92,40 @@
     });
 
     // Get unique integrations from loaded runs for the filter dropdown
-    let integrations = $derived(() => {
-        const unique = new Map<string, string>();
-        runs.forEach(r => {
-            if (r.integrationId && r.integrationName) {
-                unique.set(r.integrationId, r.integrationName);
-            }
-        });
-        return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
-    });
+    let integrations = $derived(
+        Array.from(
+            runs.reduce((acc, r) => {
+                if (r.integrationId && r.integrationName) {
+                    acc.set(r.integrationId, r.integrationName);
+                }
+                return acc;
+            }, new Map<string, string>())
+        ).map((entry) => {
+            const [id, name] = entry as [string, string];
+            return { id, name };
+        })
+    );
 
     // Filter runs
-    let filteredRuns = $derived(() => {
-        let list = runs;
-        if (selectedIntegrationFilter !== "ALL") {
-            list = list.filter(r => r.integrationId === selectedIntegrationFilter);
-        }
-
-        if (filterTxsValue !== null) {
-            const limit = filterTxsValue;
-            list = list.filter(r => {
+    let filteredRuns = $derived(
+        runs.filter(r => {
+            if (selectedIntegrationFilter !== "ALL" && r.integrationId !== selectedIntegrationFilter) {
+                return false;
+            }
+            if (filterTxsValue !== null) {
                 const count = r.transactionCount || 0;
                 switch (filterTxsOperator) {
-                    case ">": return count > limit;
-                    case "<": return count < limit;
-                    case "=": return count === limit;
-                    case ">=": return count >= limit;
-                    case "<=": return count <= limit;
+                    case ">": return count > filterTxsValue;
+                    case "<": return count < filterTxsValue;
+                    case "=": return count === filterTxsValue;
+                    case ">=": return count >= filterTxsValue;
+                    case "<=": return count <= filterTxsValue;
                     default: return true;
                 }
-            });
-        }
-
-        return list;
-    });
+            }
+            return true;
+        })
+    );
 
     onMount(async () => {
         await loadSyncRuns();
@@ -292,7 +292,7 @@
                             class="w-full bg-slate-900 border border-slate-700/60 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 appearance-none cursor-pointer"
                         >
                             <option value="ALL">All Integrations</option>
-                            {#each integrations() as int}
+                            {#each integrations as int}
                                 <option value={int.id}>{int.name}</option>
                             {/each}
                         </select>
@@ -373,7 +373,7 @@
             <!-- Left Pane: Runs List -->
             <div class="lg:col-span-5 bg-slate-900 border border-slate-800/80 rounded-2xl p-6 h-[750px] flex flex-col space-y-4">
                 <div class="flex items-center justify-between">
-                    <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Sync Runs History ({filteredRuns().length})</h2>
+                    <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Sync Runs History ({filteredRuns.length})</h2>
                     {#if isLoadingRuns}
                         <div class="flex items-center gap-2 text-indigo-400 text-xs font-bold">
                             <div class="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
@@ -405,13 +405,13 @@
 
                 <!-- Run Cards Container -->
                 <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-                    {#if filteredRuns().length === 0}
+                    {#if filteredRuns.length === 0}
                         <div class="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
                             <AlertCircle class="w-8 h-8 text-slate-500" />
                             <p class="text-sm font-bold text-slate-400">No sync runs found</p>
                         </div>
                     {:else}
-                        {#each filteredRuns() as run (run.correlationId)}
+                        {#each filteredRuns as run (run.correlationId)}
                             <button
                                 onclick={() => selectRun(run.correlationId)}
                                 class="w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center justify-between gap-4 group
