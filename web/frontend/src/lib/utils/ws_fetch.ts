@@ -97,7 +97,8 @@ export function connect(): Promise<void> {
         const streamMsg = tryProtoParse(api.WSResponseSchema, rawData);
         if (streamMsg) {
           const req = requests.get(streamMsg.id);
-          console.log(`[WS] Received Response for ID: ${streamMsg.id}, path: ${req?.path || "unknown"}, done: ${streamMsg.done}, bytes: ${streamMsg.data ? streamMsg.data.length : 0}`);
+          const hexData = streamMsg.data ? Array.from(streamMsg.data).map(b => b.toString(16).padStart(2, "0")).join("") : "";
+          console.log(`[WS] Received Response for ID: ${streamMsg.id}, path: ${req?.path || "unknown"}, done: ${streamMsg.done}, bytes: ${streamMsg.data ? streamMsg.data.length : 0}, data(hex): ${hexData}`);
           if (req) {
             if (streamMsg.data && streamMsg.data.length > 0) {
               let decodedPayload: any = null;
@@ -189,9 +190,9 @@ function sendRequest(req: QueuedRequest) {
     body: req.bodyBytes,
   });
 
-  console.log(`[WS] Sending Request to path: ${req.path}, ID: ${req.id}, bytes: ${req.bodyBytes.length}`);
-
   const binary = toBinary(api.WSRequestSchema, requestObj);
+  const hexData = Array.from(binary).map(b => b.toString(16).padStart(2, "0")).join("");
+  console.log(`[WS] Sending Request to path: ${req.path}, ID: ${req.id}, bytes: ${req.bodyBytes.length}, data(hex): ${hexData}`);
   ws.send(binary);
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"log"
 	"net/http"
 	"reflect"
@@ -129,7 +130,7 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 			continue
 		}
 
-		log.Printf("[WS] Incoming Request: %s (ID: %s)", req.Path, req.Id)
+		log.Printf("[WS] Incoming Request: %s (ID: %s) bytes: %d, data(hex): %s", req.Path, req.Id, len(message), hex.EncodeToString(message))
 
 		go func(req apiproto.WSRequest) {
 			defer func() {
@@ -226,7 +227,7 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 	}
 
 	bytes, _ := proto.Marshal(resp)
-	log.Printf("[WS] SendResponse: ID: %s, payload: %T, bytes: %d, done: %v", reqID, body, len(bytes), done)
+	log.Printf("[WS] SendResponse: ID: %s, payload: %T, bytes: %d, done: %v, data(hex): %s", reqID, body, len(bytes), done, hex.EncodeToString(bytes))
 	session.writeMutex.Lock()
 	defer session.writeMutex.Unlock()
 
