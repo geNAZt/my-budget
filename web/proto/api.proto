@@ -817,6 +817,11 @@ message SyncRun {
   bool is_metrics = 10;
 }
 
+message SyncRunsRequest {
+  int32 offset = 1;
+  int32 limit = 2;
+}
+
 message SyncRunList {
   repeated SyncRun runs = 1;
 }

@@ -23,6 +23,9 @@
 
     let runs = $state<any[]>([]);
     let metrics = $state<any>(null);
+    let offset = $state(0);
+    const limit = 50;
+    let hasMore = $state(true);
 
     function formatBytes(bytes: number | bigint): string {
         const b = Number(bytes);
@@ -31,6 +34,21 @@
         const sizes = ["B", "KB", "MB", "GB"];
         const i = Math.floor(Math.log(b) / Math.log(k));
         return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    }
+
+    function lazyLoadNextPage(node: HTMLElement) {
+        const observer = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMore && !isLoadingRuns) {
+                offset += limit;
+                loadSyncRuns();
+            }
+        }, { threshold: 0.1 });
+        observer.observe(node);
+        return {
+            destroy() {
+                observer.disconnect();
+            }
+        };
     }
 
     let selectedCorrelationId = $state<string>("");
@@ -106,16 +124,20 @@
 
     async function loadSyncRuns() {
         isLoadingRuns = true;
-        runs = [];
-        metrics = null;
+        if (offset === 0) {
+            runs = [];
+            metrics = null;
+            hasMore = true;
+        }
         try {
             const callResult = wsCall(
                 "system::sync_runs",
-                null,
-                null,
+                api.SyncRunsRequestSchema,
+                { offset, limit },
                 [api.SyncRunSchema],
                 { timeout: 60000 }
             );
+            let receivedCount = 0;
             for await (const [run, err] of callResult.many()) {
                 if (err) {
                     console.error("[SYNC_LOGS] Failed to load sync runs chunk:", err);
@@ -125,6 +147,7 @@
                     if (run.isMetrics) {
                         metrics = run.metrics;
                     } else {
+                        receivedCount++;
                         const existingIdx = runs.findIndex(r => r.correlationId === run.correlationId);
                         if (existingIdx !== -1) {
                             runs[existingIdx].transactionCount = run.transactionCount;
@@ -139,6 +162,11 @@
                         });
                     }
                 }
+            }
+            if (receivedCount < limit) {
+                hasMore = false;
+            } else {
+                hasMore = true;
             }
         } catch (err) {
             console.error("[SYNC_LOGS] Failed to load sync runs:", err);
@@ -435,6 +463,11 @@
                                 </div>
                             </button>
                         {/each}
+                        {#if hasMore}
+                            <div use:lazyLoadNextPage class="py-4 flex items-center justify-center">
+                                <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        {/if}
                     {/if}
                 </div>
             </div>
