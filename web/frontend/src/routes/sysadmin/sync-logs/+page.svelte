@@ -36,14 +36,6 @@
         return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     }
 
-    function mergeDeltaCRDT(existing: any, incoming: any) {
-        for (const key of Object.keys(incoming)) {
-            const val = incoming[key];
-            if (val !== undefined && val !== null && val !== "" && val !== -1) {
-                existing[key] = val;
-            }
-        }
-    }
 
     function lazyLoadNextPage(node: HTMLElement) {
         const observer = new IntersectionObserver(entries => {
@@ -164,9 +156,19 @@
                         const existingIdx = runs.findIndex(r => r.correlationId === decodedRun.correlationId);
                         if (existingIdx !== -1) {
                             console.log("[SYNC_LOGS] Merging incoming Delta CRDT for CID:", decodedRun.correlationId, decodedRun);
-                            mergeDeltaCRDT(runs[existingIdx], decodedRun);
+                            if (decodedRun.status !== undefined && decodedRun.status !== "") {
+                                runs[existingIdx].status = decodedRun.status;
+                            }
+                            if (decodedRun.transactionCount !== undefined && decodedRun.transactionCount !== -1) {
+                                runs[existingIdx].transactionCount = decodedRun.transactionCount;
+                            } else if (decodedRun.status === "COMPLETED") {
+                                runs[existingIdx].transactionCount = 0;
+                            }
                         } else {
                             console.log("[SYNC_LOGS] Adding new SyncRun for CID:", decodedRun.correlationId, decodedRun);
+                            if (decodedRun.transactionCount === undefined || decodedRun.transactionCount === null || decodedRun.transactionCount === -1) {
+                                decodedRun.transactionCount = decodedRun.status === "COMPLETED" ? 0 : -1;
+                            }
                             runs.push(decodedRun);
                         }
                         runs = [...runs].sort((a, b) => {
