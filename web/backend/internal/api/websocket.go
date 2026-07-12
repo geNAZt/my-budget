@@ -226,6 +226,7 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 	}
 
 	bytes, _ := proto.Marshal(resp)
+	log.Printf("[WS] SendResponse: ID: %s, payload: %T, bytes: %d, done: %v", reqID, body, len(bytes), done)
 	session.writeMutex.Lock()
 	defer session.writeMutex.Unlock()
 

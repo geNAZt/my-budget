@@ -97,6 +97,7 @@ export function connect(): Promise<void> {
         const streamMsg = tryProtoParse(api.WSResponseSchema, rawData);
         if (streamMsg) {
           const req = requests.get(streamMsg.id);
+          console.log(`[WS] Received Response for ID: ${streamMsg.id}, path: ${req?.path || "unknown"}, done: ${streamMsg.done}, bytes: ${streamMsg.data ? streamMsg.data.length : 0}`);
           if (req) {
             if (streamMsg.data) {
               let decodedPayload: any = null;
@@ -187,6 +188,8 @@ function sendRequest(req: QueuedRequest) {
     path: req.path,
     body: req.bodyBytes,
   });
+
+  console.log(`[WS] Sending Request to path: ${req.path}, ID: ${req.id}, bytes: ${req.bodyBytes.length}`);
 
   const binary = toBinary(api.WSRequestSchema, requestObj);
   ws.send(binary);

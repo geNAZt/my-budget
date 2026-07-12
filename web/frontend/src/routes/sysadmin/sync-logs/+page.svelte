@@ -36,6 +36,15 @@
         return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     }
 
+    function mergeDeltaCRDT(existing: any, incoming: any) {
+        for (const key of Object.keys(incoming)) {
+            const val = incoming[key];
+            if (val !== undefined && val !== null && val !== "" && val !== -1) {
+                existing[key] = val;
+            }
+        }
+    }
+
     function lazyLoadNextPage(node: HTMLElement) {
         const observer = new IntersectionObserver(entries => {
             if (entries[0].isIntersecting && hasMore && !isLoadingRuns) {
@@ -150,9 +159,10 @@
                         receivedCount++;
                         const existingIdx = runs.findIndex(r => r.correlationId === run.correlationId);
                         if (existingIdx !== -1) {
-                            runs[existingIdx].transactionCount = run.transactionCount;
-                            runs[existingIdx].status = run.status;
+                            console.log("[SYNC_LOGS] Merging incoming Delta CRDT for CID:", run.correlationId, run);
+                            mergeDeltaCRDT(runs[existingIdx], run);
                         } else {
+                            console.log("[SYNC_LOGS] Adding new SyncRun for CID:", run.correlationId, run);
                             runs.push(run);
                         }
                         runs = [...runs].sort((a, b) => {

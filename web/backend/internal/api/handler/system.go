@@ -747,13 +747,8 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 					if task.index >= offset && task.index < end {
 						updatedRun := &apiproto.SyncRun{
 							CorrelationId:    task.correlationID,
-							IntegrationId:    task.integrationID,
-							IntegrationName:  task.integrationName,
-							ServiceType:      task.serviceType,
-							Timestamp:        task.timestampStr,
 							Status:           "COMPLETED",
 							TransactionCount: txCount,
-							HasLogFiles:      !task.isEmpty,
 						}
 
 						if s.IsClosed() {
