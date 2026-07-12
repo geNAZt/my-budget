@@ -401,8 +401,6 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 	}
 	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
 
-	// Load user integrations for fallback matching
-	userInts, _ := sys.loadUserIntegrations(userID)
 
 	metrics := &syncMetrics{}
 	doneChan := make(chan struct{})
@@ -689,8 +687,10 @@ func (sys *System) SyncRunDetails(s *api.WebsocketSession, reqID string, req *ap
 	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
 	runDir := filepath.Join(logsDir, correlationID)
 
-	// If folder doesn't exist on disk, fallback to database information
-	if _, err := os.Stat(runDir); os.IsNotExist(err) {
+	timestamp := ""
+	if info, err := os.Stat(runDir); err == nil {
+		timestamp = info.ModTime().Format(time.RFC3339)
+	} else if os.IsNotExist(err) {
 		var dbStatus, dbIntegrationID, dbIntegrationName, dbServiceType, dbErrorMessage string
 		var dbTimestamp time.Time
 		err := sys.db.QueryRow(`
