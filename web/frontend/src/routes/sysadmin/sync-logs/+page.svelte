@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { wsCall } from "$lib/utils/ws_fetch";
+    import { wsCall, decode } from "$lib/utils/ws_fetch";
     import * as api from "$lib/gen/api_pb.js";
     import { 
         Terminal, 
@@ -153,17 +153,18 @@
                     break;
                 }
                 if (run) {
-                    if (run.isMetrics) {
-                        metrics = run.metrics;
+                    const decodedRun = decode(run);
+                    if (decodedRun.isMetrics) {
+                        metrics = decodedRun.metrics;
                     } else {
                         receivedCount++;
-                        const existingIdx = runs.findIndex(r => r.correlationId === run.correlationId);
+                        const existingIdx = runs.findIndex(r => r.correlationId === decodedRun.correlationId);
                         if (existingIdx !== -1) {
-                            console.log("[SYNC_LOGS] Merging incoming Delta CRDT for CID:", run.correlationId, run);
-                            mergeDeltaCRDT(runs[existingIdx], run);
+                            console.log("[SYNC_LOGS] Merging incoming Delta CRDT for CID:", decodedRun.correlationId, decodedRun);
+                            mergeDeltaCRDT(runs[existingIdx], decodedRun);
                         } else {
-                            console.log("[SYNC_LOGS] Adding new SyncRun for CID:", run.correlationId, run);
-                            runs.push(run);
+                            console.log("[SYNC_LOGS] Adding new SyncRun for CID:", decodedRun.correlationId, decodedRun);
+                            runs.push(decodedRun);
                         }
                         runs = [...runs].sort((a, b) => {
                             const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
@@ -204,9 +205,9 @@
                 return;
             }
             if (res) {
-                selectedRunDetails = res;
-                if (res.rawLogs && res.rawLogs.length > 0) {
-                    selectedRawLogFile = res.rawLogs[0];
+                selectedRunDetails = decode(res);
+                if (selectedRunDetails.rawLogs && selectedRunDetails.rawLogs.length > 0) {
+                    selectedRawLogFile = selectedRunDetails.rawLogs[0];
                 }
             }
         } catch (err) {
