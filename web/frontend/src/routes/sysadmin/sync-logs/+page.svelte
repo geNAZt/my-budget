@@ -107,8 +107,9 @@
     );
 
     // Filter runs
-    let filteredRuns = $derived(
-        runs.filter(r => {
+    let filteredRuns = $derived.by(() => {
+        console.log("[SYNC_LOGS] [filteredRuns] Runs count:", runs.length, "filterIntegration:", selectedIntegrationFilter, "filterTxsValue:", filterTxsValue);
+        const result = runs.filter(r => {
             if (selectedIntegrationFilter !== "ALL" && r.integrationId !== selectedIntegrationFilter) {
                 return false;
             }
@@ -124,8 +125,10 @@
                 }
             }
             return true;
-        })
-    );
+        });
+        console.log("[SYNC_LOGS] [filteredRuns] Filtered count:", result.length);
+        return result;
+    });
 
     onMount(async () => {
         await loadSyncRuns();
