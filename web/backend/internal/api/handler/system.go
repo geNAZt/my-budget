@@ -548,8 +548,8 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 		})
 
 		// Pre-populate runs list as skeleton entries in cache
-		cachedRuns = make([]*apiproto.SyncRun, len(runDirs))
-		for i, rd := range runDirs {
+		var validCachedRuns []*apiproto.SyncRun
+		for _, rd := range runDirs {
 			correlationID := rd.entry.Name()
 			runDir := filepath.Join(logsDir, correlationID)
 
@@ -570,66 +570,78 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 
 			isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
 
+			// Cleanup empty logs older than 24h
+			if isEmpty && time.Since(rd.modTime) > 24*time.Hour {
+				os.RemoveAll(runDir)
+				continue
+			}
+
+			// Skip empty runs
+			if isEmpty {
+				continue
+			}
+
 			// Guess integration metadata
 			matches := respFiles
 			if len(matches) == 0 {
 				matches = reqFiles
 			}
+			if len(matches) == 0 {
+				continue
+			}
 
 			detectedST := ""
+			firstFile := filepath.Base(matches[0])
+			if strings.Contains(firstFile, "gocardless") {
+				detectedST = "GOCARDLESS"
+			} else if strings.Contains(firstFile, "enablebanking") {
+				detectedST = "ENABLEBANKING"
+			} else if strings.Contains(firstFile, "trading212") {
+				detectedST = "TRADING212"
+			}
+			if detectedST == "" {
+				continue
+			}
+			serviceType := detectedST
+
 			integrationID := ""
 			integrationName := ""
-			serviceType := ""
-			if len(matches) > 0 {
-				firstFile := filepath.Base(matches[0])
-				if strings.Contains(firstFile, "gocardless") {
-					detectedST = "GOCARDLESS"
-				} else if strings.Contains(firstFile, "enablebanking") {
-					detectedST = "ENABLEBANKING"
-				} else if strings.Contains(firstFile, "trading212") {
-					detectedST = "TRADING212"
+			var candidateInts []userIntegration
+			for _, ui := range userInts {
+				if ui.ServiceType == detectedST {
+					candidateInts = append(candidateInts, ui)
 				}
-				serviceType = detectedST
-
-				if detectedST != "" {
-					var candidateInts []userIntegration
-					for _, ui := range userInts {
-						if ui.ServiceType == detectedST {
-							candidateInts = append(candidateInts, ui)
+			}
+			if len(candidateInts) == 1 {
+				integrationID = candidateInts[0].ID
+				integrationName = candidateInts[0].Name
+			} else if len(candidateInts) > 1 {
+				content, err := readFileWithMetrics(matches[0])
+				if err == nil {
+					contentStr := string(content)
+					for idx := range candidateInts {
+						ui := &candidateInts[idx]
+						if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
+							integrationID = ui.ID
+							integrationName = ui.Name
+							break
 						}
-					}
-					if len(candidateInts) == 1 {
-						integrationID = candidateInts[0].ID
-						integrationName = candidateInts[0].Name
-					} else if len(candidateInts) > 1 {
-						content, err := readFileWithMetrics(matches[0])
-						if err == nil {
-							contentStr := string(content)
-							for idx := range candidateInts {
-								ui := &candidateInts[idx]
-								if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
-									integrationID = ui.ID
-									integrationName = ui.Name
-									break
-								}
-								for _, accID := range ui.AccountIDs {
-									if accID != "" && strings.Contains(contentStr, accID) {
-										integrationID = ui.ID
-										integrationName = ui.Name
-										break
-									}
-								}
+						for _, accID := range ui.AccountIDs {
+							if accID != "" && strings.Contains(contentStr, accID) {
+								integrationID = ui.ID
+								integrationName = ui.Name
+								break
 							}
 						}
-						if integrationID == "" {
-							integrationID = candidateInts[0].ID
-							integrationName = candidateInts[0].Name
-						}
 					}
+				}
+				if integrationID == "" {
+					integrationID = candidateInts[0].ID
+					integrationName = candidateInts[0].Name
 				}
 			}
 
-			cachedRuns[i] = &apiproto.SyncRun{
+			validCachedRuns = append(validCachedRuns, &apiproto.SyncRun{
 				CorrelationId:    correlationID,
 				IntegrationId:    integrationID,
 				IntegrationName:  integrationName,
@@ -638,9 +650,10 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 				Status:           "IN_PROGRESS",
 				TransactionCount: -1, // -1 means scanning
 				HasLogFiles:      !isEmpty,
-			}
+			})
 		}
 
+		cachedRuns = validCachedRuns
 		sys.runsCache.Add(userID, cachedRuns)
 	}
 

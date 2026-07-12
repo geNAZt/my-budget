@@ -155,7 +155,7 @@
                         } else {
                             runs.push(run);
                         }
-                        runs = runs.sort((a, b) => {
+                        runs = [...runs].sort((a, b) => {
                             const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
                             const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
                             return tB - tA;
