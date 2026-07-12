@@ -205,6 +205,20 @@ const Schema = `
         FOREIGN KEY(user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS sync_runs (
+        correlation_id TEXT PRIMARY KEY,
+        user_id TEXT,
+        integration_id TEXT,
+        integration_name TEXT,
+        service_type TEXT,
+        status TEXT,
+        timestamp TIMESTAMP,
+        transaction_count INTEGER DEFAULT -1,
+        has_log_files BOOLEAN DEFAULT TRUE,
+        error_message TEXT DEFAULT '',
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS transaction_pools (
         id TEXT PRIMARY KEY,
         user_id TEXT,

@@ -512,8 +512,12 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 
 	// If offset is 0, we always reload and clear cache
 	if offset == 0 || !hasCache {
-		// Read and sort directories
-		entries, err := readDirWithMetrics(logsDir)
+		rows, err := sys.db.Query(`
+			SELECT correlation_id, integration_id, integration_name, service_type, status, timestamp, transaction_count, has_log_files, error_message
+			FROM sync_runs
+			WHERE user_id = $1
+			ORDER BY timestamp DESC
+		`, userID)
 		if err != nil {
 			close(doneChan)
 			if !s.IsClosed() {
@@ -521,136 +525,19 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 			}
 			return
 		}
+		defer rows.Close()
 
-		type runDirEntry struct {
-			entry   os.DirEntry
-			modTime time.Time
-			timeStr string
-		}
-		var runDirs []runDirEntry
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			info, err := entry.Info()
+		var validCachedRuns []*apiproto.SyncRun
+		for rows.Next() {
+			var r apiproto.SyncRun
+			var t time.Time
+			var errMsg string
+			err := rows.Scan(&r.CorrelationId, &r.IntegrationId, &r.IntegrationName, &r.ServiceType, &r.Status, &t, &r.TransactionCount, &r.HasLogFiles, &errMsg)
 			if err != nil {
 				continue
 			}
-			runDirs = append(runDirs, runDirEntry{
-				entry:   entry,
-				modTime: info.ModTime(),
-				timeStr: info.ModTime().Format(time.RFC3339),
-			})
-		}
-
-		sort.Slice(runDirs, func(i, j int) bool {
-			return runDirs[i].modTime.After(runDirs[j].modTime)
-		})
-
-		// Pre-populate runs list as skeleton entries in cache
-		var validCachedRuns []*apiproto.SyncRun
-		for _, rd := range runDirs {
-			correlationID := rd.entry.Name()
-			runDir := filepath.Join(logsDir, correlationID)
-
-			runFiles, _ := readDirWithMetrics(runDir)
-			var respFiles []string
-			var reqFiles []string
-			for _, f := range runFiles {
-				if f.IsDir() {
-					continue
-				}
-				name := f.Name()
-				if strings.HasSuffix(name, "_resp.json") {
-					respFiles = append(respFiles, filepath.Join(runDir, name))
-				} else if strings.HasSuffix(name, "_req.json") {
-					reqFiles = append(reqFiles, filepath.Join(runDir, name))
-				}
-			}
-
-			isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
-
-			// Cleanup empty logs older than 24h
-			if isEmpty && time.Since(rd.modTime) > 24*time.Hour {
-				os.RemoveAll(runDir)
-				continue
-			}
-
-			// Skip empty runs
-			if isEmpty {
-				continue
-			}
-
-			// Guess integration metadata
-			matches := respFiles
-			if len(matches) == 0 {
-				matches = reqFiles
-			}
-			if len(matches) == 0 {
-				continue
-			}
-
-			detectedST := ""
-			firstFile := filepath.Base(matches[0])
-			if strings.Contains(firstFile, "gocardless") {
-				detectedST = "GOCARDLESS"
-			} else if strings.Contains(firstFile, "enablebanking") {
-				detectedST = "ENABLEBANKING"
-			} else if strings.Contains(firstFile, "trading212") {
-				detectedST = "TRADING212"
-			}
-			if detectedST == "" {
-				continue
-			}
-			serviceType := detectedST
-
-			integrationID := ""
-			integrationName := ""
-			var candidateInts []userIntegration
-			for _, ui := range userInts {
-				if ui.ServiceType == detectedST {
-					candidateInts = append(candidateInts, ui)
-				}
-			}
-			if len(candidateInts) == 1 {
-				integrationID = candidateInts[0].ID
-				integrationName = candidateInts[0].Name
-			} else if len(candidateInts) > 1 {
-				content, err := readFileWithMetrics(matches[0])
-				if err == nil {
-					contentStr := string(content)
-					for idx := range candidateInts {
-						ui := &candidateInts[idx]
-						if ui.ReqID != "" && strings.Contains(contentStr, ui.ReqID) {
-							integrationID = ui.ID
-							integrationName = ui.Name
-							break
-						}
-						for _, accID := range ui.AccountIDs {
-							if accID != "" && strings.Contains(contentStr, accID) {
-								integrationID = ui.ID
-								integrationName = ui.Name
-								break
-							}
-						}
-					}
-				}
-				if integrationID == "" {
-					integrationID = candidateInts[0].ID
-					integrationName = candidateInts[0].Name
-				}
-			}
-
-			validCachedRuns = append(validCachedRuns, &apiproto.SyncRun{
-				CorrelationId:    correlationID,
-				IntegrationId:    integrationID,
-				IntegrationName:  integrationName,
-				ServiceType:      serviceType,
-				Timestamp:        rd.timeStr,
-				Status:           "IN_PROGRESS",
-				TransactionCount: -1, // -1 means scanning
-				HasLogFiles:      !isEmpty,
-			})
+			r.Timestamp = t.Format(time.RFC3339)
+			validCachedRuns = append(validCachedRuns, &r)
 		}
 
 		cachedRuns = validCachedRuns
@@ -743,6 +630,13 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 					// Update cache thread-safely
 					sys.runsCache.UpdateTransactionCount(userID, task.index, txCount, "COMPLETED")
 
+					// Update DB
+					_, _ = sys.db.Exec(`
+						UPDATE sync_runs
+						SET status = $1, transaction_count = $2
+						WHERE correlation_id = $3
+					`, "COMPLETED", txCount, task.correlationID)
+
 					// Only emit to client if this item is in the CURRENT visible page requested by the client!
 					if task.index >= offset && task.index < end {
 						updatedRun := &apiproto.SyncRun{
@@ -795,12 +689,44 @@ func (sys *System) SyncRunDetails(s *api.WebsocketSession, reqID string, req *ap
 	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
 	runDir := filepath.Join(logsDir, correlationID)
 
-	// mod time of folder
-	timestamp := ""
-	if info, err := os.Stat(runDir); err == nil {
-		timestamp = info.ModTime().Format(time.RFC3339)
-	} else {
-		sys.handler.SendError(s, reqID, http.StatusNotFound, "Sync run log folder not found")
+	// If folder doesn't exist on disk, fallback to database information
+	if _, err := os.Stat(runDir); os.IsNotExist(err) {
+		var dbStatus, dbIntegrationID, dbIntegrationName, dbServiceType, dbErrorMessage string
+		var dbTimestamp time.Time
+		err := sys.db.QueryRow(`
+			SELECT status, integration_id, integration_name, service_type, timestamp, error_message
+			FROM sync_runs
+			WHERE correlation_id = $1 AND user_id = $2
+		`, correlationID, userID).Scan(&dbStatus, &dbIntegrationID, &dbIntegrationName, &dbServiceType, &dbTimestamp, &dbErrorMessage)
+
+		if err != nil {
+			sys.handler.SendError(s, reqID, http.StatusNotFound, "Sync run details not found")
+			return
+		}
+
+		content := fmt.Sprintf("Sync Status: %s\n", dbStatus)
+		if dbErrorMessage != "" {
+			content += fmt.Sprintf("Reason: %s\n", dbErrorMessage)
+		} else {
+			content += "Reason: No new transactions discovered.\n"
+		}
+		content += "\nEmpty run logs were cleaned up immediately to save disk space.\n"
+
+		resp := &apiproto.SyncRunDetailsResponse{
+			CorrelationId:   correlationID,
+			IntegrationId:   dbIntegrationID,
+			IntegrationName: dbIntegrationName,
+			ServiceType:     dbServiceType,
+			Timestamp:       dbTimestamp.Format(time.RFC3339),
+			RawLogs: []*apiproto.SyncRawLogFile{
+				{
+					Filename:  "status.txt",
+					Content:   content,
+					IsRequest: false,
+				},
+			},
+		}
+		_ = sys.handler.SendResponse(s, reqID, resp, true)
 		return
 	}
 

@@ -572,6 +572,8 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 		_ = os.WriteFile(filepath.Join(logDir, "metadata.json"), metaBytes, 0644)
 	}
 
+	_ = s.integrationRepo.CreateSyncRun(correlationID, userID, integration.ID, integration.Name, integration.ServiceType, "STARTED", time.Now().UTC())
+
 	writeMetaUpdate := func(status string, errMsg string) {
 		meta.Status = status
 		meta.Error = errMsg
@@ -608,6 +610,14 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 			ServiceType:     integration.ServiceType,
 			DiscoveredCount: res.DiscoveredCount,
 		})
+
+		hasLogFiles := res.DiscoveredCount > 0
+		errStr := ""
+		if !hasLogFiles {
+			errStr = "No new transactions found"
+			_ = os.RemoveAll(logDir)
+		}
+		_ = s.integrationRepo.UpdateSyncRun(correlationID, "COMPLETED", int(res.DiscoveredCount), hasLogFiles, errStr)
 	}
 
 	if res.Error != nil {
@@ -616,6 +626,9 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 			integration.BackoffUntil = res.BackoffUntil
 			_ = s.integrationRepo.Save(userID, integration)
 		}
+
+		_ = os.RemoveAll(logDir)
+		_ = s.integrationRepo.UpdateSyncRun(correlationID, "FAILED", 0, false, res.Error.Error())
 
 		return s.handleSyncError(userID, integration, res.Error)
 	}

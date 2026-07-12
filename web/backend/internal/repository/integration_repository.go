@@ -290,3 +290,20 @@ func (r *IntegrationRepository) Delete(userID string, id string) error {
 
 	return tx.Commit()
 }
+
+func (r *IntegrationRepository) CreateSyncRun(correlationID, userID, integrationID, integrationName, serviceType, status string, timestamp time.Time) error {
+	_, err := r.db.Exec(`
+		INSERT INTO sync_runs (correlation_id, user_id, integration_id, integration_name, service_type, status, timestamp, transaction_count, has_log_files, error_message)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, -1, TRUE, '')
+	`, correlationID, userID, integrationID, integrationName, serviceType, status, timestamp)
+	return err
+}
+
+func (r *IntegrationRepository) UpdateSyncRun(correlationID string, status string, transactionCount int, hasLogFiles bool, errorMessage string) error {
+	_, err := r.db.Exec(`
+		UPDATE sync_runs
+		SET status = $1, transaction_count = $2, has_log_files = $3, error_message = $4
+		WHERE correlation_id = $5
+	`, status, transactionCount, hasLogFiles, errorMessage, correlationID)
+	return err
+}

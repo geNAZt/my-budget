@@ -725,6 +725,162 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "030_sync_runs",
+		Run: func(db *sql.DB) error {
+			_, err := db.Exec(`
+				CREATE TABLE IF NOT EXISTS sync_runs (
+					correlation_id TEXT PRIMARY KEY,
+					user_id TEXT,
+					integration_id TEXT,
+					integration_name TEXT,
+					service_type TEXT,
+					status TEXT,
+					timestamp TIMESTAMP,
+					transaction_count INTEGER DEFAULT -1,
+					has_log_files BOOLEAN DEFAULT TRUE,
+					error_message TEXT DEFAULT ''
+				)
+			`)
+			if err != nil {
+				return err
+			}
+
+			// Scan existing logs and populate the table
+			baseDir := "/app"
+			if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+				if _, err := os.Stat("web"); err == nil {
+					baseDir = "web"
+				} else {
+					baseDir = "."
+				}
+			}
+			logsDir := filepath.Join(baseDir, "logs", "sync_runs")
+			entries, err := os.ReadDir(logsDir)
+			if err != nil {
+				// logsDir doesn't exist, nothing to migrate
+				return nil
+			}
+
+			log.Printf("[DB] Migrating existing sync runs from %s to database...", logsDir)
+
+			// Load all integrations to match name and service type
+			type dbInt struct {
+				id          string
+				userID      string
+				name        string
+				serviceType string
+			}
+			var ints []dbInt
+			rows, err := db.Query("SELECT id, user_id, name, service_type FROM integrations")
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var i dbInt
+					if err := rows.Scan(&i.id, &i.userID, &i.name, &i.serviceType); err == nil {
+						ints = append(ints, i)
+					}
+				}
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				correlationID := entry.Name()
+				runDir := filepath.Join(logsDir, correlationID)
+				
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				modTime := info.ModTime()
+
+				// Read metadata.json if it exists
+				var meta struct {
+					IntegrationID   string    `json:"integration_id"`
+					IntegrationName string    `json:"integration_name"`
+					ServiceType     string    `json:"service_type"`
+					UserID          string    `json:"user_id"`
+					Status          string    `json:"status"`
+					Error           string    `json:"error"`
+				}
+				metaFile := filepath.Join(runDir, "metadata.json")
+				hasMeta := false
+				if content, err := os.ReadFile(metaFile); err == nil {
+					if err := json.Unmarshal(content, &meta); err == nil {
+						hasMeta = true
+					}
+				}
+
+				// Find files in folder
+				runFiles, _ := os.ReadDir(runDir)
+				var respFiles []string
+				var reqFiles []string
+				for _, f := range runFiles {
+					if f.IsDir() {
+						continue
+					}
+					if strings.HasSuffix(f.Name(), "_resp.json") {
+						respFiles = append(respFiles, filepath.Join(runDir, f.Name()))
+					} else if strings.HasSuffix(f.Name(), "_req.json") {
+						reqFiles = append(reqFiles, filepath.Join(runDir, f.Name()))
+					}
+				}
+				isEmpty := len(respFiles) == 0 && len(reqFiles) == 0
+
+				// Guess metadata if not present in metadata.json
+				var userID, integrationID, integrationName, serviceType, status, errMsg string
+				if hasMeta {
+					userID = meta.UserID
+					integrationID = meta.IntegrationID
+					integrationName = meta.IntegrationName
+					serviceType = meta.ServiceType
+					status = meta.Status
+					errMsg = meta.Error
+				} else {
+					status = "COMPLETED"
+					// Guess serviceType from files
+					detectedST := ""
+					if len(respFiles) > 0 {
+						firstFile := filepath.Base(respFiles[0])
+						if strings.Contains(firstFile, "gocardless") {
+							detectedST = "GOCARDLESS"
+						} else if strings.Contains(firstFile, "enablebanking") {
+							detectedST = "ENABLEBANKING"
+						} else if strings.Contains(firstFile, "trading212") {
+							detectedST = "TRADING212"
+						}
+					}
+					serviceType = detectedST
+
+					// Match with database integrations
+					if detectedST != "" {
+						for _, i := range ints {
+							if i.serviceType == detectedST {
+								userID = i.userID
+								integrationID = i.id
+								integrationName = i.name
+								break
+							}
+						}
+					}
+				}
+
+				if status == "STARTED" || status == "IN_PROGRESS" {
+					status = "COMPLETED"
+				}
+
+				_, _ = db.Exec(`
+					INSERT INTO sync_runs (correlation_id, user_id, integration_id, integration_name, service_type, status, timestamp, transaction_count, has_log_files, error_message)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, -1, $8, $9)
+					ON CONFLICT(correlation_id) DO NOTHING
+				`, correlationID, userID, integrationID, integrationName, serviceType, status, modTime, !isEmpty, errMsg)
+			}
+
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {
