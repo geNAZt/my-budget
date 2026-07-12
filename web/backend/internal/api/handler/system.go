@@ -295,6 +295,67 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 	userInts, _ := sys.loadUserIntegrations(userID)
 
 	metrics := &syncMetrics{}
+	doneChan := make(chan struct{})
+
+	// Start 1-second metrics collector loop immediately
+	go func() {
+		metricsTicker := time.NewTicker(1 * time.Second)
+		defer metricsTicker.Stop()
+
+		lastCPU, _ := getCPUTimeAndMemory()
+		lastTime := time.Now()
+
+		for {
+			select {
+			case <-metricsTicker.C:
+				now := time.Now()
+				elapsed := now.Sub(lastTime)
+				if elapsed <= 0 {
+					continue
+				}
+
+				currentCPU, currentRSS := getCPUTimeAndMemory()
+				cpuDelta := currentCPU - lastCPU
+
+				numCores := runtime.NumCPU()
+				cpuPercent := (float64(cpuDelta) / float64(elapsed)) * 100.0 / float64(numCores)
+				if cpuPercent > 100.0 {
+					cpuPercent = 100.0
+				}
+				if cpuPercent < 0 {
+					cpuPercent = 0
+				}
+
+				lastCPU = currentCPU
+				lastTime = now
+
+				metrics.mu.Lock()
+				ioOps := metrics.ioOps
+				ioBytes := metrics.ioBytes
+				ioDurationMs := metrics.ioDurationNs / int64(time.Millisecond)
+				metrics.mu.Unlock()
+
+				metricMsg := &apiproto.SyncRun{
+					IsMetrics: true,
+					Metrics: &apiproto.SyncPerformanceMetrics{
+						FileIoReadBytes:      ioBytes,
+						FileIoReadOperations: int32(ioOps),
+						CpuUtilization:       cpuPercent,
+						MemoryRssBytes:       currentRSS,
+						TotalIoDurationMs:    ioDurationMs,
+					},
+				}
+
+				if s.IsClosed() {
+					return
+				}
+				_ = sys.handler.SendResponse(s, reqID, metricMsg, false)
+
+			case <-doneChan:
+				return
+			}
+		}
+	}()
 
 	readFileWithMetrics := func(filePath string) ([]byte, error) {
 		start := time.Now()
@@ -482,68 +543,6 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, _ *apiproto.E
 			isEmpty:         isEmpty,
 		})
 	}
-
-	doneChan := make(chan struct{})
-
-	// Start 1-second metrics collector loop
-	go func() {
-		metricsTicker := time.NewTicker(1 * time.Second)
-		defer metricsTicker.Stop()
-
-		lastCPU, _ := getCPUTimeAndMemory()
-		lastTime := time.Now()
-
-		for {
-			select {
-			case <-metricsTicker.C:
-				now := time.Now()
-				elapsed := now.Sub(lastTime)
-				if elapsed <= 0 {
-					continue
-				}
-
-				currentCPU, currentRSS := getCPUTimeAndMemory()
-				cpuDelta := currentCPU - lastCPU
-
-				numCores := runtime.NumCPU()
-				cpuPercent := (float64(cpuDelta) / float64(elapsed)) * 100.0 / float64(numCores)
-				if cpuPercent > 100.0 {
-					cpuPercent = 100.0
-				}
-				if cpuPercent < 0 {
-					cpuPercent = 0
-				}
-
-				lastCPU = currentCPU
-				lastTime = now
-
-				metrics.mu.Lock()
-				ioOps := metrics.ioOps
-				ioBytes := metrics.ioBytes
-				ioDurationMs := metrics.ioDurationNs / int64(time.Millisecond)
-				metrics.mu.Unlock()
-
-				metricMsg := &apiproto.SyncRun{
-					IsMetrics: true,
-					Metrics: &apiproto.SyncPerformanceMetrics{
-						FileIoReadBytes:      ioBytes,
-						FileIoReadOperations: int32(ioOps),
-						CpuUtilization:       cpuPercent,
-						MemoryRssBytes:       currentRSS,
-						TotalIoDurationMs:    ioDurationMs,
-					},
-				}
-
-				if s.IsClosed() {
-					return
-				}
-				_ = sys.handler.SendResponse(s, reqID, metricMsg, false)
-
-			case <-doneChan:
-				return
-			}
-		}
-	}()
 
 	// Process using up to 4 concurrent worker goroutines
 	numWorkers := 4
