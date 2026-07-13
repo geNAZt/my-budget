@@ -83,55 +83,35 @@
         }
     });
 
-    // Get unique integrations from loaded runs for the filter dropdown
-    let integrations = $derived(
-        Array.from(
-            runs.reduce((acc, r) => {
-                if (r.integrationId && r.integrationName) {
-                    acc.set(r.integrationId, r.integrationName);
-                }
-                return acc;
-            }, new Map<string, string>())
-        ).map((entry) => {
-            const [id, name] = entry as [string, string];
-            return { id, name };
-        })
-    );
-
-    // Filter runs
-    let filteredRuns = $derived.by(() => {
-        console.log("[SYNC_LOGS] [filteredRuns] Runs count:", runs.length, "filterIntegration:", selectedIntegrationFilter, "filterTxsOperator:", filterTxsOperator, "filterTxsValue:", filterTxsValue);
-        const result = runs.filter(r => {
-            if (selectedIntegrationFilter !== "ALL" && r.integrationId !== selectedIntegrationFilter) {
-                return false;
-            }
-            if (filterTxsValue !== null) {
-                const count = r.transactionCount || 0;
-                switch (filterTxsOperator) {
-                    case ">": return count > filterTxsValue;
-                    case "<": return count < filterTxsValue;
-                    case "=": return count === filterTxsValue;
-                    case ">=": return count >= filterTxsValue;
-                    case "<=": return count <= filterTxsValue;
-                    default: return true;
-                }
-            }
-            return true;
-        });
-        console.log("[SYNC_LOGS] [filteredRuns] Filtered count:", result.length);
-        return result;
-    });
+    let integrationsList = $state<any[]>([]);
 
     onMount(async () => {
-        await loadSyncRuns();
+        try {
+            const [res, err] = await wsCall(
+                "integrations::list",
+                null,
+                null,
+                [api.IntegrationListSchema]
+            ).one();
+            if (res && res.integrations) {
+                integrationsList = res.integrations.map((i: any) => decode(i));
+            }
+        } catch (err) {
+            console.error("[SYNC_LOGS] Failed to load integrations list:", err);
+        }
     });
 
+    // Filter runs (returned already filtered from backend DB)
+    let filteredRuns = $derived(runs);
+
     $effect(() => {
-        if (filteredRuns.length < limit && hasMore && !isLoadingRuns && runs.length > 0 && runs.length < 1000) {
-            console.log(`[SYNC_LOGS] Auto-fetching more runs. Visible: ${filteredRuns.length}, Total loaded: ${runs.length}`);
-            offset += limit;
-            loadSyncRuns();
-        }
+        // Track reactive filter states to reload when they change
+        const _int = selectedIntegrationFilter;
+        const _val = filterTxsValue;
+        const _op = filterTxsOperator;
+
+        offset = 0;
+        loadSyncRuns();
     });
 
     async function loadSyncRuns() {
@@ -145,7 +125,13 @@
             const callResult = wsCall(
                 "system::sync_runs",
                 api.SyncRunsRequestSchema,
-                { offset, limit },
+                { 
+                    offset, 
+                    limit,
+                    filterIntegrationId: selectedIntegrationFilter,
+                    filterTxsValue: filterTxsValue !== null ? filterTxsValue : undefined,
+                    filterTxsOperator: filterTxsOperator
+                },
                 [api.SyncRunSchema],
                 { timeout: 60000 }
             );
@@ -306,8 +292,8 @@
                             class="w-full bg-slate-900 border border-slate-700/60 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 appearance-none cursor-pointer"
                         >
                             <option value="ALL">All Integrations</option>
-                            {#each integrations as int}
-                                <option value={int.id}>{int.name}</option>
+                            {#each integrationsList as int}
+                                <option value={int.integrationId}>{int.integrationName}</option>
                             {/each}
                         </select>
                         <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">

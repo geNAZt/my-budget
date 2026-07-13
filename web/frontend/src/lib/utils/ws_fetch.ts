@@ -232,6 +232,19 @@ export interface WsCallConfig {
   timeout?: number;
 }
 
+function sendCancelRequest(id: string) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const cancelMsg = create(api.WSRequestSchema, {
+      id,
+      path: "cancel",
+      body: new Uint8Array(),
+    });
+    const bytes = toBinary(api.WSRequestSchema, cancelMsg);
+    console.log(`[WS] Sending Cancel Request for ID: ${id}`);
+    ws.send(bytes);
+  }
+}
+
 /**
  * Modern fully asynchronous wrapper utility.
  * Returns an execution chain offering .one() and .many() Go-style variants.
@@ -338,19 +351,24 @@ export function wsCall<T extends DescMessage, R extends DescMessage[]>(
         },
       });
 
-      while (!isDone || incomingBuffer.length > 0) {
-        if (streamError) {
-          yield [null, streamError];
-          return; // Break the generator loop on error
-        }
+      try {
+        while (!isDone || incomingBuffer.length > 0) {
+          if (streamError) {
+            yield [null, streamError];
+            return; // Break the generator loop on error
+          }
 
-        if (incomingBuffer.length > 0) {
-          yield [incomingBuffer.shift()!, null];
-        } else {
-          await new Promise<void>((resolve) => {
-            notifyNext = resolve;
-          });
+          if (incomingBuffer.length > 0) {
+            yield [incomingBuffer.shift()!, null];
+          } else {
+            await new Promise<void>((resolve) => {
+              notifyNext = resolve;
+            });
+          }
         }
+      } finally {
+        requests.delete(id);
+        sendCancelRequest(id);
       }
     },
   };

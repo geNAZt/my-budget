@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -162,8 +163,97 @@ func NewSystem(handler *api.WebSocketHandler, logService *service.LogService, do
 	}
 
 	go sys.startWatchtowerMonitor()
+	go sys.startBackgroundSyncRunsParser()
 
 	return sys
+}
+
+func (sys *System) startBackgroundSyncRunsParser() {
+	// Add some delay on boot to allow DB migrations to fully complete and startup log noise to settle
+	time.Sleep(5 * time.Second)
+	log.Printf("[DB] Starting background parser for historical sync runs...")
+
+	baseDir := "/app"
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		if _, err := os.Stat("web"); err == nil {
+			baseDir = "web"
+		} else {
+			baseDir = "."
+		}
+	}
+	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
+
+	rows, err := sys.db.Query("SELECT correlation_id, service_type FROM sync_runs WHERE transaction_count = -1")
+	if err != nil {
+		log.Printf("[DB] Background parser error querying runs: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	type runTask struct {
+		cid   string
+		stype string
+	}
+	var tasks []runTask
+	for rows.Next() {
+		var t runTask
+		if err := rows.Scan(&t.cid, &t.stype); err == nil {
+			tasks = append(tasks, t)
+		}
+	}
+
+	if len(tasks) == 0 {
+		log.Printf("[DB] Background parser: no historical sync runs to parse.")
+		return
+	}
+
+	log.Printf("[DB] Background parser found %d historical sync runs to parse.", len(tasks))
+
+	// Queue up tasks
+	taskChan := make(chan runTask, len(tasks))
+	for _, t := range tasks {
+		taskChan <- t
+	}
+	close(taskChan)
+
+	numWorkers := 4
+	var wg sync.WaitGroup
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for task := range taskChan {
+				runDir := filepath.Join(logsDir, task.cid)
+				runFiles, err := os.ReadDir(runDir)
+				if err != nil {
+					// Directory does not exist on disk, transaction count is 0
+					_, _ = sys.db.Exec("UPDATE sync_runs SET status = 'COMPLETED', transaction_count = 0 WHERE correlation_id = $1", task.cid)
+					continue
+				}
+
+				txCount := int32(0)
+				for _, f := range runFiles {
+					if f.IsDir() || !strings.HasSuffix(f.Name(), "_resp.json") {
+						continue
+					}
+					content, err := os.ReadFile(filepath.Join(runDir, f.Name()))
+					if err == nil {
+						var dump struct {
+							Body interface{} `json:"body"`
+						}
+						if err := json.Unmarshal(content, &dump); err == nil && dump.Body != nil {
+							detected := parseTransactionsFromJSON(strings.ToLower(task.stype), dump.Body)
+							txCount += int32(len(detected))
+						}
+					}
+				}
+
+				_, _ = sys.db.Exec("UPDATE sync_runs SET status = 'COMPLETED', transaction_count = $1 WHERE correlation_id = $2", txCount, task.cid)
+			}
+		}()
+	}
+	wg.Wait()
+	log.Printf("[DB] Background parser successfully finished parsing all historical sync runs.")
 }
 
 type userIntegration struct {
@@ -402,6 +492,9 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 	logsDir := filepath.Join(baseDir, "logs", "sync_runs")
 
 
+	startTime := time.Now()
+	startCPUTime, _ := getCPUTimeAndMemory()
+
 	metrics := &syncMetrics{}
 	doneChan := make(chan struct{})
 
@@ -504,72 +597,90 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 		integrationName string
 		serviceType     string
 		isEmpty         bool
+		reqID           string
 	}
 
-	cachedRuns, hasCache := sys.runsCache.Get(userID)
+	// 1. Build the dynamic SQL query with filters
+	baseQuery := `
+		FROM sync_runs
+		WHERE user_id = $1
+	`
+	args := []interface{}{userID}
+	argIdx := 2
 
-	// If offset is 0, we always reload and clear cache
-	if offset == 0 || !hasCache {
-		rows, err := sys.db.Query(`
-			SELECT correlation_id, integration_id, integration_name, service_type, status, timestamp, transaction_count, has_log_files, error_message
-			FROM sync_runs
-			WHERE user_id = $1
-			ORDER BY timestamp DESC
-		`, userID)
+	if req.FilterIntegrationId != "" && req.FilterIntegrationId != "ALL" {
+		baseQuery += fmt.Sprintf(" AND integration_id = $%d", argIdx)
+		args = append(args, req.FilterIntegrationId)
+		argIdx++
+	}
+
+	if req.FilterTxsValue != nil {
+		op := ">="
+		switch req.FilterTxsOperator {
+		case ">", "<", "=", ">=", "<=":
+			op = req.FilterTxsOperator
+		}
+		baseQuery += fmt.Sprintf(" AND transaction_count %s $%d", op, argIdx)
+		args = append(args, *req.FilterTxsValue)
+		argIdx++
+	}
+
+	// First query the total count of matching runs
+	var totalItems int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) %s", baseQuery)
+	err := sys.db.QueryRow(countQuery, args...).Scan(&totalItems)
+	if err != nil {
+		close(doneChan)
+		if !s.IsClosed() {
+			sys.handler.SendResponse(s, reqID, nil, true)
+		}
+		return
+	}
+
+	// Query the current page
+	query := "SELECT correlation_id, integration_id, integration_name, service_type, status, timestamp, transaction_count, has_log_files, error_message " +
+		baseQuery + fmt.Sprintf(" ORDER BY timestamp DESC LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	pageArgs := append(args, limit, offset)
+	rows, err := sys.db.Query(query, pageArgs...)
+	if err != nil {
+		close(doneChan)
+		if !s.IsClosed() {
+			sys.handler.SendResponse(s, reqID, nil, true)
+		}
+		return
+	}
+	defer rows.Close()
+
+	var pageRuns []*apiproto.SyncRun
+	for rows.Next() {
+		var r apiproto.SyncRun
+		var t time.Time
+		var errMsg string
+		err := rows.Scan(&r.CorrelationId, &r.IntegrationId, &r.IntegrationName, &r.ServiceType, &r.Status, &t, &r.TransactionCount, &r.HasLogFiles, &errMsg)
 		if err != nil {
-			close(doneChan)
-			if !s.IsClosed() {
-				sys.handler.SendResponse(s, reqID, nil, true)
-			}
-			return
+			continue
 		}
-		defer rows.Close()
-
-		var validCachedRuns []*apiproto.SyncRun
-		for rows.Next() {
-			var r apiproto.SyncRun
-			var t time.Time
-			var errMsg string
-			err := rows.Scan(&r.CorrelationId, &r.IntegrationId, &r.IntegrationName, &r.ServiceType, &r.Status, &t, &r.TransactionCount, &r.HasLogFiles, &errMsg)
-			if err != nil {
-				continue
-			}
-			r.Timestamp = t.Format(time.RFC3339)
-			validCachedRuns = append(validCachedRuns, &r)
-		}
-
-		cachedRuns = validCachedRuns
-		sys.runsCache.Add(userID, cachedRuns)
+		r.Timestamp = t.Format(time.RFC3339)
+		pageRuns = append(pageRuns, &r)
 	}
 
-	// Calculate slice boundaries
-	totalItems := len(cachedRuns)
-	end := offset + limit
-	if end > totalItems {
-		end = totalItems
-	}
-
-	// We also want to prepopulate at least next 100 items (so 2 scroll events)
-	prepopulateEnd := end + 100
-	if prepopulateEnd > totalItems {
-		prepopulateEnd = totalItems
-	}
-
-	// 1. Emit current requested page immediately (either cached parsed values, or skeleton values)
-	for i := offset; i < end; i++ {
-		if s.IsClosed() {
+	// 2. Emit the current page immediately
+	for _, run := range pageRuns {
+		if s.IsClosed() || s.IsRequestCancelled(reqID) {
 			close(doneChan)
 			return
 		}
-		_ = sys.handler.SendResponse(s, reqID, cachedRuns[i], false)
+		_ = sys.handler.SendResponse(s, reqID, run, false)
 	}
 
-	// 2. Build tasks list for workers (any items from offset to prepopulateEnd that are still not parsed yet, i.e., TransactionCount == -1)
+	// 3. Build tasks list for workers (any items in the current page that are still not parsed yet)
 	var tasks []folderTask
-	for i := offset; i < prepopulateEnd; i++ {
-		run := cachedRuns[i]
+	for idx, run := range pageRuns {
+		if s.IsRequestCancelled(reqID) {
+			close(doneChan)
+			return
+		}
 		if run.TransactionCount == -1 {
-			// Find files to parse
 			runDir := filepath.Join(logsDir, run.CorrelationId)
 			runFiles, _ := readDirWithMetrics(runDir)
 			var respFiles []string
@@ -580,7 +691,7 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 			}
 
 			tasks = append(tasks, folderTask{
-				index:           i,
+				index:           idx,
 				correlationID:   run.CorrelationId,
 				runDir:          runDir,
 				timestampStr:    run.Timestamp,
@@ -589,11 +700,12 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 				integrationName: run.IntegrationName,
 				serviceType:     run.ServiceType,
 				isEmpty:         !run.HasLogFiles,
+				reqID:           reqID,
 			})
 		}
 	}
 
-	// 3. Process tasks with up to 4 workers in background
+	// 4. Process tasks with workers
 	if len(tasks) > 0 {
 		numWorkers := 4
 		if len(tasks) < numWorkers {
@@ -612,6 +724,9 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 			go func() {
 				defer wg.Done()
 				for task := range taskChan {
+					if s.IsClosed() || s.IsRequestCancelled(task.reqID) {
+						return
+					}
 					txCount := int32(0)
 					for _, rf := range task.respFiles {
 						if content, err := readFileWithMetrics(rf); err == nil {
@@ -625,9 +740,6 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 						}
 					}
 
-					// Update cache thread-safely
-					sys.runsCache.UpdateTransactionCount(userID, task.index, txCount, "COMPLETED")
-
 					// Update DB
 					_, _ = sys.db.Exec(`
 						UPDATE sync_runs
@@ -635,23 +747,57 @@ func (sys *System) SyncRuns(s *api.WebsocketSession, reqID string, req *apiproto
 						WHERE correlation_id = $3
 					`, "COMPLETED", txCount, task.correlationID)
 
-					// Only emit to client if this item is in the CURRENT visible page requested by the client!
-					if task.index >= offset && task.index < end {
-						updatedRun := &apiproto.SyncRun{
-							CorrelationId:    task.correlationID,
-							Status:           "COMPLETED",
-							TransactionCount: txCount,
-						}
-
-						if s.IsClosed() {
-							return
-						}
-						_ = sys.handler.SendResponse(s, reqID, updatedRun, false)
+					// Emit updated run to client
+					updatedRun := &apiproto.SyncRun{
+						CorrelationId:    task.correlationID,
+						Status:           "COMPLETED",
+						TransactionCount: txCount,
 					}
+
+					if s.IsClosed() || s.IsRequestCancelled(task.reqID) {
+						return
+					}
+					_ = sys.handler.SendResponse(s, reqID, updatedRun, false)
 				}
 			}()
 		}
 		wg.Wait()
+	}
+
+	// Send final metrics packet
+	if !s.IsClosed() {
+		currentCPU, currentRSS := getCPUTimeAndMemory()
+		elapsed := time.Since(startTime)
+		cpuPercent := 0.0
+		if elapsed > 0 {
+			cpuDelta := currentCPU - startCPUTime
+			numCores := runtime.NumCPU()
+			cpuPercent = (float64(cpuDelta) / float64(elapsed)) * 100.0 / float64(numCores)
+			if cpuPercent > 100.0 {
+				cpuPercent = 100.0
+			}
+			if cpuPercent < 0 {
+				cpuPercent = 0
+			}
+		}
+
+		metrics.mu.Lock()
+		ioOps := metrics.ioOps
+		ioBytes := metrics.ioBytes
+		ioDurationMs := metrics.ioDurationNs / int64(time.Millisecond)
+		metrics.mu.Unlock()
+
+		finalMetricMsg := &apiproto.SyncRun{
+			IsMetrics: true,
+			Metrics: &apiproto.SyncPerformanceMetrics{
+				FileIoReadBytes:      ioBytes,
+				FileIoReadOperations: int32(ioOps),
+				CpuUtilization:       cpuPercent,
+				MemoryRssBytes:       currentRSS,
+				TotalIoDurationMs:    ioDurationMs,
+			},
+		}
+		_ = sys.handler.SendResponse(s, reqID, finalMetricMsg, false)
 	}
 
 	close(doneChan)

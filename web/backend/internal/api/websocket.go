@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/hex"
 	"log"
 	"net/http"
@@ -16,6 +17,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type activeReq struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
 type WebsocketSession struct {
 	ws         *websocket.Conn
 	writeMutex sync.Mutex
@@ -24,6 +30,61 @@ type WebsocketSession struct {
 	tokenStr   string
 	closed     bool
 	remoteIP   string
+	activeReqs map[string]activeReq
+}
+
+func (s *WebsocketSession) StartRequest(reqID string) context.Context {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.activeReqs == nil {
+		s.activeReqs = make(map[string]activeReq)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.activeReqs[reqID] = activeReq{ctx: ctx, cancel: cancel}
+	return ctx
+}
+
+func (s *WebsocketSession) FinishRequest(reqID string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.activeReqs != nil {
+		if req, ok := s.activeReqs[reqID]; ok {
+			req.cancel()
+			delete(s.activeReqs, reqID)
+		}
+	}
+}
+
+func (s *WebsocketSession) CancelRequest(reqID string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.activeReqs != nil {
+		if req, ok := s.activeReqs[reqID]; ok {
+			req.cancel()
+			delete(s.activeReqs, reqID)
+		}
+	}
+}
+
+func (s *WebsocketSession) IsRequestCancelled(reqID string) bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	if s.closed {
+		return true
+	}
+	if s.activeReqs == nil {
+		return false
+	}
+	req, ok := s.activeReqs[reqID]
+	if !ok {
+		return false
+	}
+	select {
+	case <-req.ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *WebsocketSession) SetAuth(userID string, tokenStr string) {
@@ -90,9 +151,10 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 	}
 
 	session := &WebsocketSession{
-		ws:       ws,
-		closed:   false,
-		remoteIP: c.RealIP(),
+		ws:         ws,
+		closed:     false,
+		remoteIP:   c.RealIP(),
+		activeReqs: make(map[string]activeReq),
 	}
 
 	sessionID := uuid.New().String()
@@ -109,8 +171,14 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 			delete(h.sessions, sessionID)
 
 			session.stateMu.Lock()
-			defer session.stateMu.Unlock()
 			session.closed = true
+			if session.activeReqs != nil {
+				for _, req := range session.activeReqs {
+					req.cancel()
+				}
+				session.activeReqs = nil
+			}
+			session.stateMu.Unlock()
 
 			log.Printf("[WS] Unregistered session %s", sessionID)
 		}
@@ -131,6 +199,14 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 		}
 
 		log.Printf("[WS] Incoming Request: %s (ID: %s) bytes: %d, data(hex): %s", req.Path, req.Id, len(message), hex.EncodeToString(message))
+
+		if req.Path == "cancel" {
+			log.Printf("[WS] Cancel Request received for ID: %s", req.Id)
+			session.CancelRequest(req.Id)
+			continue
+		}
+
+		session.StartRequest(req.Id)
 
 		go func(req apiproto.WSRequest) {
 			defer func() {
@@ -211,6 +287,10 @@ func (h *WebSocketHandler) SendError(session *WebsocketSession, reqID string, st
 }
 
 func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string, body proto.Message, done bool) error {
+	if done {
+		session.FinishRequest(reqID)
+	}
+
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = proto.Marshal(body)
