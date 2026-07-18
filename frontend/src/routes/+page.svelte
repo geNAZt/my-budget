@@ -18,7 +18,7 @@
 	<header class="relative z-10 pt-32 pb-20 px-6 max-w-[1400px] mx-auto text-center" in:fade={{ duration: 800 }}>
 		<div class="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-slate-100 mb-8">
 			<Sparkles class="w-4 h-4 text-indigo-600" />
-			<span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Deterministic Wealth Engine</span>
+			<span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Secure Wealth Planner</span>
 		</div>
 
 		<h1 class="text-7xl md:text-8xl font-black tracking-tighter text-slate-900 mb-8 leading-[0.9]">
@@ -27,17 +27,17 @@
 		</h1>
 
 		<p class="max-w-2xl mx-auto text-xl text-slate-500 font-medium leading-relaxed mb-12">
-			A high-performance simulation engine for long-term wealth management.
-			Multi-account synchronization, Monte Carlo risk modelling, and identity-bound encryption.
+			A powerful planner for long-term wealth management.
+			Live account synchronization, future growth projections, and hardware-secured passkey protection.
 		</p>
 
 		<div class="flex flex-col sm:flex-row items-center justify-center gap-6">
 			<a href="/auth/login" class="btn-primary py-5 px-10 text-xl group shadow-2xl shadow-indigo-100">
-				Access Engine
+				Launch Planner
 				<ArrowRight class="w-6 h-6 group-hover:translate-x-1 transition-transform" />
 			</a>
 			<a href="/auth/register" class="btn-secondary py-5 px-10 text-xl border-2">
-				System Registration
+				Create Account
 			</a>
 		</div>
 	</header>
@@ -50,9 +50,9 @@
 					<ShieldCheck class="w-8 h-8" />
 				</div>
 				<div class="space-y-2">
-					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Identity-Bound</h3>
+					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Passkey Protected</h3>
 					<p class="text-slate-500 text-lg leading-relaxed">
-						Your data is encrypted using keys derived from your hardware security key. If the DB moves, it becomes unreadable.
+						Your data is secured using your personal hardware passkey, keeping your financial history private and safe.
 					</p>
 				</div>
 			</div>
@@ -62,9 +62,9 @@
 					<TrendingUp class="w-8 h-8" />
 				</div>
 				<div class="space-y-2">
-					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Monte Carlo Risk</h3>
+					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Future Projections</h3>
 					<p class="text-slate-500 text-lg leading-relaxed">
-						Simulate thousands of market conditions using vectorized SIMD math to find your deterministic probability of success.
+						Simulate different market conditions to find your exact probability of financial success.
 					</p>
 				</div>
 			</div>
@@ -74,10 +74,11 @@
 					<Layers class="w-8 h-8" />
 				</div>
 				<div class="space-y-2">
-					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Plan Forking</h3>
+					<h3 class="text-2xl font-black text-slate-900 tracking-tight">Compare Scenarios</h3>
 					<p class="text-slate-500 text-lg leading-relaxed">
-						Immutable snapshots of financial plans. Compare deltas between different asset allocations or payment strategies.
+						Create copies of your plans to compare different savings goals, interest rates, or payout strategies.
 					</p>
+
 				</div>
 			</div>
 		</div>

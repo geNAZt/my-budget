@@ -82,6 +82,12 @@
     let showScopeModal = $state(false);
     let scopeTab = $state<"INCOME" | "BILL" | "EXPENSE" | "ASSET" | "LOAN" | "MODIFICATION" | "WATERFALL">("INCOME");
 
+    const mcOptions = [
+        { id: "STANDARD", label: "Standard (Single-Threaded)" },
+        { id: "PARALLEL", label: "Fast (Multi-Threaded)" },
+        { id: "SIMD", label: "Turbo (Hardware Accelerated)" },
+    ];
+
     function getAllEntities() {
         const entities = [
             ...allIncomes.map((i) => ({
@@ -646,10 +652,10 @@
     >
         <div class="space-y-2">
             <h1 class="text-5xl font-black tracking-tight text-slate-900">
-                Scenario <span class="gradient-text">Architect</span>.
+                Scenario <span class="gradient-text">Planner</span>.
             </h1>
             <p class="text-slate-500 font-medium text-lg">
-                Deterministic & probabilistic projection hub.
+                Model and compare your financial future using fixed plans and potential market fluctuations.
             </p>
         </div>
 
@@ -947,15 +953,12 @@
                                         />
                                     </div>
                                     <div class="space-y-2 md:col-span-2">
-                                        <label class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Monte Carlo Engine Core</label>
-                                        <select
+                                        <SearchableDropdown
+                                            label="Simulation Engine Core"
+                                            options={mcOptions}
                                             bind:value={activeScenario.mcImplementation}
-                                            class="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-xs appearance-none cursor-pointer"
-                                        >
-                                            <option value="STANDARD">Standard Engine (Scalar Single-Threaded)</option>
-                                            <option value="PARALLEL">Parallel Engine (Multi-Threaded Work Pool)</option>
-                                            <option value="SIMD">SIMD Vectorized Engine (Hardware Accelerated)</option>
-                                        </select>
+                                            placeholder="Choose engine..."
+                                        />
                                     </div>
 
                                     <!-- Per-ETF Parameter Overrides Section -->

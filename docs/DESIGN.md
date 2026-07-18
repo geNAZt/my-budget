@@ -589,4 +589,26 @@ To enhance data density and provide instant historical context inside the groupe
   - While hovered, we render a vertical dashed marker line and a solid glowing dot indicator at the hovered data point coordinate inside the SVG.
   - The displayed Allocated Volume transitions to show the hovered month's title and exact aggregated value (e.g., "Volume in Jun 2026: € -120,00"), allowing the user to precisely read historical values.
 
+## 30. User Experience, UI Polish & Jargon Reduction
+
+### Design Details
+To make the application more customer-friendly, we reduce mathematical and developer-centric terminology ("tech-speak") and streamline layout interactions.
+
+1. **Jargon Reduction in Page Headings & Subtitles**:
+   - Simplify descriptions across primary views: Dashboard, Automations, Realtime Stream, Scenarios, Gantt Timeline, and Register pages. Replace terms like "identity-bound engine", "event-driven sandboxing", "probabilistic projection", and "PSD2 ledger" with clear, value-driven language.
+   - Rename headers like "Create Node" to "Create Account", and "Scenario Architect" to "Scenario Planner".
+
+2. **Refined Field Labels and Option Strings**:
+   - In managers (Asset, Bill, Income, Loan, Modification, Virtual Account), rename "Node Engine Error" to "Connection Error" or "Action Failed".
+   - Rename "Engine Type" to "Asset Type / Growth Model".
+   - Replace "Monte Carlo" option names in Scenario settings with descriptive tags ("Standard", "Fast", "Turbo") to represent calculation methods without intimidating users.
+   - Rename "Custom Named Penalties" to "Custom Fees & Taxes".
+
+3. **Dropdown Replacement and Consistency**:
+   - Replace native `<select>` dropdowns for major entity scopes (Scenario selection in the Timeline page, Target Asset selection in Expense detail modals) with `SearchableDropdown.svelte` to ensure UX unity and allow filtering.
+
+4. **Automation Schedule Simplifier**:
+   - For Automation Trigger Events (CRON schedules), introduce a preset selector for standard intervals (5m, 15m, Hourly, Daily, Weekly) alongside a custom field. This removes the need to write raw cron expressions for typical tasks.
+
+
 

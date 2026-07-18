@@ -42,8 +42,8 @@
                 <div class="inline-flex items-center justify-center p-4 bg-emerald-50 rounded-3xl mb-6 shadow-sm">
                     <UserPlus class="h-12 w-12 text-emerald-600" />
                 </div>
-                <h1 class="text-4xl font-black text-slate-900 tracking-tight">Create Node</h1>
-                <p class="text-slate-500 font-medium mt-2">Initialize your identity-bound engine</p>
+                <h1 class="text-4xl font-black text-slate-900 tracking-tight">Create Account</h1>
+                <p class="text-slate-500 font-medium mt-2">Initialize your personal secure vault</p>
             </div>
 
             <form onsubmit={handleRegister} class="space-y-6">

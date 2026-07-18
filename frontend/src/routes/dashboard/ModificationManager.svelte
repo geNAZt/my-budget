@@ -84,8 +84,8 @@
     let allLoans = $state<any[]>([]);
 
     const typeOptions = [
-        { id: "ASSET", label: "Asset Node" },
-        { id: "LOAN", label: "Liability Node" },
+        { id: "ASSET", label: "Asset" },
+        { id: "LOAN", label: "Loan" },
     ];
 
     const loanOptions = $derived([
@@ -284,7 +284,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -330,7 +330,7 @@
             {#snippet header()}
                 <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Description</th>
                 <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Target Type</th>
-                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Target Node(s)</th>
+                <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Target Asset / Loan</th>
                 <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Timeline</th>
                 <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Value</th>
                 <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Actions</th>
@@ -429,14 +429,14 @@
                 <div class="space-y-2">
                     {#if currentMod.targetType === "LOAN"}
                         <SearchableDropdown
-                            label="Target Liability Node"
+                            label="Target Loan"
                             options={loanOptions}
                             bind:value={currentMod.targetId}
                             placeholder="Select Target Loan..."
                         />
                     {:else}
                         <SearchableMultiSelect
-                            label="Target Asset Node(s)"
+                            label="Target Asset(s)"
                             options={assetMultiOptions}
                             bind:values={currentMod.targetIds}
                             placeholder="Select Assets..."

@@ -4,6 +4,7 @@
     import Modal from "$lib/components/ui/Modal.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Input from "$lib/components/ui/Input.svelte";
+    import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
 
     let {
         open = $bindable(false),
@@ -363,15 +364,12 @@
                         {:else}
                             <div class="space-y-4">
                                 <div class="space-y-1.5">
-                                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block ml-1">Select Target Asset Account</span>
-                                    <select
+                                    <SearchableDropdown
+                                        label="Select Target Asset Account"
+                                        options={activeAssets.map((asset: any) => ({ id: getID(asset), label: getName(asset) }))}
                                         bind:value={fundingAssetId}
-                                        class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-bold outline-none text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
-                                    >
-                                        {#each activeAssets as asset}
-                                            <option value={getID(asset)}>{getName(asset)}</option>
-                                        {/each}
-                                    </select>
+                                        placeholder="Choose asset account..."
+                                    />
                                 </div>
 
                                 <div class="p-4 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-2xl flex items-center justify-between gap-4 shadow-sm">

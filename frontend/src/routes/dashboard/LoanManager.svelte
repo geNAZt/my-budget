@@ -262,7 +262,7 @@
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
             <h2 class="text-3xl font-black tracking-tight text-slate-900 text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
-                Liability Nodes
+                Liabilities
             </h2>
             <p class="text-slate-500 font-medium text-sm">
                 Amortization schedules and debt structures.
@@ -289,7 +289,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -398,8 +398,8 @@
 <!-- Add Modal -->
 <Modal
     bind:open={showAddModal}
-    title="{currentLoan.id ? 'Refine' : 'New'} Liability Node"
-    subtitle="Define deterministic amortization parameters."
+    title="{currentLoan.id ? 'Edit' : 'New'} Liability"
+    subtitle="Define amortization schedule and interest rate parameters."
     maxWidth="max-w-2xl"
 >
     <form
@@ -584,7 +584,7 @@
                 loadingLabel="Saving..."
                 class="w-full py-4 text-lg"
             >
-                Commit Liability Node
+                Save Liability Settings
             </Button>
         </div>
     </form>
@@ -593,8 +593,8 @@
 <!-- Delete Modal -->
 <ConfirmModal
     bind:open={showDeleteConfirm}
-    title="Liability Lifecycle"
-    description="How should the WealthEngine handle this deletion?"
+    title="Liability Lifecycle Options"
+    description="How would you like to handle this delete action?"
 >
     <div class="grid grid-cols-1 gap-4">
         <button
@@ -623,7 +623,7 @@
             </div>
             <div>
                 <p class="font-black text-rose-600 dark:text-rose-400 leading-tight">
-                    Node Archive
+                    Archive Liability
                 </p>
                 <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     Hide this liability and all versions.

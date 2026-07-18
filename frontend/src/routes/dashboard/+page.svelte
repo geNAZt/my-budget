@@ -170,7 +170,7 @@
                 Wealth <span class="gradient-text">Nodes</span>.
             </h1>
             <p class="text-slate-500 font-medium text-lg">
-                Integrated control node for user <span
+                Your financial control center for user <span
                     class="font-black text-slate-700"
                     >{auth.user?.username}</span
                 >.

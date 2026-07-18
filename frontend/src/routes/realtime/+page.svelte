@@ -1338,7 +1338,7 @@
                 Realtime <span class="gradient-text">Stream</span>.
             </h1>
             <p class="text-slate-500 font-medium text-lg">
-                Cross-server encrypted background PSD2 & Equity ledger.
+                Securely track your live bank account balances and investment transactions in real-time.
             </p>
         </div>
         <div class="flex bg-slate-100 p-1.5 rounded-2xl">

@@ -259,7 +259,7 @@
                 Variable Expenses
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                One-time deterministic costs and variable liabilities.
+                One-time payments and variable expenses.
             </p>
         </div>
         <div>
@@ -284,7 +284,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -378,8 +378,8 @@
 <!-- Add/Edit Modal -->
 <Modal
     bind:open={showAddModal}
-    title="{currentExpense.id ? 'Refine' : 'New'} One-Time Expense"
-    subtitle={currentExpense.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this deterministic event.'}
+    title="{currentExpense.id ? 'Edit' : 'New'} One-Time Expense"
+    subtitle={currentExpense.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this one-time expense.'}
 >
     <form
         onsubmit={(e) => {

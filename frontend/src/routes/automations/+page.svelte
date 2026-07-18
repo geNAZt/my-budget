@@ -50,6 +50,16 @@
 
     let isFullscreen = $state(false);
 
+    const cronPresets = [
+        { id: "*/5 * * * *", label: "Every 5 minutes" },
+        { id: "*/15 * * * *", label: "Every 15 minutes" },
+        { id: "0 * * * *", label: "Every Hour" },
+        { id: "0 0 * * *", label: "Every Day" },
+        { id: "0 0 * * 0", label: "Every Week" },
+        { id: "custom", label: "Custom UNIX Cron Expression" },
+    ];
+    let cronPresetValue = $state("*/5 * * * *");
+
     const triggerOptions = [
         { id: "CRON", label: "Periodic Schedule (CRON)" },
         { id: "SYNC_FINISHED", label: "External Bank Sync Complete" },
@@ -89,6 +99,10 @@
             triggerValue: plan.triggerValue,
             isEnabled: plan.isEnabled,
         };
+        if (plan.triggerType === "CRON") {
+            const hasPreset = cronPresets.some(p => p.id === plan.triggerValue);
+            cronPresetValue = hasPreset ? plan.triggerValue : "custom";
+        }
         selectedLogId = null;
         loadLogs(plan.id);
     }
@@ -138,8 +152,9 @@ console.log("Current budget sheet loaded:", budget);
             triggerValue: "*/5 * * * *",
             isEnabled: true,
         };
-        logs = [];
+        cronPresetValue = "*/5 * * * *";
         selectedLogId = null;
+        logs = [];
     }
 
     async function savePlan() {
@@ -284,7 +299,11 @@ console.log("Current budget sheet loaded:", budget);
     });
 
     function describeCron(expr: string): string {
-        return "Runs roughly every 5 minutes (internal scheduler)";
+        const preset = cronPresets.find(p => p.id === expr);
+        if (preset && expr !== "custom") {
+            return `Runs automatically: ${preset.label}`;
+        }
+        return `Custom schedule: ${expr} (UNIX Cron format)`;
     }
 
     const syncTriggerOptions = $derived([
@@ -311,7 +330,7 @@ console.log("Current budget sheet loaded:", budget);
                 Automation <span class="gradient-text">Lab</span>.
             </h1>
             <p class="text-slate-500 font-medium text-lg">
-                Event-driven execution & sandboxing.
+                Automate your financial planning with custom rules and triggers.
             </p>
         </div>
 
@@ -639,29 +658,43 @@ console.log("Current budget sheet loaded:", budget);
                                 />
                             </div>
 
-                            <div class="space-y-1">
+                            <div>
                                 {#if editedPlan.triggerType === "CRON"}
-                                    <label
-                                        class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1 mb-1"
-                                    >
-                                        Execution Interval (UNIX Cron)
-                                    </label>
-                                    <div class="relative">
-                                        <input
-                                            type="text"
-                                            bind:value={
-                                                editedPlan.triggerValue
-                                            }
-                                            placeholder="*/5 * * * *"
-                                            class="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-mono focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                                    <div class="space-y-4">
+                                        <SearchableDropdown
+                                            label="Schedule Profile"
+                                            options={cronPresets}
+                                            bind:value={cronPresetValue}
+                                            onchange={(val) => {
+                                                if (val !== "custom") {
+                                                    editedPlan.triggerValue = val;
+                                                }
+                                            }}
                                         />
+                                        {#if cronPresetValue === "custom"}
+                                            <div class="space-y-1" transition:slide>
+                                                <label
+                                                    class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1 mb-1"
+                                                >
+                                                    Custom UNIX Cron Expression
+                                                </label>
+                                                <div class="relative">
+                                                    <input
+                                                        type="text"
+                                                        bind:value={editedPlan.triggerValue}
+                                                        placeholder="*/5 * * * *"
+                                                        class="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-mono focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+                                        {/if}
+                                        <p
+                                            class="text-[9px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5 ml-1 mt-1.5"
+                                        >
+                                            <Clock class="w-3.5 h-3.5" />
+                                            {describeCron(editedPlan.triggerValue)}
+                                        </p>
                                     </div>
-                                    <p
-                                        class="text-[9px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5 ml-1 mt-1.5"
-                                    >
-                                        <Clock class="w-3.5 h-3.5" />
-                                        {describeCron(editedPlan.triggerValue)}
-                                    </p>
                                 {:else}
                                     <SearchableDropdown
                                         label={editedPlan.triggerType ===

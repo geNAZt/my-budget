@@ -244,7 +244,7 @@
             <AlertTriangle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>

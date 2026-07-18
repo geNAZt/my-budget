@@ -637,7 +637,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -654,7 +654,7 @@
         <div class="flex flex-col items-center justify-center py-20 space-y-4">
             <div class="w-10 h-10 border-4 border-t-emerald-600 border-emerald-100 rounded-full animate-spin"></div>
             <p class="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">
-                Syncing Growth Nodes...
+                Loading Assets...
             </p>
         </div>
     {:else if assets.length === 0}
@@ -766,8 +766,8 @@
 <!-- Add/Edit Modal -->
 <Modal
     bind:open={showAddModal}
-    title="{currentAsset.id ? 'Refine' : 'New'} Wealth Node"
-    subtitle="Define deterministic growth parameters for this asset."
+    title="{currentAsset.id ? 'Edit' : 'New'} Asset"
+    subtitle="Define the settings and expected growth for this asset."
     maxWidth="max-w-2xl"
 >
     <form
@@ -806,14 +806,14 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div class="space-y-2">
                     <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
-                        Engine Type
+                        Growth Model
                     </label>
                     <select
                         bind:value={currentAsset.activeVersion.type}
                         class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
                     >
-                        <option value="STATIC">Static Interest</option>
-                        <option value="ETF">ETF Portfolio (Monte Carlo)</option>
+                        <option value="STATIC">Fixed Interest (e.g. Savings)</option>
+                        <option value="ETF">Investment Portfolio (e.g. ETF / Stock Market)</option>
                     </select>
                 </div>
 
@@ -911,7 +911,7 @@
                 <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-fade-in" transition:slide>
                     <div class="space-y-2">
                         <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
-                            Termination Trigger
+                            End Saving Trigger
                         </label>
                         <select
                             bind:value={currentAsset.activeVersion.stopModificationId}
@@ -925,7 +925,7 @@
                             {/each}
                         </select>
                         <p class="text-[9px] font-medium text-slate-500 dark:text-slate-400 ml-1">
-                            Automatically close this asset and stop contributions once the selected modification triggers.
+                            Automatically stop saving and close this asset when the selected lifestyle adjustment starts.
                         </p>
                     </div>
                 </div>
@@ -986,12 +986,12 @@
                 <EtfConfigForm bind:etfConfig={currentAsset.activeVersion.etfConfig} />
             {/if}
 
-            <!-- Custom Named Penalties Section -->
+            <!-- Custom Fees & Taxes Section -->
             <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div class="flex items-center justify-between">
                     <div class="space-y-0.5">
                         <label class="text-sm font-black text-slate-900 dark:text-slate-100">
-                            Custom Named Penalties
+                            Custom Fees & Taxes
                         </label>
                         <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
                             Apply fees or taxes automatically on withdrawal or interest generation events.
@@ -1010,7 +1010,7 @@
                         }}
                         class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
                     >
-                        <Plus class="w-3 h-3" /> Add Penalty
+                        <Plus class="w-3 h-3" /> Add Fee/Tax
                     </Button>
                 </div>
 
@@ -1101,8 +1101,8 @@
 <!-- Deletion Confirmation Modal -->
 <ConfirmModal
     bind:open={showDeleteConfirm}
-    title="Wealth Node Lifecycle"
-    description="How should the WealthEngine handle this deletion?"
+    title="Asset Lifecycle Options"
+    description="How would you like to handle this delete action?"
 >
     <div class="grid grid-cols-1 gap-4">
         <button
@@ -1130,7 +1130,7 @@
             </div>
             <div>
                 <p class="font-black text-slate-900 dark:text-slate-100 leading-tight">
-                    Node Archive
+                    Archive Asset
                 </p>
                 <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     Hide this asset and its complete history.

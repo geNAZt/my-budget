@@ -259,7 +259,7 @@
                 Fixed Bills
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                Deterministic liabilities and recurring contracts.
+                Fixed liabilities and recurring contracts.
             </p>
         </div>
         <div>
@@ -284,7 +284,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -386,8 +386,8 @@
 <!-- Add/Edit Modal -->
 <Modal
     bind:open={showAddModal}
-    title="{currentBill.id ? 'Refine' : 'New'} Recurring Bill"
-    subtitle={currentBill.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this deterministic liability.'}
+    title="{currentBill.id ? 'Edit' : 'New'} Recurring Bill"
+    subtitle={currentBill.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this recurring bill.'}
 >
     <form
         onsubmit={(e) => {

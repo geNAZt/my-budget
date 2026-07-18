@@ -305,7 +305,7 @@
                 Income Sources
             </h2>
             <p class="text-slate-500 font-medium text-sm">
-                Deterministic revenue streams with automated versioning.
+                Fixed revenue streams and monthly income.
             </p>
         </div>
         <div>
@@ -329,7 +329,7 @@
             <AlertCircle class="w-6 h-6 flex-shrink-0" />
             <div class="flex-1">
                 <p class="text-xs font-black uppercase tracking-widest">
-                    Node Engine Error
+                    Connection Error
                 </p>
                 <p class="text-sm font-bold">{error}</p>
             </div>
@@ -438,8 +438,8 @@
 <!-- Add/Edit Modal -->
 <Modal
     bind:open={showAddModal}
-    title="{currentIncome.id ? 'Refine' : 'New'} Income Stream"
-    subtitle={currentIncome.id ? 'Changes will be saved as a new immutable version.' : 'Initialize a new deterministic revenue source.'}
+    title="{currentIncome.id ? 'Edit' : 'New'} Income Stream"
+    subtitle={currentIncome.id ? 'Changes will be saved as a new immutable version.' : 'Define parameters for this income stream.'}
     maxWidth="max-w-2xl"
 >
     {#if currentIncome.activeVersion}
@@ -535,7 +535,7 @@
             <div class="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
                 <div class="space-y-2">
                     <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
-                        Termination Trigger
+                        End Income Trigger
                     </label>
                     <select
                         bind:value={currentIncome.activeVersion.stopModificationId}
@@ -549,7 +549,7 @@
                         {/each}
                     </select>
                     <p class="text-[9px] font-medium text-slate-500 dark:text-slate-400 ml-1">
-                        Automatically stop this income once the selected modification triggers.
+                        Automatically stop this income once the selected lifestyle adjustment starts.
                     </p>
                 </div>
             </div>

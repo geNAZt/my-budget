@@ -57,6 +57,7 @@
     import { toInputMonth, fromInputMonth } from "$lib/utils/date";
     import ExpenseDetailModal from "./components/ExpenseDetailModal.svelte";
     import AssetDetailModal from "./components/AssetDetailModal.svelte";
+    import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
 
     interface TimeSlice {
         id?: string;
@@ -1961,27 +1962,23 @@
     <header class="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div class="space-y-2">
             <h1 class="text-5xl font-black tracking-tight text-slate-900">
-                Gantt <span class="gradient-text">Timeline</span>.
+                Visual <span class="gradient-text">Timeline</span>.
             </h1>
             <p class="text-slate-500 font-medium text-lg">
-                Drag-and-drop flexible expenses horizontally. Visualized parent assets and nested sub-assets span multiple months.
+                Drag-and-drop expenses to plan when they occur. View how parent assets and nested sub-assets grow over time.
             </p>
         </div>
 
         <!-- Scenario & Duration Selectors -->
         <div class="flex flex-wrap items-center gap-4 bg-white p-3 rounded-3xl shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700">
             {#if scenarios.length > 0}
-                <div class="flex items-center gap-2 pr-4 border-r border-slate-100 dark:border-slate-700">
-                    <span class="text-xs font-black uppercase text-slate-400">Scenario:</span>
-                    <select
-                        value={selectedScenarioId}
-                        onchange={(e) => handleScenarioChange(e.currentTarget.value)}
-                        class="bg-transparent font-bold text-slate-700 border-none outline-none pr-6 cursor-pointer dark:text-slate-200"
-                    >
-                        {#each scenarios as sc}
-                            <option value={sc.id}>{sc.name}</option>
-                        {/each}
-                    </select>
+                <div class="flex items-center gap-2 pr-4 border-r border-slate-100 dark:border-slate-700 min-w-[220px]">
+                    <SearchableDropdown
+                        placeholder="Select Scenario..."
+                        options={scenarios.map((s) => ({ id: s.id || "", label: s.name }))}
+                        bind:value={selectedScenarioId}
+                        onchange={handleScenarioChange}
+                    />
                 </div>
 
                 <div class="flex items-center gap-2">
