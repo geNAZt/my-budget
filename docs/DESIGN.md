@@ -558,3 +558,26 @@ To simplify the repository structure and conform to the project evolution guidel
     *   Go package options and module parameters referencing `web/backend` are updated.
 6.  **Git Configuration (`.gitignore`)**:
     *   Paths starting with `web/` are updated to match the new root paths.
+
+## 9. Realtime Grouped View Background Sparkline Graph
+
+To enhance data density and provide instant historical context inside the grouped transaction dashboard, we integrate a background sparkline line chart into each group card, resembling the Grafana Stats Panel.
+
+### 1. Data Aggregation & Filtering
+- **Time Range**: The history covers a maximum of one year (12 calendar months), ending with the current month.
+- **Scope Alignment**: Transactions are filtered by the active account/integration configuration (matching ledger filters). However, date range filters (`filterStartDate` / `filterEndDate`) are bypassed for sparkline aggregation to ensure a stable 12-month timeline is always presented.
+- **Aggregation Logic**:
+  - We generate the list of the last 12 calendar months.
+  - Transactions belonging to each pool/group are mapped to their respective calendar months.
+  - For each month, we compute the sum of transaction amounts. If no transactions exist for a month, the sum defaults to `0`.
+
+### 2. SVG Sparkline Rendering
+- **Lightweight Components**: The sparklines are rendered using responsive, lightweight `<svg>` elements embedded directly inside the group cards.
+- **Gradients and Styling**:
+  - The svg path coordinates are calculated using a fixed `viewBox="0 0 100 40"` with `preserveAspectRatio="none"`.
+  - An SVG area fill is created using a linear gradient fading from the group/pool color (at 40% opacity) to transparent.
+  - A stroke line is drawn in the pool's primary color with smooth round caps.
+- **Layering**:
+  - The group cards are styled with `relative overflow-hidden` to clip the absolute-positioned sparkline.
+  - Sparklines are placed at the bottom portion of the card with `opacity-40` and `z-0` to sit cleanly behind text labels (`z-10`).
+

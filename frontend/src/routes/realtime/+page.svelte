@@ -415,10 +415,86 @@
         return balances;
     });
 
+    const last12Months = $derived.by(() => {
+        const months = [];
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        for (let i = 11; i >= 0; i--) {
+            const d = new Date(currentYear, currentMonth - i, 1);
+            months.push({
+                year: d.getFullYear(),
+                month: d.getMonth(),
+                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+            });
+        }
+        return months;
+    });
+
+    const historicalTransactions = $derived.by(() => {
+        let list = [...transactions];
+
+        if (txSearchQuery) {
+            const q = txSearchQuery.toLowerCase();
+            list = list.filter(
+                (t) =>
+                    getTxDescription(t).toLowerCase().includes(q) ||
+                    getTxPeer(t).toLowerCase().includes(q) ||
+                    getTxPeerIban(t).toLowerCase().includes(q),
+            );
+        }
+
+        if (selectedAccountID) {
+            list = list.filter((t) => t.accountId === selectedAccountID);
+        }
+
+        if (activeIntegrationIDs && activeIntegrationIDs.length > 0) {
+            list = list.filter((t) =>
+                activeIntegrationIDs.includes(t.integrationId),
+            );
+        }
+
+        if (filterAmountValue !== null) {
+            const limit = filterAmountValue;
+            list = list.filter((t) => {
+                const amt = getTxAmount(t);
+                switch (filterAmountOperator) {
+                    case ">":
+                        return amt > limit;
+                    case "<":
+                        return amt < limit;
+                    case "=":
+                        return Math.abs(amt - limit) < 0.01;
+                    case ">=":
+                        return amt >= limit;
+                    case "<=":
+                        return amt <= limit;
+                    default:
+                        return true;
+                }
+            });
+        }
+
+        if (showUnmatchedOnly) {
+            list = list.filter((t) => !t.poolIds || t.poolIds.length === 0);
+        }
+
+        if (showDuplicatesOnly) {
+            list = list.filter((t) => t.isPotentialDuplicate);
+        }
+
+        if (showLinkedTransactions) {
+            list = list.filter((t) => t.isLinkConfirmed || t.potentialLinkId);
+        } else {
+            list = list.filter((t) => !t.isLinkConfirmed);
+        }
+
+        return list;
+    });
+
     const groupedTransactions = $derived.by(() => {
         const groups: Record<
             string,
-            { name: string; color: string; total: number; count: number }
+            { name: string; color: string; total: number; count: number; chartLinePath: string; chartFillPath: string }
         > = {};
 
         filteredTransactions.forEach((t) => {
@@ -430,11 +506,55 @@
                 const color = pool?.color || "#cbd5e1";
 
                 if (!groups[name]) {
-                    groups[name] = { name, color, total: 0, count: 0 };
+                    groups[name] = { name, color, total: 0, count: 0, chartLinePath: "", chartFillPath: "" };
                 }
                 groups[name].total += getTxAmount(t);
                 groups[name].count++;
             });
+        });
+
+        const months = last12Months;
+
+        Object.keys(groups).forEach((name) => {
+            const poolTxs = historicalTransactions.filter((t: any) => {
+                const pIDs = t.poolIds && t.poolIds.length > 0 ? t.poolIds : [null];
+                return pIDs.some((pID: string | null) => {
+                    const pool = pID ? pools.find((p) => p.id === pID) : null;
+                    const pName = pool?.name || "Uncategorized";
+                    return pName === name;
+                });
+            });
+
+            const monthlyTotals = months.map((m) => {
+                const txsInMonth = poolTxs.filter((t: any) => t.createdAt.substring(0, 7) === m.key);
+                return txsInMonth.reduce((acc: number, t: any) => acc + getTxAmount(t), 0);
+            });
+
+            const min = Math.min(...monthlyTotals);
+            const max = Math.max(...monthlyTotals);
+
+            const points = monthlyTotals.map((val, idx) => {
+                const x = (idx / 11) * 100;
+                let y = 20;
+                if (max !== min) {
+                    y = 35 - ((val - min) / (max - min)) * 30;
+                }
+                return { x, y };
+            });
+
+            let linePath = "";
+            let fillPath = "";
+            if (points.length > 0) {
+                linePath = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)} ` +
+                    points.slice(1).map(p => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+                
+                fillPath = `M ${points[0].x.toFixed(1)} 40 L ` +
+                    points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ") +
+                    ` L ${points[points.length - 1].x.toFixed(1)} 40 Z`;
+            }
+
+            groups[name].chartLinePath = linePath;
+            groups[name].chartFillPath = fillPath;
         });
 
         return Object.values(groups).sort((a, b) => b.total - a.total);
@@ -2144,7 +2264,7 @@
                             <div
                                 role="button"
                                 tabindex="0"
-                                class="glass-card p-10 space-y-8 group hover:border-indigo-200 transition-all cursor-pointer"
+                                class="glass-card p-10 space-y-8 group hover:border-indigo-200 transition-all cursor-pointer relative overflow-hidden"
                                 onclick={() => {
                                     selectedPoolIDs = [
                                         pools.find((p) => p.name === group.name)
@@ -2163,7 +2283,37 @@
                                     }
                                 }}
                             >
-                                <div class="flex items-center justify-between">
+                                <!-- Background Sparkline Graph -->
+                                {#if group.chartLinePath}
+                                    <div class="absolute inset-x-0 bottom-0 h-[60%] pointer-events-none opacity-40 z-0">
+                                        <svg
+                                            class="w-full h-full"
+                                            viewBox="0 0 100 40"
+                                            preserveAspectRatio="none"
+                                        >
+                                            <defs>
+                                                <linearGradient id="sparkline-grad-{group.name.replace(/[^a-zA-Z0-9]/g, '-')}" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stop-color={group.color} stop-opacity="0.35"/>
+                                                    <stop offset="100%" stop-color={group.color} stop-opacity="0.0"/>
+                                                </linearGradient>
+                                            </defs>
+                                            <path
+                                                d={group.chartFillPath}
+                                                fill="url(#sparkline-grad-{group.name.replace(/[^a-zA-Z0-9]/g, '-')})"
+                                            />
+                                            <path
+                                                d={group.chartLinePath}
+                                                stroke={group.color}
+                                                stroke-width="1.75"
+                                                fill="none"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            />
+                                        </svg>
+                                    </div>
+                                {/if}
+
+                                <div class="flex items-center justify-between relative z-10">
                                     <div class="flex items-center gap-4">
                                         <div
                                             class="w-3 h-3 rounded-full"
@@ -2180,7 +2330,7 @@
                                         >{group.count} Events</span
                                     >
                                 </div>
-                                <div class="space-y-1">
+                                <div class="space-y-1 relative z-10">
                                     <p
                                         class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]"
                                     >
@@ -2196,7 +2346,7 @@
                                     </p>
                                 </div>
                                 <div
-                                    class="pt-6 border-t border-slate-50 flex items-center justify-between text-indigo-600 group-hover:translate-x-2 transition-transform"
+                                    class="pt-6 border-t border-slate-50 flex items-center justify-between text-indigo-600 group-hover:translate-x-2 transition-transform relative z-10"
                                 >
                                     <span
                                         class="text-[10px] font-black uppercase tracking-[0.2em]"
