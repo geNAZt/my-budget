@@ -417,20 +417,28 @@
     });
 
     const last12Months = $derived.by(() => {
-        const months = [];
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth();
-        for (let i = 11; i >= 0; i--) {
-            const d = new Date(currentYear, currentMonth - i, 1);
-            months.push({
-                year: d.getFullYear(),
-                month: d.getMonth(),
-                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-                label: d.toLocaleString("en-US", { month: "short" }),
-                fullLabel: d.toLocaleString("en-US", { month: "short", year: "numeric" })
+        const periods = [];
+        let referenceDate = new Date(now.getTime());
+        for (let i = 0; i < 12; i++) {
+            const bounds = getPeriodBoundsForDate(referenceDate, monthStartDay);
+            
+            const start = new Date(bounds.start);
+            start.setHours(0, 0, 0, 0);
+            
+            const end = new Date(bounds.end);
+            end.setHours(23, 59, 59, 999);
+            
+            const targetDate = bounds.end;
+            periods.unshift({
+                start,
+                end,
+                label: targetDate.toLocaleString("en-US", { month: "short" }),
+                fullLabel: targetDate.toLocaleString("en-US", { month: "short", year: "numeric" })
             });
+            // Get previous period
+            referenceDate = new Date(start.getTime() - 24 * 60 * 60 * 1000);
         }
-        return months;
+        return periods;
     });
 
     const historicalTransactions = $derived.by(() => {
@@ -529,7 +537,10 @@
             });
 
             const monthlyTotals = months.map((m) => {
-                const txsInMonth = poolTxs.filter((t: any) => t.createdAt.substring(0, 7) === m.key);
+                const txsInMonth = poolTxs.filter((t: any) => {
+                    const txTime = new Date(t.createdAt).getTime();
+                    return txTime >= m.start.getTime() && txTime <= m.end.getTime();
+                });
                 return txsInMonth.reduce((acc: number, t: any) => acc + getTxAmount(t), 0);
             });
 
@@ -2356,8 +2367,8 @@
 
                                 <!-- Axis Month Labels -->
                                 <div class="absolute inset-x-0 bottom-2 px-10 flex justify-between pointer-events-none z-10 text-[9px] font-bold text-slate-400 opacity-60 uppercase tracking-widest">
-                                    <span>{last12Months[0].label} {last12Months[0].year}</span>
-                                    <span>{last12Months[11].label} {last12Months[11].year}</span>
+                                    <span>{last12Months[0].fullLabel}</span>
+                                    <span>{last12Months[11].fullLabel}</span>
                                 </div>
 
                                 <div class="flex items-center justify-between relative z-10">
