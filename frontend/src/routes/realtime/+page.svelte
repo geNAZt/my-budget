@@ -110,6 +110,7 @@
     let isLoading = $state(true);
     let now = $state(new Date());
     let syncingMap = $state<Record<string, boolean>>({});
+    let hoveredPoints = $state<Record<string, number | null>>({});
     let viewMode = $state<"LEDGER" | "GROUPED" | "CHAINS" | "CONFIG">(
         getStored("realtime_viewMode", "LEDGER"),
     );
@@ -424,7 +425,9 @@
             months.push({
                 year: d.getFullYear(),
                 month: d.getMonth(),
-                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+                label: d.toLocaleString("en-US", { month: "short" }),
+                fullLabel: d.toLocaleString("en-US", { month: "short", year: "numeric" })
             });
         }
         return months;
@@ -494,7 +497,7 @@
     const groupedTransactions = $derived.by(() => {
         const groups: Record<
             string,
-            { name: string; color: string; total: number; count: number; chartLinePath: string; chartFillPath: string }
+            { name: string; color: string; total: number; count: number; chartLinePath: string; chartFillPath: string; monthlyTotals: number[]; points: { x: number; y: number }[] }
         > = {};
 
         filteredTransactions.forEach((t) => {
@@ -506,7 +509,7 @@
                 const color = pool?.color || "#cbd5e1";
 
                 if (!groups[name]) {
-                    groups[name] = { name, color, total: 0, count: 0, chartLinePath: "", chartFillPath: "" };
+                    groups[name] = { name, color, total: 0, count: 0, chartLinePath: "", chartFillPath: "", monthlyTotals: [], points: [] };
                 }
                 groups[name].total += getTxAmount(t);
                 groups[name].count++;
@@ -555,6 +558,8 @@
 
             groups[name].chartLinePath = linePath;
             groups[name].chartFillPath = fillPath;
+            groups[name].monthlyTotals = monthlyTotals;
+            groups[name].points = points;
         });
 
         return Object.values(groups).sort((a, b) => b.total - a.total);
@@ -2282,6 +2287,7 @@
                                         viewMode = "LEDGER";
                                     }
                                 }}
+                                onmouseleave={() => (hoveredPoints[group.name] = null)}
                             >
                                 <!-- Background Sparkline Graph -->
                                 {#if group.chartLinePath}
@@ -2309,9 +2315,50 @@
                                                 stroke-linecap="round"
                                                 stroke-linejoin="round"
                                             />
+                                            <!-- Hover Indicator Line and Dot -->
+                                            {#if hoveredPoints[group.name] !== null && hoveredPoints[group.name] !== undefined}
+                                                {@const hIdx = hoveredPoints[group.name]}
+                                                {#if hIdx !== null && hIdx !== undefined && group.points[hIdx]}
+                                                    {@const hp = group.points[hIdx]}
+                                                    <line
+                                                        x1={hp.x}
+                                                        y1="0"
+                                                        x2={hp.x}
+                                                        y2="40"
+                                                        stroke={group.color}
+                                                        stroke-width="0.75"
+                                                        stroke-dasharray="2,2"
+                                                    />
+                                                    <circle
+                                                        cx={hp.x}
+                                                        cy={hp.y}
+                                                        r="2.5"
+                                                        fill={group.color}
+                                                        stroke="#ffffff"
+                                                        stroke-width="1"
+                                                    />
+                                                {/if}
+                                            {/if}
                                         </svg>
                                     </div>
                                 {/if}
+
+                                <!-- Hover Zones overlaying the sparkline area -->
+                                <div class="absolute inset-x-0 bottom-0 h-[60%] z-20 flex pointer-events-auto">
+                                    {#each Array(12) as _, i}
+                                        <div
+                                            role="presentation"
+                                            class="flex-1 h-full cursor-crosshair"
+                                            onmouseenter={() => (hoveredPoints[group.name] = i)}
+                                        ></div>
+                                    {/each}
+                                </div>
+
+                                <!-- Axis Month Labels -->
+                                <div class="absolute inset-x-0 bottom-2 px-10 flex justify-between pointer-events-none z-10 text-[9px] font-bold text-slate-400 opacity-60 uppercase tracking-widest">
+                                    <span>{last12Months[0].label} {last12Months[0].year}</span>
+                                    <span>{last12Months[11].label} {last12Months[11].year}</span>
+                                </div>
 
                                 <div class="flex items-center justify-between relative z-10">
                                     <div class="flex items-center gap-4">
@@ -2331,19 +2378,39 @@
                                     >
                                 </div>
                                 <div class="space-y-1 relative z-10">
-                                    <p
-                                        class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]"
-                                    >
-                                        Allocated Volume
-                                    </p>
-                                    <p
-                                        class="text-4xl font-black text-slate-900 tabular-nums"
-                                    >
-                                        €{group.total.toLocaleString("de-DE", {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        })}
-                                    </p>
+                                    {#if hoveredPoints[group.name] !== null && hoveredPoints[group.name] !== undefined}
+                                        {@const hIdx = hoveredPoints[group.name]}
+                                        {#if hIdx !== null && hIdx !== undefined && last12Months[hIdx]}
+                                            {@const hMonth = last12Months[hIdx]}
+                                            <p
+                                                class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] transition-colors duration-150"
+                                            >
+                                                Volume in {hMonth.fullLabel}
+                                            </p>
+                                            <p
+                                                class="text-4xl font-black text-indigo-600 scale-102 origin-left transition-all duration-150 tabular-nums"
+                                            >
+                                                €{group.monthlyTotals[hIdx].toLocaleString("de-DE", {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
+                                            </p>
+                                        {/if}
+                                    {:else}
+                                        <p
+                                            class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]"
+                                        >
+                                            Allocated Volume
+                                        </p>
+                                        <p
+                                            class="text-4xl font-black text-slate-900 tabular-nums"
+                                        >
+                                            €{group.total.toLocaleString("de-DE", {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                            })}
+                                        </p>
+                                    {/if}
                                 </div>
                                 <div
                                     class="pt-6 border-t border-slate-50 flex items-center justify-between text-indigo-600 group-hover:translate-x-2 transition-transform relative z-10"

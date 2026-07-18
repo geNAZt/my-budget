@@ -581,3 +581,12 @@ To enhance data density and provide instant historical context inside the groupe
   - The group cards are styled with `relative overflow-hidden` to clip the absolute-positioned sparkline.
   - Sparklines are placed at the bottom portion of the card with `opacity-40` and `z-0` to sit cleanly behind text labels (`z-10`).
 
+### 3. Axis Labels & Hover Interactions
+- **Start and End Month Markers**: Display tiny, subtle label markers at the bottom-left and bottom-right of the sparklines showing the start and end calendar months (e.g. "Aug 2025" and "Jul 2026").
+- **Hover Interactive Overlay**:
+  - Divide the card's horizontal sparkline area into 12 transparent vertical hover zones.
+  - Hovering over a zone activates a reactive state `hoveredPoints[group.name] = index`.
+  - While hovered, we render a vertical dashed marker line and a solid glowing dot indicator at the hovered data point coordinate inside the SVG.
+  - The displayed Allocated Volume transitions to show the hovered month's title and exact aggregated value (e.g., "Volume in Jun 2026: € -120,00"), allowing the user to precisely read historical values.
+
+
