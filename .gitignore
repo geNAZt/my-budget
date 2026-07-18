@@ -5,17 +5,17 @@ Thumbs.db
 .antigravitycli/
 
 # Compiled backend binaries
-web/backend/api
-web/backend/main
+backend/api
+backend/main
 
 # Frontend build artifacts
-web/frontend/build/
-web/frontend/.svelte-kit/
-web/frontend/.vercel/
-web/frontend/.netlify/
+frontend/build/
+frontend/.svelte-kit/
+frontend/.vercel/
+frontend/.netlify/
 
 # Data and Logs (Sensitive)
-web/data/
+data/
 logs/
 *.db
 *.log
@@ -35,4 +35,4 @@ plans/
 
 # Generated Protobuf files
 *.pb.go
-web/frontend/src/lib/gen/
+frontend/src/lib/gen/

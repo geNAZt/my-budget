@@ -14,19 +14,19 @@ services:
 
   backend:
     build:
-      context: ./web
+      context: ./
       dockerfile: backend/Dockerfile
     expose:
       - "8080"
     volumes:
-      - ./web/data:/app/data:Z
+      - ./data:/app/data:Z
       - ./logs:/app/logs:Z
       - /var/run/docker.sock:/var/run/docker.sock
 
     develop:
       watch:
         - action: rebuild
-          path: ./web/backend
+          path: ./backend
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://budget:budgetpass@db:5432/budget?sslmode=disable
@@ -51,14 +51,14 @@ services:
 
   frontend:
     build:
-      context: ./web
+      context: ./
       dockerfile: frontend/Dockerfile
     expose:
       - "3000"
     develop:
       watch:
         - action: rebuild
-          path: ./web/frontend
+          path: ./frontend
     restart: always
 
 volumes:

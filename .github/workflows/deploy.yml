@@ -22,13 +22,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-          cache-dependency-path: web/backend/go.sum
+          cache-dependency-path: backend/go.sum
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache-dependency-path: web/backend/execution_engine/package-lock.json
+          cache-dependency-path: backend/execution_engine/package-lock.json
 
       - name: Install Tools
         run: |
@@ -42,17 +42,17 @@ jobs:
 
       - name: Generate and Build
         run: |
-          cd web/backend
+          cd backend
           go generate ./...
           CGO_ENABLED=0 go build -o ../main ./cmd/api
 
       - name: Build execution engine
         run: |
-          cd web/backend/execution_engine
+          cd backend/execution_engine
           npm ci --omit=dev
 
       - name: Remove .dockerignore
-        run: rm web/.dockerignore
+        run: rm .dockerignore
 
       - name: Lowercase repository owner
         run: |
@@ -71,8 +71,8 @@ jobs:
       - name: Build and push Backend
         uses: docker/build-push-action@v5
         with:
-          context: ./web
-          file: ./web/backend/Dockerfile.prod
+          context: ./
+          file: ./backend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-backend:latest
           build-args: |
@@ -95,7 +95,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache-dependency-path: web/frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Setup Buf
         uses: bufbuild/buf-setup-action@v1
@@ -104,18 +104,18 @@ jobs:
 
       - name: Build Frontend
         run: |
-          cd web/frontend
+          cd frontend
           npm ci
           VITE_GIT_COMMIT=${{ github.sha }} npm run build
 
       - name: Prepare production node_modules
         run: |
-          cd web/frontend
+          cd frontend
           rm -rf node_modules
           npm ci --omit=dev
 
       - name: Remove .dockerignore
-        run: rm web/.dockerignore
+        run: rm .dockerignore
 
       - name: Lowercase repository owner
         run: |
@@ -134,8 +134,8 @@ jobs:
       - name: Build and push Frontend
         uses: docker/build-push-action@v5
         with:
-          context: ./web
-          file: ./web/frontend/Dockerfile.prod
+          context: ./
+          file: ./frontend/Dockerfile.prod
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LOWER }}/my-budget-script-frontend:latest
           build-args: |
