@@ -18,6 +18,7 @@
         PerformanceMetricsSchema,
         ExpenseSchema,
         AssetSchema,
+        PenaltyAnalysisSchema,
     } from "$lib/gen/api_pb.js";
     import {
         Activity,
@@ -595,6 +596,7 @@
                     YieldMapSchema,
                     PerformanceMetricsSchema,
                     ErrorSchema,
+                    PenaltyAnalysisSchema,
                 ]
             );
 
@@ -1631,7 +1633,7 @@
                 projectionMonths
             });
             const callResult = wsCall("scenarios::projection", ScenarioSchema, testScenario, [
-                ProjectionMonthSchema, YieldMapSchema, PerformanceMetricsSchema, ErrorSchema,
+                ProjectionMonthSchema, YieldMapSchema, PerformanceMetricsSchema, ErrorSchema, PenaltyAnalysisSchema,
             ]);
 
             const testMonths: any[] = [];
@@ -1656,7 +1658,7 @@
             }
 
             const callResult = wsCall("scenarios::projection", ScenarioSchema, { id: selectedScenarioId, projectionMonths }, [
-                ProjectionMonthSchema, YieldMapSchema, PerformanceMetricsSchema, ErrorSchema,
+                ProjectionMonthSchema, YieldMapSchema, PerformanceMetricsSchema, ErrorSchema, PenaltyAnalysisSchema,
             ]);
 
             const testMonths: any[] = [];
