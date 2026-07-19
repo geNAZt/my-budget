@@ -9,7 +9,7 @@
 
     let {
         options = [],
-        values = $bindable([]),
+        values = $bindable(),
         placeholder = "Select accounts...",
         label = "",
         onchange = null,
