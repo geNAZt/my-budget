@@ -662,4 +662,62 @@ func (r *TransactionRepository) ListAccountBalanceHistory(userID string, account
 	return history, nil
 }
 
+func (r *TransactionRepository) ReconcileMetadataAndPools(userID string, pendingID string, finalizedID string, tags string, sourceAccountID string, destinationAccountID string, linkedTransactionID *string, isLinkConfirmed bool, poolIDs []string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Update the finalized transaction with metadata and tags
+	_, err = tx.Exec(`
+		UPDATE bank_transactions 
+		SET tags = ?, source_account_id = ?, destination_account_id = ?, linked_transaction_id = ?, is_link_confirmed = ?
+		WHERE id = ? AND user_id = ?`,
+		tags, sourceAccountID, destinationAccountID, linkedTransactionID, isLinkConfirmed, finalizedID, userID)
+	if err != nil {
+		return err
+	}
+
+	// 2. If the pending transaction was linked to another transaction (sibling),
+	// we update the sibling to point to the finalized transaction instead.
+	if linkedTransactionID != nil && *linkedTransactionID != "" {
+		_, err = tx.Exec(`
+			UPDATE bank_transactions 
+			SET linked_transaction_id = ? 
+			WHERE id = ? AND user_id = ?`,
+			finalizedID, *linkedTransactionID, userID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 3. Clear existing pools for the finalized transaction (to re-populate with merged pools)
+	_, err = tx.Exec("DELETE FROM bank_transaction_pools WHERE transaction_id = ?", finalizedID)
+	if err != nil {
+		return err
+	}
+
+	// 4. Insert merged pools
+	if len(poolIDs) > 0 {
+		stmt, err := tx.Prepare("INSERT INTO bank_transaction_pools (transaction_id, pool_id) VALUES (?, ?) ON CONFLICT DO NOTHING")
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, pID := range poolIDs {
+			if pID != "" {
+				_, err = stmt.Exec(finalizedID, pID)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+
 

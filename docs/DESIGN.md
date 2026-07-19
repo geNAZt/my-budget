@@ -610,5 +610,18 @@ To make the application more customer-friendly, we reduce mathematical and devel
 4. **Automation Schedule Simplifier**:
    - For Automation Trigger Events (CRON schedules), introduce a preset selector for standard intervals (5m, 15m, Hourly, Daily, Weekly) alongside a custom field. This removes the need to write raw cron expressions for typical tasks.
 
+## 31. Preserving Transaction Labels, Pools, and Transfers during Sync Reconciliation
 
+During transaction synchronization, when a pending transaction is matched and reconciled with a finalized/booked transaction, the pending transaction is soft-deleted. To prevent the user from losing their manually assigned categories, tags, and transfer links, we implement a metadata and association transfer step.
 
+### Design Details
+1. **Metadata Transfer**:
+   - We check if the pending transaction has user-assigned custom fields: `tags`, `source_account_id`, `destination_account_id`, `linked_transaction_id`, or `is_link_confirmed`.
+   - If present, these are copied to the finalized transaction.
+   - If the pending transaction was linked to a sibling transfer transaction, we redirect the sibling transaction's `linked_transaction_id` to point to the finalized transaction instead of the pending one.
+2. **Pools Merging**:
+   - We merge the pool IDs of the pending transaction and the finalized transaction, ensuring that any manually assigned pools from the pending transaction are preserved alongside any rule-assigned pools of the finalized transaction.
+3. **Repository Methods**:
+   - Implement `ReconcileMetadataAndPools(userID string, pendingID string, finalizedID string, mergedTags string, sourceAcc string, destAcc string, linkedTxID *string, isLinkConfirmed bool, mergedPoolIDs []string) error` in `TransactionRepository` to perform this transfer atomically inside a database transaction.
+4. **Sync Service Integration**:
+   - Update `ReconcilePendingDuplicates` in `sync_service.go` to call the transfer method prior to soft-deleting the duplicate pending transaction.

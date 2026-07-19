@@ -1462,6 +1462,77 @@ func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID st
 			if isSimilar {
 				log.Printf("[RECONCILE] Soft deleting duplicate pending transaction %s (ExternalID: %s, Amount: %.2f, Receiver: %s) because matching finalized transaction %s (ExternalID: %s) exists.",
 					pTx.tx.ID, pTx.tx.ExternalID, pTx.meta.Amount, pTx.meta.Receiver, other.tx.ID, other.tx.ExternalID)
+
+				// Merge tags
+				mergedTags := other.tx.Tags
+				if pTx.tx.Tags != "" {
+					if mergedTags == "" {
+						mergedTags = pTx.tx.Tags
+					} else {
+						tagsMap := make(map[string]bool)
+						for _, t := range strings.Split(other.tx.Tags, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tagsMap[trimmed] = true
+							}
+						}
+						for _, t := range strings.Split(pTx.tx.Tags, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tagsMap[trimmed] = true
+							}
+						}
+						var merged []string
+						for t := range tagsMap {
+							merged = append(merged, t)
+						}
+						mergedTags = strings.Join(merged, ",")
+					}
+				}
+
+				// Merge accounts
+				sourceAcc := other.tx.SourceAccountID
+				if pTx.tx.SourceAccountID != "" {
+					sourceAcc = pTx.tx.SourceAccountID
+				}
+				destAcc := other.tx.DestinationAccountID
+				if pTx.tx.DestinationAccountID != "" {
+					destAcc = pTx.tx.DestinationAccountID
+				}
+
+				// Merge transfer links
+				var linkedTxID *string
+				isLinkConfirmed := other.tx.IsLinkConfirmed
+				if pTx.tx.LinkedTransactionID != nil && *pTx.tx.LinkedTransactionID != "" {
+					linkedTxID = pTx.tx.LinkedTransactionID
+					isLinkConfirmed = pTx.tx.IsLinkConfirmed
+				} else if other.tx.LinkedTransactionID != nil && *other.tx.LinkedTransactionID != "" {
+					linkedTxID = other.tx.LinkedTransactionID
+				}
+
+				// Merge pools
+				mergedPoolsMap := make(map[string]bool)
+				for _, p := range other.tx.PoolIDs {
+					if p != "" {
+						mergedPoolsMap[p] = true
+					}
+				}
+				for _, p := range pTx.tx.PoolIDs {
+					if p != "" {
+						mergedPoolsMap[p] = true
+					}
+				}
+				var finalPools []string
+				for p := range mergedPoolsMap {
+					finalPools = append(finalPools, p)
+				}
+
+				// Apply reconciliation transfer in database
+				err := s.transactionRepo.ReconcileMetadataAndPools(userID, pTx.tx.ID, other.tx.ID, mergedTags, sourceAcc, destAcc, linkedTxID, isLinkConfirmed, finalPools)
+				if err != nil {
+					log.Printf("[RECONCILE] Failed to transfer metadata from pending tx %s to finalized tx %s: %v", pTx.tx.ID, other.tx.ID, err)
+				}
+
 				s.transactionRepo.Delete(userID, pTx.tx.ID)
 				break
 			}
