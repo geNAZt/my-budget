@@ -97,7 +97,8 @@ export function connect(): Promise<void> {
         const streamMsg = tryProtoParse(api.WSResponseSchema, rawData);
         if (streamMsg) {
           const req = requests.get(streamMsg.id);
-          const hexData = streamMsg.data ? Array.from(streamMsg.data).map(b => b.toString(16).padStart(2, "0")).join("") : "";
+          const rawHex = streamMsg.data ? Array.from(streamMsg.data).map(b => b.toString(16).padStart(2, "0")).join("") : "";
+          const hexData = rawHex.length > 120 ? rawHex.substring(0, 120) + "... (truncated)" : rawHex;
           console.log(`[WS] Received Response for ID: ${streamMsg.id}, path: ${req?.path || "unknown"}, done: ${streamMsg.done}, bytes: ${streamMsg.data ? streamMsg.data.length : 0}, data(hex): ${hexData}`);
           if (req) {
             if (streamMsg.data && streamMsg.data.length > 0) {
@@ -191,7 +192,8 @@ function sendRequest(req: QueuedRequest) {
   });
 
   const binary = toBinary(api.WSRequestSchema, requestObj);
-  const hexData = Array.from(binary).map(b => b.toString(16).padStart(2, "0")).join("");
+  const rawHex = Array.from(binary).map(b => b.toString(16).padStart(2, "0")).join("");
+  const hexData = rawHex.length > 120 ? rawHex.substring(0, 120) + "... (truncated)" : rawHex;
   console.log(`[WS] Sending Request to path: ${req.path}, ID: ${req.id}, bytes: ${req.bodyBytes.length}, data(hex): ${hexData}`);
   ws.send(binary);
 }
