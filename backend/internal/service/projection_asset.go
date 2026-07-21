@@ -556,7 +556,13 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			continue
 		}
 
-		grossNeeded := remainingNet / (1.0 - (profitMargin * penalty))
+		// Calculate gross needed
+		var grossNeeded float64
+		if profitMargin > 0 {
+			grossNeeded = remainingNet / (1.0 - (profitMargin * penalty))
+		} else {
+			grossNeeded = remainingNet
+		}
 
 		if grossNeeded <= maxGrossFromLot {
 			grossSold += grossNeeded
@@ -565,7 +571,12 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 			fractionSold := grossNeeded / lot.currentValue
 			principalSold := lot.principal * fractionSold
-			penaltyPaid := grossNeeded - remainingNet
+			interestGenerated := grossNeeded - principalSold
+
+			penaltyPaid := 0.0
+			if interestGenerated > 0.00001 {
+				penaltyPaid = interestGenerated * penalty
+			}
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
@@ -578,7 +589,7 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 					PrincipalSold:     principalSold,
 					PenaltyPaid:       penaltyPaid,
 					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: grossNeeded - principalSold,
+					InterestGenerated: interestGenerated,
 				})
 			}
 
@@ -589,12 +600,21 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			newLots = append(newLots, lot)
 		} else {
 			grossSold += maxGrossFromLot
-			netFromLot := maxGrossFromLot * (1.0 - (profitMargin * penalty))
+
+			fractionSold := maxGrossFromLot / lot.currentValue
+			principalSold := lot.principal * fractionSold
+			interestGenerated := maxGrossFromLot - principalSold
+
+			penaltyPaid := 0.0
+			if interestGenerated > 0.00001 {
+				penaltyPaid = interestGenerated * penalty
+			}
+
+			netFromLot := maxGrossFromLot - penaltyPaid
 			netFulfilled += netFromLot
 			remainingNet -= netFromLot
 			targetSA.currentBalance -= maxGrossFromLot
 
-			penaltyPaid := maxGrossFromLot - netFromLot
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
@@ -603,16 +623,15 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 					LotID:             lot.id,
 					LotCreatedAt:      lot.createdAt,
 					Amount:            maxGrossFromLot,
-					PrincipalSold:     lot.principal,
+					PrincipalSold:     principalSold,
 					PenaltyPaid:       penaltyPaid,
 					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: maxGrossFromLot - lot.principal,
+					InterestGenerated: interestGenerated,
 				})
 			}
 
-			fractionSold := maxGrossFromLot / lot.currentValue
 			lot.currentValue -= maxGrossFromLot
-			lot.principal -= lot.principal * fractionSold
+			lot.principal -= principalSold
 
 			if lot.currentValue > 0 {
 				newLots = append(newLots, lot)
@@ -725,7 +744,13 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			profitMargin = (lot.currentValue - lot.principal) / lot.currentValue
 		}
 
-		grossNeeded := remainingNet / (1.0 - (profitMargin * penalty))
+		// Calculate gross needed
+		var grossNeeded float64
+		if profitMargin > 0 {
+			grossNeeded = remainingNet / (1.0 - (profitMargin * penalty))
+		} else {
+			grossNeeded = remainingNet
+		}
 
 		if grossNeeded <= lot.currentValue {
 			grossSold += grossNeeded
@@ -733,7 +758,12 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 			fractionSold := grossNeeded / lot.currentValue
 			principalSold := lot.principal * fractionSold
-			penaltyPaid := grossNeeded - remainingNet
+			interestGenerated := grossNeeded - principalSold
+
+			penaltyPaid := 0.0
+			if interestGenerated > 0.00001 {
+				penaltyPaid = interestGenerated * penalty
+			}
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
@@ -746,7 +776,7 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 					PrincipalSold:     principalSold,
 					PenaltyPaid:       penaltyPaid,
 					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: grossNeeded - principalSold,
+					InterestGenerated: interestGenerated,
 				})
 			}
 
@@ -757,11 +787,19 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			newLots = append(newLots, lot)
 		} else {
 			grossSold += lot.currentValue
-			netFromLot := lot.currentValue * (1.0 - (profitMargin * penalty))
+
+			principalSold := lot.principal
+			interestGenerated := lot.currentValue - principalSold
+
+			penaltyPaid := 0.0
+			if interestGenerated > 0.00001 {
+				penaltyPaid = interestGenerated * penalty
+			}
+
+			netFromLot := lot.currentValue - penaltyPaid
 			netFulfilled += netFromLot
 			remainingNet -= netFromLot
 
-			penaltyPaid := lot.currentValue - netFromLot
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
@@ -770,10 +808,10 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 					LotID:             lot.id,
 					LotCreatedAt:      lot.createdAt,
 					Amount:            lot.currentValue,
-					PrincipalSold:     lot.principal,
+					PrincipalSold:     principalSold,
 					PenaltyPaid:       penaltyPaid,
 					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: lot.currentValue - lot.principal,
+					InterestGenerated: interestGenerated,
 				})
 			}
 		}

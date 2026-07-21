@@ -1393,6 +1393,131 @@ func TestPayoutVirtualAccountAttribution(t *testing.T) {
 	}
 }
 
+func TestETFPartialSellTaxGuardrail(t *testing.T) {
+	// Setup asset with early withdrawal penalty (25%)
+	parentVersion := &domain.AssetVersion{
+		Type: "ETF",
+		Penalties: []domain.AssetPenalty{
+			{Name: "Tax", TriggerType: domain.PenaltyTriggerWithdrawal, Percentage: 25.0},
+		},
+	}
+	sa1 := &subAssetState{
+		id:                  "sa1",
+		name:                "Target SA",
+		currentBalance:      1000.0, // Capped sub-asset balance for partial sell
+		isRemainderConsumer: false,
+	}
+	as := &assetState{
+		asset: domain.Asset{
+			ActiveVersion: parentVersion,
+		},
+		currentBalance: 5079.16,
+		subAssets:      []*subAssetState{sa1},
+		lots: []etfLot{
+			{
+				id:           "lot-1",
+				createdAt:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				principal:    5079.16,
+				currentValue: 5079.16,
+			},
+		},
+		penaltyAnalysis: &[]domain.PenaltyEvent{},
+		currentMonth:    time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	// 1. Partial sell where there is no gain/loss (cost basis == current value)
+	// Selling 957.55 net. Sub-asset has 1000.0.
+	// Since cost basis == current value, profitMargin = 0.
+	// So grossNeeded = 957.55.
+	gross, net := withdrawFromSubAsset(as, "sa1", 957.55)
+	if gross != 957.55 || net != 957.55 {
+		t.Errorf("Expected gross/net to be 957.55, got gross=%f, net=%f", gross, net)
+	}
+
+	events := *as.penaltyAnalysis
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 penalty event, got %d", len(events))
+	}
+
+	event := events[0]
+	expectedPrincipalSold := 5079.16 * (957.55 / 5079.16) // proportional principal
+	if math.Abs(event.PrincipalSold-expectedPrincipalSold) > 0.01 {
+		t.Errorf("Expected PrincipalSold to be proportional (~%f), got %f", expectedPrincipalSold, event.PrincipalSold)
+	}
+	if event.PenaltyPaid != 0.0 {
+		t.Errorf("Expected PenaltyPaid to be 0.00 under zero gain, got %f", event.PenaltyPaid)
+	}
+	if event.InterestGenerated > 0.01 || event.InterestGenerated < -0.01 {
+		t.Errorf("Expected InterestGenerated to be ~0, got %f", event.InterestGenerated)
+	}
+
+	// 2. Partial sell with negative gain/loss (value fell: currentValue = 3000, principal = 4000)
+	as.lots = []etfLot{
+		{
+			id:           "lot-2",
+			createdAt:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			principal:    4000.0,
+			currentValue: 3000.0,
+		},
+	}
+	as.currentBalance = 3000.0
+	sa1.currentBalance = 500.0 // deplete this sub-asset using lot-2
+	as.penaltyAnalysis = &[]domain.PenaltyEvent{}
+
+	// Withdraw 200.0 net from sub-asset (depleting it partially using lot-2)
+	// Since currentValue (3000) < principal (4000), profitMargin = 0.
+	// So grossNeeded = 200.0.
+	gross, net = withdrawFromSubAsset(as, "sa1", 200.0)
+	if gross != 200.0 || net != 200.0 {
+		t.Errorf("Expected gross/net to be 200.0, got gross=%f, net=%f", gross, net)
+	}
+
+	events = *as.penaltyAnalysis
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 penalty event, got %d", len(events))
+	}
+	event = events[0]
+	// Fraction sold: 200 / 3000
+	expectedPrincipalSold = 4000.0 * (200.0 / 3000.0)
+	if math.Abs(event.PrincipalSold-expectedPrincipalSold) > 0.01 {
+		t.Errorf("Expected PrincipalSold to be proportional (~%f), got %f", expectedPrincipalSold, event.PrincipalSold)
+	}
+	if event.InterestGenerated >= 0 {
+		t.Errorf("Expected negative InterestGenerated, got %f", event.InterestGenerated)
+	}
+	if event.PenaltyPaid != 0.0 {
+		t.Errorf("Expected PenaltyPaid to be exactly 0.00 for negative gain, got %f", event.PenaltyPaid)
+	}
+}
+
+func TestGenerateScenarioPDF(t *testing.T) {
+	months := []domain.ProjectionMonth{
+		{
+			Date:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Income: 5000.0,
+			Bills:  1200.0,
+			Breakdown: domain.MonthBreakdown{
+				Incomes: []domain.EntryBreakdown{
+					{Name: "Job", Amount: 5000.0},
+				},
+				Bills: []domain.EntryBreakdown{
+					{Name: "Rent", Amount: 1200.0},
+				},
+			},
+		},
+	}
+
+	pdfBytes, err := GenerateScenarioPDF("Test Scenario", months)
+	if err != nil {
+		t.Fatalf("Expected no error generating PDF, got %v", err)
+	}
+
+	if len(pdfBytes) == 0 {
+		t.Error("Expected generated PDF bytes to be non-empty")
+	}
+}
+
+
 
 
 

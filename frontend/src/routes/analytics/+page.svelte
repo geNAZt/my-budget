@@ -2386,7 +2386,7 @@
                                                 >
                                                 <th
                                                     class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
-                                                    >Profit</th
+                                                    >Interest Accumulated</th
                                                 >
                                                 <th
                                                     class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-center"

@@ -316,6 +316,14 @@ message ScenarioList {
   repeated Scenario scenarios = 1;
 }
 
+message ScenarioPDFRequest {
+  string scenario_id = 1;
+}
+
+message ScenarioPDFResponse {
+  bytes pdf_bytes = 1;
+}
+
 // --- Asset Domain Payloads ---
 
 message HistoryStitchingSegment {

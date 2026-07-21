@@ -373,6 +373,39 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 	sc.handler.SendResponse(s, reqID, &apiproto.GenericID{Id: reqObj.Id}, true)
 }
 
+// Pdf automatically registers as "scenarios::pdf"
+func (sc *Scenarios) Pdf(s *api.WebsocketSession, reqID string, reqObj *apiproto.ScenarioPDFRequest) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		sc.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	scenario, err := sc.scenarios.GetFull(userID, reqObj.ScenarioId)
+	if err != nil {
+		sc.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	result, err := sc.handler.Projection.RunWithLimit(userID, reqObj.ScenarioId, scenario.ProjectionMonths, nil)
+	if err != nil {
+		sc.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pdfBytes, err := sc.handler.Projection.GenerateScenarioPDF(scenario.Name, result.Months)
+	if err != nil {
+		sc.handler.SendError(s, reqID, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp := &apiproto.ScenarioPDFResponse{
+		PdfBytes: pdfBytes,
+	}
+
+	sc.handler.SendResponse(s, reqID, resp, true)
+}
+
 func mapScenarioToProto(sc domain.Scenario) *apiproto.Scenario {
 	psc := &apiproto.Scenario{
 		Id:                      sc.ID,

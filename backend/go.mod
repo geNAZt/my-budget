@@ -32,6 +32,7 @@ require (
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/josharian/intern v1.0.0 // indirect
+	github.com/jung-kurt/gofpdf v1.16.2 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect

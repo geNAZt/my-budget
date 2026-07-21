@@ -14,6 +14,8 @@
         YieldMapSchema,
         PerformanceMetricsSchema,
         ModificationListSchema,
+        ScenarioPDFRequestSchema,
+        ScenarioPDFResponseSchema,
     } from "$lib/gen/api_pb.js";
     import { onMount } from "svelte";
     import { fade, slide } from "svelte/transition";
@@ -25,6 +27,7 @@
         Save,
         Trash2,
         Copy,
+        Printer,
         Settings2,
         AlertCircle,
         ChevronRight,
@@ -76,6 +79,7 @@
     let activeScenario = $state<Scenario | null>(null);
     let isLoading = $state(true);
     let isSaving = $state(false);
+    let isExportingPdf = $state(false);
     let projectionResult = $state<any>({ months: [], simulatedYields: {} });
     let isProjecting = $state(false);
     let showConfig = $state(false);
@@ -610,6 +614,36 @@
         }
     }
 
+    async function exportPDF() {
+        if (!activeScenario || !activeScenario.id) return;
+        isExportingPdf = true;
+        try {
+            const [resp, err] = await wsCall(
+                "scenarios::pdf",
+                ScenarioPDFRequestSchema,
+                { scenarioId: activeScenario.id },
+                [ScenarioPDFResponseSchema, ErrorSchema]
+            ).one();
+
+            if (err) throw err;
+
+            if (resp && resp.pdfBytes) {
+                const blob = new Blob([resp.pdfBytes], { type: "application/pdf" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `scenario_${activeScenario.name.toLowerCase().replace(/\s+/g, "_")}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        } catch (e) {
+            console.error("Failed to export PDF:", e);
+            alert("Failed to export PDF. Please try again.");
+        } finally {
+            isExportingPdf = false;
+        }
+    }
+
     function moveInRemainderOrder(index: number, direction: "up" | "down") {
         if (!activeScenario) return;
         const newOrder = [...activeScenario.remainderOrder];
@@ -812,6 +846,17 @@
                                  >
                                      Logic Scope
                                  </button>
+                                 {#if activeScenario && activeScenario.id && projectionResult && projectionResult.months && projectionResult.months.length > 0}
+                                      <button
+                                          onclick={exportPDF}
+                                          disabled={isExportingPdf}
+                                          class="px-5 py-3 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                                          title="Export Scenario PDF"
+                                      >
+                                          <Printer class="w-4 h-4" />
+                                          {isExportingPdf ? "Exporting..." : "Export PDF"}
+                                      </button>
+                                  {/if}
                                  {#if activeScenario && activeScenario.id}
                                      <button
                                          onclick={() => forkScenario(activeScenario!)}
@@ -822,6 +867,7 @@
                                          Fork
                                      </button>
                                  {/if}
+
                                  <button
                                      onclick={saveScenario}
                                      disabled={isSaving}

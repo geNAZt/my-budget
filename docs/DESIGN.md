@@ -708,3 +708,52 @@ To ensure that target loans are paid off in the same month that the asset/sub-as
 ### 2. Double-Pass Execution
 - **First Pass (Step 4)**: Runs before the monthly contributions and remainder waterfall are processed. It checks if the asset balance accumulated from previous months is sufficient to pay off target loans.
 - **Second Pass (Step 8.1)**: Runs after Step 8 remainder waterfall has finished. It checks if the new monthly deposits have elevated the asset/sub-asset balances to the required amount to pay off target loans. If so, it triggers immediate payoff in the same month and releases the remaining leftover balances back to general cash.
+
+## 37. Lot Tax Table Column Renaming
+
+To improve clarity on the analytics page, the "Profit" column header in the Lot Transaction History table was renamed to "Interest Accumulated" to explicitly reflect the total interest/growth accumulated since purchasing the lot.
+
+## 38. ETF Lot State Management & Tax Guardrails Refactoring
+
+To resolve the phantom loss bug during partial sales of ETF lots (where the total remaining principal of a lot was incorrectly assigned to the sale's `PrincipalSold` field), we refactored `withdrawFromSubAsset` and `withdrawAsset` in `projection_asset.go`:
+
+### 1. Dynamic Proportional Principal Allocation
+- In the `else` block of `withdrawFromSubAsset` (handling partial sells where the sub-asset balance is fully depleted using a lot), we now calculate the principal sold proportionally:
+  `fractionSold = maxGrossFromLot / lot.currentValue`
+  `principalSold = lot.principal * fractionSold`
+- The lot's `currentValue` and `principal` (cost basis) are updated in-place:
+  `lot.currentValue -= maxGrossFromLot`
+  `lot.principal -= principalSold`
+  This ensures that subsequent partial sales use the updated, reduced cost basis.
+
+### 2. Positive-Only Tax Guardrail
+- Refactored `InterestGenerated` (Capital Gain/Loss) to equal `Sale Amount - Principal Sold`.
+- Implemented standard Go guardrail checks to ensure that a tax/penalty is only computed and deducted when there are positive capital gains (using a small float epsilon of `0.00001` to filter out floating-point calculation noise). If the gain is zero or negative, no tax is applied:
+  ```go
+  penaltyPaid := 0.0
+  if interestGenerated > 0.00001 {
+      penaltyPaid = interestGenerated * penalty
+  }
+  ```
+- Net impact is correctly calculated as `Amount - PenaltyPaid`.
+
+## 39. Planning Scenario PDF Export
+
+To support high-fidelity exports of all monthly projected budget sheets in a scenario's simulation time span without forcing the client to load and render all sheets simultaneously, we implemented a server-side PDF generator in the Go backend:
+
+### 1. Protobuf Interface Messages
+- Added `ScenarioPDFRequest` and `ScenarioPDFResponse` messages to `proto/api.proto` inside the WebSocket namespace.
+- Generated updated Protobuf mappings for the Go backend (`go generate ./...`) and TypeScript frontend (`npm run proto:generate`).
+
+### 2. Go Backend PDF Generation
+- Added `gofpdf` package dependency to construct clean, tabular documents programmatically in pure Go.
+- Implemented a dedicated monthly report generator in `backend/internal/service/pdf_generator.go`.
+- Configured a slate-style header banner for each month, a grid summarizing the total incoming/outgoing cashflows (income, bills, expenses, assets, loans, remainder), and detailed breakdowns (Income Streams, Fixed Bills, Discretionary Expenses, Assets, Loans, and Virtual Account Envelopes).
+- Applied German locale formatting (comma for decimals, dot for thousands) for all currency representations.
+- Ensured a clean pagination structure where each month occupies exactly one A4 page.
+
+### 3. Svelte Frontend Download Trigger
+- Added an "Export PDF" button to the scenario header row in `frontend/src/routes/scenarios/+page.svelte`.
+- Connected the button to the stateful WebSocket endpoint `scenarios::pdf`.
+- Created a dynamic `Blob` with MIME type `application/pdf` from the response bytes and triggered a seamless native browser file download.
+- Wrapped the export action in loading states to prevent double-triggering.
