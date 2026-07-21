@@ -634,3 +634,25 @@ When editing an asset in the dashboard, if any fields in `currentAsset.activeVer
 ### Solution
 - Update `formatGermanNumeric` in `AssetManager.svelte` to safely handle `null` or `undefined` inputs by returning an empty string `""`.
 - Ensure the rest of `formatGermanNumeric` operates safely.
+
+## 33. Asset Editor Remainder Consumption Input Handling
+
+To resolve the bug where users are forced to populate and submit "Monthly savings / Monthly Rate" even when remainder consumption is enabled for an asset or its targets (sub-assets), we implement clean conditional requirements and input disables in both editors.
+
+### 1. Sub-Asset / Target Editor Updates (`SubAssetForm.svelte`)
+- **Conditional Requirement & Disable**:
+  - The "Monthly savings (€)" input (`target.amountPerMonth`) should be disabled when remainder consumption is enabled: `disabled={target.isRemainderConsumer}`.
+  - The input should not be required when remainder consumption is enabled: `required={!target.isRemainderConsumer}`.
+- **Value Reset**:
+  - Toggling "Enable Remainder Consumption" to `true` should automatically set `target.amountPerMonth = 0` to clear out any previous value and ensure it doesn't get populated.
+- **Hide Recalc UI**:
+  - The "Recalc" text button next to the input label and the "Recalculate Rate" button at the bottom of the sub-asset card should be hidden when `target.isRemainderConsumer` is `true`.
+
+### 2. Main Asset Editor Updates (`AssetManager.svelte`)
+- **Conditional Disable**:
+  - The "Monthly Rate (€)" input (`amountInput`) should be disabled when remainder consumption is enabled for the asset (i.e. `currentAsset.activeVersion.remainderStartDate` is set).
+- **Value Reset**:
+  - Toggling/setting a date in "Remainder Start" should automatically clear the `amountInput` to `""` to prevent storing a fixed rate while remainder consumption is active.
+- **Hide Recalculate UI**:
+  - The "Recalculate" button for "Monthly Rate (€)" should be hidden when `currentAsset.activeVersion.remainderStartDate` is set.
+

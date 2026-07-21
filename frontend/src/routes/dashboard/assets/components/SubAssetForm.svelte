@@ -154,29 +154,32 @@
                             <div class="space-y-1">
                                 <div class="flex items-center justify-between">
                                     <label class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Monthly savings (€)</label>
-                                    <button
-                                        type="button"
-                                        onclick={() => {
-                                            const rate = calculateRequiredRate(
-                                                String(target.targetValue),
-                                                target.startDate,
-                                                target.endDate || null,
-                                                assetType === "STATIC" ? parseNumeric(interestInput, "DE") : 0,
-                                            );
-                                            target.amountPerMonth = Math.round(rate * 100) / 100;
-                                        }}
-                                        class="text-[8px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-0.5"
-                                    >
-                                        Recalc
-                                    </button>
+                                    {#if !target.isRemainderConsumer}
+                                        <button
+                                            type="button"
+                                            onclick={() => {
+                                                const rate = calculateRequiredRate(
+                                                    String(target.targetValue),
+                                                    target.startDate,
+                                                    target.endDate || null,
+                                                    assetType === "STATIC" ? parseNumeric(interestInput, "DE") : 0,
+                                                );
+                                                target.amountPerMonth = Math.round(rate * 100) / 100;
+                                            }}
+                                            class="text-[8px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-0.5"
+                                        >
+                                            Recalc
+                                        </button>
+                                    {/if}
                                 </div>
                                 <input
                                     type="number"
                                     bind:value={target.amountPerMonth}
                                     step="0.01"
                                     placeholder="150"
-                                    class="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                                    required
+                                    disabled={target.isRemainderConsumer}
+                                    class="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all disabled:opacity-50"
+                                    required={!target.isRemainderConsumer}
                                 />
                             </div>
                             <div class="space-y-1">
@@ -226,23 +229,25 @@
                         </div>
                     </div>
 
-                    <div class="flex justify-end pt-1">
-                        <button
-                            type="button"
-                            onclick={() => {
-                                const rate = calculateRequiredRate(
-                                    String(target.targetValue),
-                                    target.startDate,
-                                    target.endDate || null,
-                                    assetType === "STATIC" ? parseNumeric(interestInput, "DE") : 0,
-                                );
-                                target.amountPerMonth = Math.round(rate * 100) / 100;
-                            }}
-                            class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
-                        >
-                            Recalculate Rate
-                        </button>
-                    </div>
+                    {#if !target.isRemainderConsumer}
+                        <div class="flex justify-end pt-1">
+                            <button
+                                type="button"
+                                onclick={() => {
+                                    const rate = calculateRequiredRate(
+                                        String(target.targetValue),
+                                        target.startDate,
+                                        target.endDate || null,
+                                        assetType === "STATIC" ? parseNumeric(interestInput, "DE") : 0,
+                                    );
+                                    target.amountPerMonth = Math.round(rate * 100) / 100;
+                                }}
+                                class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-wider transition-colors shadow-sm flex items-center gap-1"
+                            >
+                                Recalculate Rate
+                            </button>
+                        </div>
+                    {/if}
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 items-center font-bold">
                         <div class="space-y-1">
@@ -271,7 +276,13 @@
                                     <input
                                         type="checkbox"
                                         id="remainder_target_{target.id}"
-                                        bind:checked={target.isRemainderConsumer}
+                                        checked={target.isRemainderConsumer}
+                                        onchange={(e: any) => {
+                                            target.isRemainderConsumer = e.target.checked;
+                                            if (e.target.checked) {
+                                                target.amountPerMonth = 0;
+                                            }
+                                        }}
                                         class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                     />
                                     <label

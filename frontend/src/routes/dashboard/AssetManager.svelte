@@ -844,19 +844,22 @@
                                 <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
                                     Monthly Rate (€)
                                 </label>
-                                <button
-                                    type="button"
-                                    onclick={handleRecalculate}
-                                    class="text-[9px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-1"
-                                >
-                                    <Activity class="w-3 h-3" /> Recalculate
-                                </button>
+                                {#if !currentAsset.activeVersion.remainderStartDate}
+                                    <button
+                                        type="button"
+                                        onclick={handleRecalculate}
+                                        class="text-[9px] font-black text-emerald-600 hover:underline uppercase flex items-center gap-1"
+                                    >
+                                        <Activity class="w-3 h-3" /> Recalculate
+                                    </button>
+                                {/if}
                             </div>
                             <input
                                 type="text"
                                 bind:value={amountInput}
-                                placeholder="328,00"
-                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold dark:bg-slate-800 dark:border-slate-700"
+                                placeholder={currentAsset.activeVersion.remainderStartDate ? "Remainder Consumer" : "328,00"}
+                                disabled={!!currentAsset.activeVersion.remainderStartDate}
+                                class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700"
                             />
                         </div>
                     {/if}
@@ -1074,7 +1077,12 @@
                     type="month"
                     label="Remainder Start"
                     value={toInputMonth(currentAsset.activeVersion.remainderStartDate)}
-                    oninput={(e: any) => (currentAsset.activeVersion.remainderStartDate = e.target.value ? fromInputMonth(e.target.value) : null)}
+                    oninput={(e: any) => {
+                        currentAsset.activeVersion.remainderStartDate = e.target.value ? fromInputMonth(e.target.value) : null;
+                        if (currentAsset.activeVersion.remainderStartDate) {
+                            amountInput = "";
+                        }
+                    }}
                 />
                 <Input
                     type="month"
