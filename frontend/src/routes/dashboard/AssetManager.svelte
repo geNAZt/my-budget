@@ -243,7 +243,8 @@
         return parseFloat(clean) || 0;
     }
 
-    function formatGermanNumeric(val: number | string): string {
+    function formatGermanNumeric(val: number | string | null | undefined): string {
+        if (val === null || val === undefined) return "";
         const num = typeof val === "string" ? parseFloat(val) : val;
         if (isNaN(num)) return val.toString();
         return num.toLocaleString("de-DE", { useGrouping: false });

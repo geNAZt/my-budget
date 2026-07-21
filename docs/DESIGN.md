@@ -625,3 +625,12 @@ During transaction synchronization, when a pending transaction is matched and re
    - Implement `ReconcileMetadataAndPools(userID string, pendingID string, finalizedID string, mergedTags string, sourceAcc string, destAcc string, linkedTxID *string, isLinkConfirmed bool, mergedPoolIDs []string) error` in `TransactionRepository` to perform this transfer atomically inside a database transaction.
 4. **Sync Service Integration**:
    - Update `ReconcilePendingDuplicates` in `sync_service.go` to call the transfer method prior to soft-deleting the duplicate pending transaction.
+
+## 32. Fixing Undefined Asset Formatting on Dashboard Edit Modal
+
+### Problem
+When editing an asset in the dashboard, if any fields in `currentAsset.activeVersion` (like `amountPerMonth`, `interestRate`, `targetValue`, or sub-asset `targetValue`) are `undefined` or `null`, calling `formatGermanNumeric(val)` throws a `TypeError: Cannot read properties of undefined (reading 'toString')` when it attempts to call `val.toString()`.
+
+### Solution
+- Update `formatGermanNumeric` in `AssetManager.svelte` to safely handle `null` or `undefined` inputs by returning an empty string `""`.
+- Ensure the rest of `formatGermanNumeric` operates safely.
