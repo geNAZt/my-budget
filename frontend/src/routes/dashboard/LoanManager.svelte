@@ -187,7 +187,7 @@
                           }
                         : undefined,
                 },
-                [ErrorSchema],
+                [LoanSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -214,6 +214,9 @@
                 isInterestOnly: false,
                 earlyPayoffPenalty: 1,
             };
+        } else {
+            currentLoan.activeVersion.amountLent = currentLoan.activeVersion.amountLent ?? 0;
+            currentLoan.activeVersion.balloonLeftover = currentLoan.activeVersion.balloonLeftover ?? 0;
         }
         showAddModal = true;
     }

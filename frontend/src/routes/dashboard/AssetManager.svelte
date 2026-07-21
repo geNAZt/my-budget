@@ -411,7 +411,7 @@
                         })),
                     },
                 },
-                [ErrorSchema],
+                [AssetSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -520,7 +520,7 @@
                         })),
                     },
                 },
-                [ErrorSchema],
+                [AssetSchema, ErrorSchema],
             ).one();
 
             if (err) throw err;

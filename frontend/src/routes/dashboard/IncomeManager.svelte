@@ -220,7 +220,7 @@
                     },
                     linkToScenarios: currentIncome.linkToScenarios || [],
                 },
-                [ErrorSchema],
+                [IncomeSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -246,6 +246,8 @@
                 intervalIncreaseMonths: 0,
                 intervalIncreaseStartDate: null,
             };
+        } else {
+            currentIncome.activeVersion.amount = currentIncome.activeVersion.amount ?? 0;
         }
         if (!currentIncome.activeVersion.slices) {
             currentIncome.activeVersion.slices = [];

@@ -184,7 +184,7 @@
                         createdAt: currentMod.activeVersion.createdAt || "",
                     },
                 },
-                [ErrorSchema],
+                [ModificationSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -206,6 +206,8 @@
                 endDate: null,
                 intervalMonths: 0,
             };
+        } else {
+            currentMod.activeVersion.amount = currentMod.activeVersion.amount ?? 0;
         }
         showAddModal = true;
     }

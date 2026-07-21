@@ -183,7 +183,7 @@
                     },
                     linkToScenarios: currentBill.linkToScenarios || [],
                 },
-                [ErrorSchema],
+                [BillSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -205,6 +205,8 @@
                 intervalMonths: 1,
                 slices: [],
             };
+        } else {
+            currentBill.activeVersion.amount = currentBill.activeVersion.amount ?? 0;
         }
         if (!currentBill.activeVersion.slices) {
             currentBill.activeVersion.slices = [];

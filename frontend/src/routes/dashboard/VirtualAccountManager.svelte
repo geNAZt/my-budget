@@ -141,8 +141,11 @@
                 description: "",
                 realtimeAccountId: "",
             };
-        } else if (currentAccount.activeVersion.realtimeAccountId === undefined) {
-            currentAccount.activeVersion.realtimeAccountId = "";
+        } else {
+            if (currentAccount.activeVersion.realtimeAccountId === undefined) {
+                currentAccount.activeVersion.realtimeAccountId = "";
+            }
+            currentAccount.activeVersion.startingBalance = currentAccount.activeVersion.startingBalance ?? 0;
         }
         showAddModal = true;
     }
@@ -160,7 +163,7 @@
                     realtimeAccountId: "",
                 };
             }
-            await wsCall(
+            const [, err] = await wsCall(
                 "virtualaccounts::save",
                 VirtualAccountSchema,
                 {
@@ -177,8 +180,9 @@
                         realtimeAccountId: currentAccount.activeVersion.realtimeAccountId || "",
                     },
                 },
-                [ErrorSchema],
+                [VirtualAccountSchema, ErrorSchema],
             ).one();
+            if (err) throw err;
             showAddModal = false;
             await fetchAccounts();
         } catch (err: any) {

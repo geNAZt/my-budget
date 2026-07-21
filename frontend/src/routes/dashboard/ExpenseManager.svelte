@@ -185,7 +185,7 @@
                     },
                     linkToScenarios: currentExpense.linkToScenarios || [],
                 },
-                [ErrorSchema],
+                [ExpenseSchema, ErrorSchema],
             ).one();
             if (err) throw err;
             showAddModal = false;
@@ -205,6 +205,8 @@
                 dueDate: new Date().toISOString(),
                 slices: [],
             };
+        } else {
+            currentExpense.activeVersion.amount = currentExpense.activeVersion.amount ?? 0;
         }
         if (!currentExpense.activeVersion.slices) {
             currentExpense.activeVersion.slices = [];

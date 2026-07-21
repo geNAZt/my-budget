@@ -658,3 +658,24 @@ To resolve the bug where users are forced to populate and submit "Monthly saving
 - **Hide Recalculate UI**:
   - The "Recalculate" button for "Monthly Rate (€)" should be hidden when `currentAsset.activeVersion.remainderStartDate` is set.
 
+## 34. Preventing Svelte 5 `props_invalid_value` Crash on Bound Currency Inputs
+
+To address the Svelte 5 error `props_invalid_value` (Cannot do `bind:value={undefined}` when `value` has a fallback value) when editing entities from the dashboard lists, we guarantee that all bound values passed to the `CurrencyInput` component are initialized to their default values (e.g. `0`) in the edit handlers.
+
+### 1. Loan Manager Updates (`LoanManager.svelte`)
+- In `editLoan`, if the active version exists, initialize `amountLent` and `balloonLeftover` to `0` if they are `undefined` or `null`.
+
+### 2. Bill Manager Updates (`BillManager.svelte`)
+- In `editBill`, if the active version exists, initialize `amount` to `0` if it is `undefined` or `null`.
+
+### 3. Expense Manager Updates (`ExpenseManager.svelte`)
+- In `editExpense`, if the active version exists, initialize `amount` to `0` if it is `undefined` or `null`.
+
+### 4. Income Manager Updates (`IncomeManager.svelte`)
+- In `editIncome`, if the active version exists, initialize `amount` to `0` if it is `undefined` or `null`.
+
+### 5. Modification Manager Updates (`ModificationManager.svelte`)
+- In `editMod`, if the active version exists, initialize `amount` to `0` if it is `undefined` or `null`.
+
+### 6. Virtual Account Manager Updates (`VirtualAccountManager.svelte`)
+- In `openEdit`, if the active version exists, initialize `startingBalance` to `0` if it is `undefined` or `null`.
