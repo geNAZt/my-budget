@@ -154,7 +154,7 @@
                             <div class="space-y-1">
                                 <div class="flex items-center justify-between">
                                     <label class="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Monthly savings (€)</label>
-                                    {#if !target.isRemainderConsumer}
+                                    {#if !target.isRemainderConsumer && (target.dumpingLoanId === null || target.dumpingLoanId === "")}
                                         <button
                                             type="button"
                                             onclick={() => {
@@ -177,9 +177,9 @@
                                     bind:value={target.amountPerMonth}
                                     step="0.01"
                                     placeholder="150"
-                                    disabled={target.isRemainderConsumer}
+                                    disabled={target.isRemainderConsumer || (target.dumpingLoanId !== null && target.dumpingLoanId !== "")}
                                     class="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all disabled:opacity-50"
-                                    required={!target.isRemainderConsumer}
+                                    required={!target.isRemainderConsumer && (target.dumpingLoanId === null || target.dumpingLoanId === "")}
                                 />
                             </div>
                             <div class="space-y-1">
@@ -189,7 +189,6 @@
                                     bind:value={target.targetValue}
                                     placeholder="5000"
                                     class="block w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
-                                    required
                                 />
                                 <span class="text-[9px] text-slate-400 text-right block pr-1">
                                     Goal: {formatGermanAmount(parseFloat(String(target.targetValue)) || 0)} €
@@ -229,7 +228,7 @@
                         </div>
                     </div>
 
-                    {#if !target.isRemainderConsumer}
+                    {#if !target.isRemainderConsumer && (target.dumpingLoanId === null || target.dumpingLoanId === "")}
                         <div class="flex justify-end pt-1">
                             <button
                                 type="button"
@@ -260,6 +259,8 @@
                                         target.dumpingLoanId = e.target.checked ? (loans[0]?.id || "") : null;
                                         if (!e.target.checked) {
                                             target.earliestDumpDate = null;
+                                        } else {
+                                            target.amountPerMonth = 0;
                                         }
                                     }}
                                     class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"

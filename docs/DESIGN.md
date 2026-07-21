@@ -635,18 +635,20 @@ When editing an asset in the dashboard, if any fields in `currentAsset.activeVer
 - Update `formatGermanNumeric` in `AssetManager.svelte` to safely handle `null` or `undefined` inputs by returning an empty string `""`.
 - Ensure the rest of `formatGermanNumeric` operates safely.
 
-## 33. Asset Editor Remainder Consumption Input Handling
+## 33. Asset Editor Remainder Consumption & Loan Dumping Input Handling
 
-To resolve the bug where users are forced to populate and submit "Monthly savings / Monthly Rate" even when remainder consumption is enabled for an asset or its targets (sub-assets), we implement clean conditional requirements and input disables in both editors.
+To resolve the bug where users are forced to populate and submit "Monthly savings / Monthly Rate" even when remainder consumption or target loan dumping is enabled for an asset or its targets (sub-assets), we implement clean conditional requirements and input disables in both editors. Additionally, the Goal Target is made optional.
 
 ### 1. Sub-Asset / Target Editor Updates (`SubAssetForm.svelte`)
 - **Conditional Requirement & Disable**:
-  - The "Monthly savings (€)" input (`target.amountPerMonth`) should be disabled when remainder consumption is enabled: `disabled={target.isRemainderConsumer}`.
-  - The input should not be required when remainder consumption is enabled: `required={!target.isRemainderConsumer}`.
+  - The "Monthly savings (€)" input (`target.amountPerMonth`) should be disabled when remainder consumption OR target loan dumping is enabled: `disabled={target.isRemainderConsumer || (target.dumpingLoanId !== null && target.dumpingLoanId !== "")}`.
+  - The input should not be required when remainder consumption OR target loan dumping is enabled: `required={!target.isRemainderConsumer && (target.dumpingLoanId === null || target.dumpingLoanId === "")}`.
 - **Value Reset**:
-  - Toggling "Enable Remainder Consumption" to `true` should automatically set `target.amountPerMonth = 0` to clear out any previous value and ensure it doesn't get populated.
+  - Toggling "Enable Remainder Consumption" to `true` or checking "Enable Target Loan Dumping" should automatically set `target.amountPerMonth = 0` to clear out any previous value.
+- **Goal Target Optionality**:
+  - The "Goal target (€)" input (`target.targetValue`) is optional and can be left empty (remove `required` attribute).
 - **Hide Recalc UI**:
-  - The "Recalc" text button next to the input label and the "Recalculate Rate" button at the bottom of the sub-asset card should be hidden when `target.isRemainderConsumer` is `true`.
+  - The "Recalc" text button next to the input label and the "Recalculate Rate" button at the bottom of the sub-asset card should be hidden when `target.isRemainderConsumer` is `true` OR target loan dumping is enabled.
 
 ### 2. Main Asset Editor Updates (`AssetManager.svelte`)
 - **Conditional Disable**:
