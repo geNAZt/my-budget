@@ -39,7 +39,9 @@ func (s *ProjectionService) GenerateScenarioPDF(scenarioName string, months []do
 
 func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
-	pdf.SetTitle(fmt.Sprintf("Projection Report - %s", scenarioName), true)
+	tr := pdf.UnicodeTranslatorFromDescriptor("cp1252")
+
+	pdf.SetTitle(tr(fmt.Sprintf("Projection Report - %s", scenarioName)), true)
 	pdf.SetAuthor("WealthEngine", true)
 
 	for _, month := range months {
@@ -55,25 +57,25 @@ func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) (
 		pdf.SetXY(12, 10)
 		pdf.SetFont("Arial", "B", 16)
 		pdf.SetTextColor(15, 23, 42) // slate-900
-		pdf.Cell(100, 8, label)
+		pdf.Cell(100, 8, tr(label))
 
 		pdf.SetXY(12, 18)
 		pdf.SetFont("Arial", "I", 9)
 		pdf.SetTextColor(100, 116, 139) // slate-500
-		pdf.Cell(100, 6, fmt.Sprintf("Scenario: %s", scenarioName))
+		pdf.Cell(100, 6, tr(fmt.Sprintf("Scenario: %s", scenarioName)))
 
 		// 2. OVERVIEW SUMMARY GRID
 		pdf.SetXY(12, 38)
 		pdf.SetFont("Arial", "B", 10)
 		pdf.SetTextColor(15, 23, 42)
-		pdf.Cell(186, 6, "Monthly Summary Overview")
+		pdf.Cell(186, 6, tr("Monthly Summary Overview"))
 		pdf.Ln(6)
 
 		drawSummaryCell := func(label string, val float64, isPositive bool) {
 			pdf.SetFont("Arial", "B", 8)
 			pdf.SetFillColor(241, 245, 249) // slate-100
 			pdf.SetTextColor(71, 85, 105)   // slate-600
-			pdf.CellFormat(23, 5.5, label, "1", 0, "L", true, 0, "")
+			pdf.CellFormat(23, 5.5, tr(label), "1", 0, "L", true, 0, "")
 
 			pdf.SetFont("Arial", "", 8)
 			if isPositive {
@@ -82,7 +84,7 @@ func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) (
 				pdf.SetTextColor(225, 29, 72) // rose-600
 			}
 			valStr := "€ " + formatGermanAmount(val)
-			pdf.CellFormat(23, 5.5, valStr, "1", 0, "R", false, 0, "")
+			pdf.CellFormat(23, 5.5, tr(valStr), "1", 0, "R", false, 0, "")
 		}
 
 		drawSummaryCell("Income", month.Income, true)
@@ -100,13 +102,13 @@ func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) (
 		drawSectionTable := func(title string, headers []string, widths []float64, alignments []string, rows [][]string) {
 			pdf.SetFont("Arial", "B", 9)
 			pdf.SetTextColor(79, 70, 229) // Indigo-600
-			pdf.Cell(186, 5, title)
+			pdf.Cell(186, 5, tr(title))
 			pdf.Ln(5)
 
 			if len(rows) == 0 {
 				pdf.SetFont("Arial", "I", 7.5)
 				pdf.SetTextColor(148, 163, 184) // slate-400
-				pdf.Cell(186, 4, "No entries recorded for this period.")
+				pdf.Cell(186, 4, tr("No entries recorded for this period."))
 				pdf.Ln(6)
 				return
 			}
@@ -116,7 +118,7 @@ func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) (
 			pdf.SetFillColor(241, 245, 249)
 			pdf.SetTextColor(71, 85, 105)
 			for i, h := range headers {
-				pdf.CellFormat(widths[i], 5, h, "1", 0, alignments[i], true, 0, "")
+				pdf.CellFormat(widths[i], 5, tr(h), "1", 0, alignments[i], true, 0, "")
 			}
 			pdf.Ln(5)
 
@@ -129,7 +131,7 @@ func GenerateScenarioPDF(scenarioName string, months []domain.ProjectionMonth) (
 					pdf.SetFillColor(248, 250, 252) // slate-50
 				}
 				for i, val := range r {
-					pdf.CellFormat(widths[i], 4.5, val, "1", 0, alignments[i], fill, 0, "")
+					pdf.CellFormat(widths[i], 4.5, tr(val), "1", 0, alignments[i], fill, 0, "")
 				}
 				pdf.Ln(4.5)
 			}

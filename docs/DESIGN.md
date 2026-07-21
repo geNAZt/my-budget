@@ -751,6 +751,7 @@ To support high-fidelity exports of all monthly projected budget sheets in a sce
 - Configured a slate-style header banner for each month, a grid summarizing the total incoming/outgoing cashflows (income, bills, expenses, assets, loans, remainder), and detailed breakdowns (Income Streams, Fixed Bills, Discretionary Expenses, Assets, Loans, and Virtual Account Envelopes).
 - Applied German locale formatting (comma for decimals, dot for thousands) for all currency representations.
 - Ensured a clean pagination structure where each month occupies exactly one A4 page.
+- Integrated a `cp1252` (Windows-1252) unicode translator descriptor (`pdf.UnicodeTranslatorFromDescriptor("cp1252")`) on all output text cells, resolving UTF-8 encoding problems to cleanly render German Umlauts (`ä`, `ö`, `ü`, `ß`, `Ä`, `Ö`, `Ü`) and the Euro currency symbol (`€`).
 
 ### 3. Svelte Frontend Download Trigger
 - Added an "Export PDF" button to the scenario header row in `frontend/src/routes/scenarios/+page.svelte`.
