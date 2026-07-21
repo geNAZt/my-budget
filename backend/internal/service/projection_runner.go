@@ -1329,65 +1329,50 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 		}
 
 		// 4. LOAN DUMPING (Aggregate-Aware)
-		for _, as := range assetStates {
-			if as.isClosed {
-				continue
-			}
-			v := as.asset.ActiveVersion
-
-			// 4.1 Collect all unique loans targeted for dumping by this asset or its sub-assets
-			targets := make(map[string]*loanState)
-			if v.DumpingLoanID != nil {
-				if ls, ok := loanByID[*v.DumpingLoanID]; ok && !ls.isClosed {
-					targets[ls.loan.ID] = ls
+		performLoanDumping := func(cashPool *float64) {
+			for _, as := range assetStates {
+				if as.isClosed {
+					continue
 				}
-			}
-			for _, sa := range as.subAssets {
-				if !sa.isClosed && sa.dumpingLoanID != nil && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
-					if sa.earliestDumpDate == nil || !currentDate.Before(*sa.earliestDumpDate) {
-						if ls, ok := loanByID[*sa.dumpingLoanID]; ok && !ls.isClosed {
-							targets[ls.loan.ID] = ls
-						}
+				v := as.asset.ActiveVersion
+
+				// 4.1 Collect all unique loans targeted for dumping by this asset or its sub-assets
+				targets := make(map[string]*loanState)
+				if v.DumpingLoanID != nil {
+					if ls, ok := loanByID[*v.DumpingLoanID]; ok && !ls.isClosed {
+						targets[ls.loan.ID] = ls
 					}
 				}
-			}
-
-			// 4.2 Check if any target loan can be fully paid off by the total asset balance
-			for _, ls := range targets {
-				loanPenalty := ls.loan.ActiveVersion.EarlyPayoffPenalty / 100.0
-				if loanPenalty < 0 {
-					loanPenalty = 0.01
-				}
-
-				cashNeeded := ls.currentBalance / (1.0 - loanPenalty)
-				totalMaxNet := calculateMaxNet(as)
-
-				if totalMaxNet >= cashNeeded {
-					// We can kill this loan!
-					// Prioritize withdrawal from sub-assets that were saving for THIS loan
-					remainingNetToWithdraw := cashNeeded
-					totalPenaltyPaid := 0.0
-
-					// Pass 1: Sub-assets linked to THIS loan
-					borrowedFrom := make(map[string]float64)
-					for _, sa := range as.subAssets {
-						if !sa.isClosed && sa.dumpingLoanID != nil && *sa.dumpingLoanID == ls.loan.ID && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
-							if sa.earliestDumpDate == nil || !currentDate.Before(*sa.earliestDumpDate) {
-								maxNetSA := calculateMaxNetForSubAsset(as, sa)
-								toWithdraw := math.Min(remainingNetToWithdraw, maxNetSA)
-								if toWithdraw > 0 {
-									gross, net := withdrawFromSubAsset(as, sa.id, toWithdraw)
-									totalPenaltyPaid += (gross - net)
-									remainingNetToWithdraw -= net
-								}
+				for _, sa := range as.subAssets {
+					if !sa.isClosed && sa.dumpingLoanID != nil && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
+						if sa.earliestDumpDate == nil || !currentDate.Before(*sa.earliestDumpDate) {
+							if ls, ok := loanByID[*sa.dumpingLoanID]; ok && !ls.isClosed {
+								targets[ls.loan.ID] = ls
 							}
 						}
 					}
+				}
 
-					// Pass 2: Any other active sub-assets (rebalance to prio dump)
-					if remainingNetToWithdraw > 0.01 {
+				// 4.2 Check if any target loan can be fully paid off by the total asset balance
+				for _, ls := range targets {
+					loanPenalty := ls.loan.ActiveVersion.EarlyPayoffPenalty / 100.0
+					if loanPenalty < 0 {
+						loanPenalty = 0.01
+					}
+
+					cashNeeded := ls.currentBalance / (1.0 - loanPenalty)
+					totalMaxNet := calculateMaxNet(as)
+
+					if totalMaxNet >= cashNeeded {
+						// We can kill this loan!
+						// Prioritize withdrawal from sub-assets that were saving for THIS loan
+						remainingNetToWithdraw := cashNeeded
+						totalPenaltyPaid := 0.0
+
+						// Pass 1: Sub-assets linked to THIS loan
+						borrowedFrom := make(map[string]float64)
 						for _, sa := range as.subAssets {
-							if !sa.isClosed && (sa.dumpingLoanID == nil || *sa.dumpingLoanID != ls.loan.ID) && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
+							if !sa.isClosed && sa.dumpingLoanID != nil && *sa.dumpingLoanID == ls.loan.ID && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
 								if sa.earliestDumpDate == nil || !currentDate.Before(*sa.earliestDumpDate) {
 									maxNetSA := calculateMaxNetForSubAsset(as, sa)
 									toWithdraw := math.Min(remainingNetToWithdraw, maxNetSA)
@@ -1395,130 +1380,149 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 										gross, net := withdrawFromSubAsset(as, sa.id, toWithdraw)
 										totalPenaltyPaid += (gross - net)
 										remainingNetToWithdraw -= net
-										borrowedFrom[sa.name] += net
 									}
 								}
 							}
 						}
-					}
 
-					// Pass 3: Asset balance (no sub-assets) if still needed
-					if remainingNetToWithdraw > 0.01 {
-						gross, net := withdrawAsset(as, remainingNetToWithdraw)
-						totalPenaltyPaid += (gross - net)
-						remainingNetToWithdraw -= net
-					}
-
-					// Finalize Loan Payoff
-					effectivePayoff := (cashNeeded - remainingNetToWithdraw) * (1.0 - loanPenalty)
-					ls.currentBalance -= effectivePayoff
-					netWithdrawn := cashNeeded - remainingNetToWithdraw
-
-					log.Printf("[PROJECTION] AGGREGATE LOAN DUMP: %s killed by %s, Effective Payoff: %.2f, Net Withdrawn: %.2f", ls.loan.Name, as.asset.Name, effectivePayoff, netWithdrawn)
-
-					month.Loans += netWithdrawn
-					month.Assets -= netWithdrawn
-
-					month.Breakdown.Loans = append(month.Breakdown.Loans, domain.EntryBreakdown{
-						Name:       ls.loan.Name + " (Dump)",
-						EntityName: ls.loan.Name,
-						Amount:     netWithdrawn,
-						Balance:    ls.currentBalance,
-						AccountIDs: ls.loan.AccountIDs,
-						PoolID:     ls.loan.PoolID,
-					})
-					month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Aggregate Dump)", -netWithdrawn, 0, totalPenaltyPaid))
-
-					// Generate Rebalance IOUs for borrowed sub-asset funds
-					for sourceName, amt := range borrowedFrom {
-						// Find the source sub-asset to copy its EndDate
-						var sourceEndDate *time.Time
-						for _, ssa := range as.subAssets {
-							if ssa.name == sourceName {
-								sourceEndDate = ssa.endDate
-								break
-							}
-						}
-
-						newSA := &subAssetState{
-							id:                  uuid.New().String(),
-							name:                sourceName + " rebalance",
-							targetValue:         fmt.Sprintf("%.2f", amt),
-							isRemainderConsumer: true,
-							startDate:           currentDate,
-							endDate:             sourceEndDate,
-						}
-						as.subAssets = append(as.subAssets, newSA)
-						log.Printf("[PROJECTION] Generated rebalance IOU for %s: %.2f (Ends: %v)", sourceName, amt, sourceEndDate)
-					}
-
-					if ls.currentBalance <= 0.05 {
-						log.Printf("[PROJECTION] LOAN CLOSED by DUMP: %s", ls.loan.Name)
-						ls.currentBalance = 0
-						ls.isClosed = true
-					}
-
-					// Special behavior: If the parent asset has a main DumpingLoanID and THAT loan was closed,
-					// release the whole asset to budget.
-					if v.DumpingLoanID != nil && *v.DumpingLoanID == ls.loan.ID {
-						if as.currentBalance > 0 {
-							leftoverGross, leftoverNet := withdrawAsset(as, calculateMaxNet(as))
-							penaltyPaid := leftoverGross - leftoverNet
-
-							month.Income += leftoverNet
-							availableFunds += leftoverNet
-							month.Assets -= leftoverNet
-							month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-								Name:       as.asset.Name + " (Leftover after Aggregate Dump)",
-								EntityName: as.asset.Name,
-								Amount:     leftoverNet,
-								Penalty:    penaltyPaid,
-								AccountIDs: as.asset.AccountIDs,
-								PoolID:     as.asset.PoolID,
-							})
-							month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Leftover after Aggregate Dump)", -leftoverNet, 0, penaltyPaid))
-						}
-						as.isClosed = true
-						break // Asset is dead
-					}
-
-					// If it was a sub-asset link, just close the affected sub-assets
-					for _, sa := range as.subAssets {
-						if !sa.isClosed && sa.dumpingLoanID != nil && *sa.dumpingLoanID == ls.loan.ID {
-							if sa.currentBalance > 0 {
-								maxNetLeftover := calculateMaxNetForSubAsset(as, sa)
-								leftoverGross, leftoverNet := withdrawFromSubAsset(as, sa.id, maxNetLeftover)
-								penaltyPaidLeftover := leftoverGross - leftoverNet
-
-								month.Income += leftoverNet
-								availableFunds += leftoverNet
-								month.Assets -= leftoverNet
-								var payoutAccountIDs []string
-								if sa.expenseID != nil && *sa.expenseID != "" {
-									for _, e := range expenses {
-										if e.ID == *sa.expenseID {
-											payoutAccountIDs = e.AccountIDs
-											break
+						// Pass 2: Any other active sub-assets (rebalance to prio dump)
+						if remainingNetToWithdraw > 0.01 {
+							for _, sa := range as.subAssets {
+								if !sa.isClosed && (sa.dumpingLoanID == nil || *sa.dumpingLoanID != ls.loan.ID) && s.isActiveAt(sa.startDate, sa.endDate, currentDate, 1) {
+									if sa.earliestDumpDate == nil || !currentDate.Before(*sa.earliestDumpDate) {
+										maxNetSA := calculateMaxNetForSubAsset(as, sa)
+										toWithdraw := math.Min(remainingNetToWithdraw, maxNetSA)
+										if toWithdraw > 0 {
+											gross, net := withdrawFromSubAsset(as, sa.id, toWithdraw)
+											totalPenaltyPaid += (gross - net)
+											remainingNetToWithdraw -= net
+											borrowedFrom[sa.name] += net
 										}
 									}
 								}
+							}
+						}
 
+						// Pass 3: Asset balance (no sub-assets) if still needed
+						if remainingNetToWithdraw > 0.01 {
+							gross, net := withdrawAsset(as, remainingNetToWithdraw)
+							totalPenaltyPaid += (gross - net)
+							remainingNetToWithdraw -= net
+						}
+
+						// Finalize Loan Payoff
+						effectivePayoff := (cashNeeded - remainingNetToWithdraw) * (1.0 - loanPenalty)
+						ls.currentBalance -= effectivePayoff
+						netWithdrawn := cashNeeded - remainingNetToWithdraw
+
+						log.Printf("[PROJECTION] AGGREGATE LOAN DUMP: %s killed by %s, Effective Payoff: %.2f, Net Withdrawn: %.2f", ls.loan.Name, as.asset.Name, effectivePayoff, netWithdrawn)
+
+						month.Loans += netWithdrawn
+						month.Assets -= netWithdrawn
+
+						month.Breakdown.Loans = append(month.Breakdown.Loans, domain.EntryBreakdown{
+							Name:       ls.loan.Name + " (Dump)",
+							EntityName: ls.loan.Name,
+							Amount:     netWithdrawn,
+							Balance:    ls.currentBalance,
+							AccountIDs: ls.loan.AccountIDs,
+							PoolID:     ls.loan.PoolID,
+						})
+						month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Aggregate Dump)", -netWithdrawn, 0, totalPenaltyPaid))
+
+						// Generate Rebalance IOUs for borrowed sub-asset funds
+						for sourceName, amt := range borrowedFrom {
+							// Find the source sub-asset to copy its EndDate
+							var sourceEndDate *time.Time
+							for _, ssa := range as.subAssets {
+								if ssa.name == sourceName {
+									sourceEndDate = ssa.endDate
+									break
+								}
+							}
+
+							newSA := &subAssetState{
+								id:                  uuid.New().String(),
+								name:                sourceName + " rebalance",
+								targetValue:         fmt.Sprintf("%.2f", amt),
+								isRemainderConsumer: true,
+								startDate:           currentDate,
+								endDate:             sourceEndDate,
+							}
+							as.subAssets = append(as.subAssets, newSA)
+							log.Printf("[PROJECTION] Generated rebalance IOU for %s: %.2f (Ends: %v)", sourceName, amt, sourceEndDate)
+						}
+
+						if ls.currentBalance <= 0.05 {
+							log.Printf("[PROJECTION] LOAN CLOSED by DUMP: %s", ls.loan.Name)
+							ls.currentBalance = 0
+							ls.isClosed = true
+						}
+
+						// Special behavior: If the parent asset has a main DumpingLoanID and THAT loan was closed,
+						// release the whole asset to budget.
+						if v.DumpingLoanID != nil && *v.DumpingLoanID == ls.loan.ID {
+							if as.currentBalance > 0 {
+								leftoverGross, leftoverNet := withdrawAsset(as, calculateMaxNet(as))
+								penaltyPaid := leftoverGross - leftoverNet
+
+								month.Income += leftoverNet
+								*cashPool += leftoverNet
+								month.Assets -= leftoverNet
 								month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
-									Name:       as.asset.Name + " (" + sa.name + " Leftover after Dump)",
+									Name:       as.asset.Name + " (Leftover after Aggregate Dump)",
 									EntityName: as.asset.Name,
 									Amount:     leftoverNet,
-									Penalty:    penaltyPaidLeftover,
-									AccountIDs: payoutAccountIDs,
+									Penalty:    penaltyPaid,
+									AccountIDs: as.asset.AccountIDs,
 									PoolID:     as.asset.PoolID,
 								})
-								month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Leftover after Dump)", -leftoverNet, 0, penaltyPaidLeftover))
+								month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" (Leftover after Aggregate Dump)", -leftoverNet, 0, penaltyPaid))
 							}
-							sa.isClosed = true
+							as.isClosed = true
+							break // Asset is dead
+						}
+
+						// If it was a sub-asset link, just close the affected sub-assets
+						for _, sa := range as.subAssets {
+							if !sa.isClosed && sa.dumpingLoanID != nil && *sa.dumpingLoanID == ls.loan.ID {
+								if sa.currentBalance > 0 {
+									maxNetLeftover := calculateMaxNetForSubAsset(as, sa)
+									leftoverGross, leftoverNet := withdrawFromSubAsset(as, sa.id, maxNetLeftover)
+									penaltyPaidLeftover := leftoverGross - leftoverNet
+
+									month.Income += leftoverNet
+									*cashPool += leftoverNet
+									month.Assets -= leftoverNet
+									var payoutAccountIDs []string
+									if sa.expenseID != nil && *sa.expenseID != "" {
+										for _, e := range expenses {
+											if e.ID == *sa.expenseID {
+												payoutAccountIDs = e.AccountIDs
+												break
+											}
+										}
+									}
+
+									month.Breakdown.Incomes = append(month.Breakdown.Incomes, domain.EntryBreakdown{
+										Name:       as.asset.Name + " (" + sa.name + " Leftover after Dump)",
+										EntityName: as.asset.Name,
+										Amount:     leftoverNet,
+										Penalty:    penaltyPaidLeftover,
+										AccountIDs: payoutAccountIDs,
+										PoolID:     as.asset.PoolID,
+									})
+									month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name+" ("+sa.name+" Leftover after Dump)", -leftoverNet, 0, penaltyPaidLeftover))
+								}
+								sa.isClosed = true
+							}
 						}
 					}
 				}
 			}
 		}
+
+		performLoanDumping(&availableFunds)
 
 		// 5. ASSET PAYOUTS (Assets that reach EndDate payout into budget)
 		for _, as := range assetStates {
@@ -2269,6 +2273,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 		}
+
+		// 8.1 SECOND PASS LOAN DUMPING (After Contributions/Remainder Waterfall)
+		performLoanDumping(&leftover)
 
 		// 8.5 APPLY ETF INTEREST/RETURNS (At the end of the month after all modifications, contributions, and waterfalls)
 		for _, as := range assetStates {

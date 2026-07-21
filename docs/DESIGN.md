@@ -696,3 +696,15 @@ To optimize the automated CI/CD pipeline on GitHub, we implemented paths-based c
 ### 3. Build Optimizations
 - Refactored frontend cleanup: replaced the slow `rm -rf node_modules && npm ci --omit=dev` routine with a fast, in-place `npm prune --omit=dev` command.
 - Integrated conditional installation logic in the Go binaries setup step.
+
+## 36. Same-Month Loan Dumping Optimization
+
+To ensure that target loans are paid off in the same month that the asset/sub-asset accumulates the required funds (rather than holding the funds for an extra month until the next loop starts), we restructured and ran the aggregate-aware loan dumping logic twice:
+
+### 1. Loan Dumping Closure (`projection_runner.go`)
+- Refactored the Step 4 aggregate-aware loan dumping routine into a closure `performLoanDumping(cashPool *float64)`.
+- The closure takes a pointer to the active cash pool (`availableFunds` or `leftover`) so that any released leftover funds from closed dumping assets/sub-assets are immediately added to the current cash balance.
+
+### 2. Double-Pass Execution
+- **First Pass (Step 4)**: Runs before the monthly contributions and remainder waterfall are processed. It checks if the asset balance accumulated from previous months is sufficient to pay off target loans.
+- **Second Pass (Step 8.1)**: Runs after Step 8 remainder waterfall has finished. It checks if the new monthly deposits have elevated the asset/sub-asset balances to the required amount to pay off target loans. If so, it triggers immediate payoff in the same month and releases the remaining leftover balances back to general cash.
