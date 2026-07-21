@@ -679,3 +679,20 @@ To address the Svelte 5 error `props_invalid_value` (Cannot do `bind:value={unde
 
 ### 6. Virtual Account Manager Updates (`VirtualAccountManager.svelte`)
 - In `openEdit`, if the active version exists, initialize `startingBalance` to `0` if it is `undefined` or `null`.
+
+## 35. GitHub Actions Build Performance Optimization
+
+To optimize the automated CI/CD pipeline on GitHub, we implemented paths-based conditional execution and dependency caching.
+
+### 1. Paths Filtering
+- Introduced a `filter` job utilizing `dorny/paths-filter@v3` that executes before the build jobs.
+- The `build-backend` job is only triggered if files within `backend/**`, `proto/**`, or `.github/workflows/deploy.yml` are modified.
+- The `build-frontend` job is only triggered if files within `frontend/**`, `proto/**`, or `.github/workflows/deploy.yml` are modified.
+
+### 2. Dependency Caching
+- Configured npm dependency caching in `actions/setup-node@v4` using the `cache: 'npm'` parameter referencing the respective `package-lock.json` files.
+- Added caching for Go binary installation (`~/go/bin`) using `actions/cache@v4` to skip reinstalling toolchains (e.g. `oapi-codegen`, `protoc-gen-go`) on every run.
+
+### 3. Build Optimizations
+- Refactored frontend cleanup: replaced the slow `rm -rf node_modules && npm ci --omit=dev` routine with a fast, in-place `npm prune --omit=dev` command.
+- Integrated conditional installation logic in the Go binaries setup step.
