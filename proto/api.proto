@@ -273,6 +273,7 @@ message PenaltyEvent {
   int32 months_held = 9;
   double interest_generated = 10;
   string reason = 11;
+  double remaining_tax_allowance = 12;
 }
 
 message PenaltyAnalysis {

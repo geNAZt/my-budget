@@ -117,13 +117,14 @@ func (as *assetState) addLot(amount float64, reason string) {
 
 	if as.penaltyAnalysis != nil {
 		*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-			Type:         "BUY",
-			Reason:       reason,
-			Date:         as.currentMonth,
-			AssetName:    as.asset.Name,
-			LotID:        lotID,
-			LotCreatedAt: as.currentMonth,
-			Amount:       amount,
+			Type:                  "BUY",
+			Reason:                reason,
+			Date:                  as.currentMonth,
+			AssetName:             as.asset.Name,
+			LotID:                 lotID,
+			LotCreatedAt:          as.currentMonth,
+			Amount:                amount,
+			RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 		})
 	}
 }
@@ -557,17 +558,18 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-				Type:              "SELL",
-				Reason:            "SUB_ASSET_WITHDRAWAL",
-				Date:              as.currentMonth,
-				AssetName:         as.asset.Name,
-				LotID:             "STATIC",
-				LotCreatedAt:      as.currentMonth,
-				Amount:            grossSold,
-				PrincipalSold:     grossSold,
-				PenaltyPaid:       grossSold - netFulfilled,
-				MonthsHeld:        0,
-				InterestGenerated: 0,
+				Type:                  "SELL",
+				Reason:                "SUB_ASSET_WITHDRAWAL",
+				Date:                  as.currentMonth,
+				AssetName:             as.asset.Name,
+				LotID:                 "STATIC",
+				LotCreatedAt:          as.currentMonth,
+				Amount:                grossSold,
+				PrincipalSold:         grossSold,
+				PenaltyPaid:           grossSold - netFulfilled,
+				MonthsHeld:            0,
+				InterestGenerated:     0,
+				RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 			})
 		}
 
@@ -629,17 +631,18 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:              "SELL",
-					Reason:            "SUB_ASSET_WITHDRAWAL",
-					Date:              as.currentMonth,
-					AssetName:         as.asset.Name,
-					LotID:             lot.id,
-					LotCreatedAt:      lot.createdAt,
-					Amount:            grossNeeded,
-					PrincipalSold:     principalSold,
-					PenaltyPaid:       penaltyPaid,
-					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: interestGenerated,
+					Type:                  "SELL",
+					Reason:                "SUB_ASSET_WITHDRAWAL",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 lot.id,
+					LotCreatedAt:          lot.createdAt,
+					Amount:                grossNeeded,
+					PrincipalSold:         principalSold,
+					PenaltyPaid:           penaltyPaid,
+					MonthsHeld:            diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated:     interestGenerated,
+					RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 				})
 			}
 
@@ -668,17 +671,18 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:              "SELL",
-					Reason:            "SUB_ASSET_WITHDRAWAL",
-					Date:              as.currentMonth,
-					AssetName:         as.asset.Name,
-					LotID:             lot.id,
-					LotCreatedAt:      lot.createdAt,
-					Amount:            maxGrossFromLot,
-					PrincipalSold:     principalSold,
-					PenaltyPaid:       penaltyPaid,
-					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: interestGenerated,
+					Type:                  "SELL",
+					Reason:                "SUB_ASSET_WITHDRAWAL",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 lot.id,
+					LotCreatedAt:          lot.createdAt,
+					Amount:                maxGrossFromLot,
+					PrincipalSold:         principalSold,
+					PenaltyPaid:           penaltyPaid,
+					MonthsHeld:            diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated:     interestGenerated,
+					RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 				})
 			}
 
@@ -762,17 +766,18 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-				Type:              "SELL",
-				Reason:            "REGULAR_WITHDRAWAL",
-				Date:              as.currentMonth,
-				AssetName:         as.asset.Name,
-				LotID:             "STATIC",
-				LotCreatedAt:      as.currentMonth,
-				Amount:            grossSold,
-				PrincipalSold:     grossSold,
-				PenaltyPaid:       grossSold - netFulfilled,
-				MonthsHeld:        0,
-				InterestGenerated: 0,
+				Type:                  "SELL",
+				Reason:                "REGULAR_WITHDRAWAL",
+				Date:                  as.currentMonth,
+				AssetName:             as.asset.Name,
+				LotID:                 "STATIC",
+				LotCreatedAt:          as.currentMonth,
+				Amount:                grossSold,
+				PrincipalSold:         grossSold,
+				PenaltyPaid:           grossSold - netFulfilled,
+				MonthsHeld:            0,
+				InterestGenerated:     0,
+				RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 			})
 		}
 
@@ -827,17 +832,18 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:              "SELL",
-					Reason:            "REGULAR_WITHDRAWAL",
-					Date:              as.currentMonth,
-					AssetName:         as.asset.Name,
-					LotID:             lot.id,
-					LotCreatedAt:      lot.createdAt,
-					Amount:            grossNeeded,
-					PrincipalSold:     principalSold,
-					PenaltyPaid:       penaltyPaid,
-					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: interestGenerated,
+					Type:                  "SELL",
+					Reason:                "REGULAR_WITHDRAWAL",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 lot.id,
+					LotCreatedAt:          lot.createdAt,
+					Amount:                grossNeeded,
+					PrincipalSold:         principalSold,
+					PenaltyPaid:           penaltyPaid,
+					MonthsHeld:            diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated:     interestGenerated,
+					RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 				})
 			}
 
@@ -864,17 +870,18 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:              "SELL",
-					Reason:            "REGULAR_WITHDRAWAL",
-					Date:              as.currentMonth,
-					AssetName:         as.asset.Name,
-					LotID:             lot.id,
-					LotCreatedAt:      lot.createdAt,
-					Amount:            lot.currentValue,
-					PrincipalSold:     principalSold,
-					PenaltyPaid:       penaltyPaid,
-					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: interestGenerated,
+					Type:                  "SELL",
+					Reason:                "REGULAR_WITHDRAWAL",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 lot.id,
+					LotCreatedAt:          lot.createdAt,
+					Amount:                lot.currentValue,
+					PrincipalSold:         principalSold,
+					PenaltyPaid:           penaltyPaid,
+					MonthsHeld:            diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated:     interestGenerated,
+					RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 				})
 			}
 		}
@@ -936,30 +943,34 @@ func (as *assetState) PerformDecemberStepUp() {
 
 			// Record the stepup events in penaltyAnalysis with PenaltyPaid = 0.0
 			if as.penaltyAnalysis != nil {
+				remAfterStepUp := as.getRemainingTaxAllowance()
+
 				// 1. SELL event for the original lot being stepped up
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:              "SELL",
-					Reason:            "STEP UP",
-					Date:              as.currentMonth,
-					AssetName:         as.asset.Name,
-					LotID:             lot.id,
-					LotCreatedAt:      lot.createdAt,
-					Amount:            soldValue,
-					PrincipalSold:     soldPrincipal,
-					PenaltyPaid:       0.0,
-					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
-					InterestGenerated: targetGain,
+					Type:                  "SELL",
+					Reason:                "STEP UP",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 lot.id,
+					LotCreatedAt:          lot.createdAt,
+					Amount:                soldValue,
+					PrincipalSold:         soldPrincipal,
+					PenaltyPaid:           0.0,
+					MonthsHeld:            diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated:     targetGain,
+					RemainingTaxAllowance: remAfterStepUp,
 				})
 
 				// 2. BUY event for the new stepped-up lot
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-					Type:         "BUY",
-					Reason:       "STEP UP",
-					Date:         as.currentMonth,
-					AssetName:    as.asset.Name,
-					LotID:        fmt.Sprintf("%s (from %s)", newLotID, lot.id),
-					LotCreatedAt: as.currentMonth,
-					Amount:       soldValue,
+					Type:                  "BUY",
+					Reason:                "STEP UP",
+					Date:                  as.currentMonth,
+					AssetName:             as.asset.Name,
+					LotID:                 fmt.Sprintf("%s (from %s)", newLotID, lot.id),
+					LotCreatedAt:          as.currentMonth,
+					Amount:                soldValue,
+					RemainingTaxAllowance: remAfterStepUp,
 				})
 			}
 

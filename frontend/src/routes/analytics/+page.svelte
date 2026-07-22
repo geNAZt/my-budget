@@ -64,6 +64,7 @@
         penaltyPaid: number;
         monthsHeld: number;
         interestGenerated: number;
+        remainingTaxAllowance?: number;
     }
 
     const PALETTE = [
@@ -450,6 +451,7 @@
             "Penalty/Tax",
             "Interest Generated",
             "Months Held",
+            "Allowance Left",
             "Net Impact",
         ];
 
@@ -471,6 +473,7 @@
             e.penaltyPaid.toFixed(2),
             e.interestGenerated.toFixed(2),
             e.monthsHeld,
+            (e.remainingTaxAllowance || 0).toFixed(2),
             (e.amount - e.penaltyPaid).toFixed(2),
         ]);
 
@@ -2405,6 +2408,10 @@
                                                 >
                                                 <th
                                                     class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
+                                                    >Allowance Left</th
+                                                >
+                                                <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
                                                     >Net Impact</th
                                                 >
                                             </tr>
@@ -2506,6 +2513,13 @@
                                                                   event.penaltyPaid,
                                                               )}`
                                                             : "€ 0,00"}
+                                                    </td>
+                                                    <td
+                                                        class="py-4 text-xs font-bold text-right text-indigo-600 dark:text-indigo-400 font-mono"
+                                                    >
+                                                        € {formatGermanAmount(
+                                                            event.remainingTaxAllowance || 0,
+                                                        )}
                                                     </td>
                                                     <td
                                                         class="py-4 text-xs font-black text-right {event.type ===

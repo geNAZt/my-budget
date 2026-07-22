@@ -820,17 +820,18 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 				if as.penaltyAnalysis != nil {
 					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-						Type:              "SELL",
-						Reason:            "DIVIDEND_TAX",
-						Date:              as.currentMonth,
-						AssetName:         as.asset.Name,
-						LotID:             "DIVIDEND",
-						LotCreatedAt:      as.currentMonth,
-						Amount:            totalGrossGrowth,
-						PrincipalSold:     0,
-						PenaltyPaid:       interestPenaltyPaid,
-						MonthsHeld:        0,
-						InterestGenerated: totalGrossGrowth,
+						Type:                  "SELL",
+						Reason:                "DIVIDEND_TAX",
+						Date:                  as.currentMonth,
+						AssetName:             as.asset.Name,
+						LotID:                 "DIVIDEND",
+						LotCreatedAt:          as.currentMonth,
+						Amount:                totalGrossGrowth,
+						PrincipalSold:         0,
+						PenaltyPaid:           interestPenaltyPaid,
+						MonthsHeld:            0,
+						InterestGenerated:     totalGrossGrowth,
+						RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 					})
 				}
 			}
@@ -2343,19 +2344,19 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 
 				if as.penaltyAnalysis != nil {
 					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
-						Type:              "SELL",
-						Reason:            "DIVIDEND_TAX",
-						Date:              as.currentMonth,
-						AssetName:         as.asset.Name,
-						LotID:             "DIVIDEND",
-						LotCreatedAt:      as.currentMonth,
-						Amount:            totalGrossGrowth,
-						PrincipalSold:     0, // It's pure profit/growth
-						PenaltyPaid:       interestPenaltyPaid,
-						MonthsHeld:        0,
-						InterestGenerated: totalGrossGrowth,
+						Type:                  "SELL",
+						Reason:                "DIVIDEND_TAX",
+						Date:                  as.currentMonth,
+						AssetName:             as.asset.Name,
+						LotID:                 "DIVIDEND",
+						LotCreatedAt:          as.currentMonth,
+						Amount:                totalGrossGrowth,
+						PrincipalSold:         0, // It's pure profit/growth
+						PenaltyPaid:           interestPenaltyPaid,
+						MonthsHeld:            0,
+						InterestGenerated:     totalGrossGrowth,
+						RemainingTaxAllowance: as.getRemainingTaxAllowance(),
 					})
-
 				}
 
 				// Reset netGrowth to 0 so it doesn't propagate to sub-assets

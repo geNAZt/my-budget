@@ -787,9 +787,10 @@ To support tax optimization, date-bounded allowances, and tax harvesting across 
 ### 4. Svelte UI Editors
 - Added "Tax Allowance (€/year)", "Tax Allowance Start", and "Tax Allowance End" input controls to `AssetDetailModal.svelte` (Timeline view) and `AssetManager.svelte` (Dashboard Asset Manager modal).
 
-### 5. Penalty Analysis Audit Reasons & Step-Up Event Pairing
-- Added a `Reason` field to `PenaltyEvent` protobuf messages and domain models (e.g., `INITIAL_BALANCE`, `MONTHLY_SAVINGS`, `REMAINDER_SAVINGS`, `REGULAR_WITHDRAWAL`, `SUB_ASSET_WITHDRAWAL`, `DIVIDEND_TAX`, `STEP UP`).
+### 5. Penalty Analysis Audit Reasons, Step-Up Event Pairing & Remaining Allowance
+- Added `Reason` and `RemainingTaxAllowance` fields to `PenaltyEvent` protobuf messages and domain models (e.g., `INITIAL_BALANCE`, `MONTHLY_SAVINGS`, `REMAINDER_SAVINGS`, `REGULAR_WITHDRAWAL`, `SUB_ASSET_WITHDRAWAL`, `DIVIDEND_TAX`, `STEP UP`).
 - During December tax harvesting step-ups, the simulation engine generates paired `SELL` and `BUY` events with `Reason: "STEP UP"`.
 - Stepped-up lots are assigned standard incremental lot IDs (e.g. `LOT-%06d (from LOT-XXXXXX)`), making it clear which original lot was stepped up to the new lot.
-- Added a **Reason** column to the Tax & Penalty Analysis table on the Analytics page (`frontend/src/routes/analytics/+page.svelte`) and included the field in CSV data exports.
+- Populated `RemainingTaxAllowance` on all penalty events so users can audit the remaining tax allowance balance immediately after every transaction or step-up.
+- Added **Reason** and **Allowance Left** columns to the Tax & Penalty Analysis table on the Analytics page (`frontend/src/routes/analytics/+page.svelte`) and included both fields in CSV data exports.
 
