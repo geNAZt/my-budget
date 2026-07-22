@@ -453,11 +453,12 @@ const Schema = `
     );
 
     CREATE TABLE IF NOT EXISTS asset_version_tax_allowances (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         asset_version_id TEXT NOT NULL,
         amount DOUBLE PRECISION DEFAULT 0.0,
         start_date TIMESTAMP,
         end_date TIMESTAMP,
+        PRIMARY KEY(asset_version_id, id),
         FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
     );
 

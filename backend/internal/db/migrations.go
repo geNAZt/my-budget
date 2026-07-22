@@ -910,20 +910,22 @@ var migrations = []Migration{
 			if err != nil {
 				return err
 			}
-			if !exists {
-				_, err = db.Exec(`
-					CREATE TABLE asset_version_tax_allowances (
-						id TEXT PRIMARY KEY,
-						asset_version_id TEXT NOT NULL,
-						amount DOUBLE PRECISION DEFAULT 0.0,
-						start_date TIMESTAMP,
-						end_date TIMESTAMP,
-						FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
-					)
-				`)
-				if err != nil {
-					return err
-				}
+			if exists {
+				_, _ = db.Exec("DROP TABLE asset_version_tax_allowances")
+			}
+			_, err = db.Exec(`
+				CREATE TABLE asset_version_tax_allowances (
+					id TEXT NOT NULL,
+					asset_version_id TEXT NOT NULL,
+					amount DOUBLE PRECISION DEFAULT 0.0,
+					start_date TIMESTAMP,
+					end_date TIMESTAMP,
+					PRIMARY KEY(asset_version_id, id),
+					FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+				)
+			`)
+			if err != nil {
+				return err
 			}
 
 			if hasColumn(db, "asset_versions", "tax_allowance") {

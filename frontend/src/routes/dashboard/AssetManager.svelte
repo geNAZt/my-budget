@@ -364,11 +364,6 @@
 
         isSaving = true;
         try {
-            currentAsset.activeVersion.taxAllowance = parseNumeric(
-                taxAllowanceInput,
-                "DE",
-            );
-
             const [, err] = await wsCall(
                 "assets::save",
                 AssetSchema,
