@@ -65,11 +65,18 @@ type taxAllowanceState struct {
 }
 
 func isDateActive(startDate *time.Time, endDate *time.Time, currentMonth time.Time) bool {
-	if startDate != nil && currentMonth.Before(*startDate) {
-		return false
+	cYM := currentMonth.Year()*12 + int(currentMonth.Month())
+	if startDate != nil {
+		sYM := startDate.Year()*12 + int(startDate.Month())
+		if cYM < sYM {
+			return false
+		}
 	}
-	if endDate != nil && currentMonth.After(*endDate) {
-		return false
+	if endDate != nil {
+		eYM := endDate.Year()*12 + int(endDate.Month())
+		if cYM > eYM {
+			return false
+		}
 	}
 	return true
 }

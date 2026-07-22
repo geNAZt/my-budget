@@ -1651,6 +1651,66 @@ func TestMultipleETFTaxAllowances(t *testing.T) {
 	}
 }
 
+func TestTwoAssetsIndependentTaxAllowances(t *testing.T) {
+	// Asset 1 with 200€ allowance
+	as1 := &assetState{
+		asset: domain.Asset{
+			Name: "Asset 200€",
+			ActiveVersion: &domain.AssetVersion{
+				Type: "ETF",
+				TaxAllowances: []domain.AssetTaxAllowance{
+					{ID: "ta-200", Amount: 200.0},
+				},
+			},
+		},
+		currentBalance: 2000.0,
+		currentMonth:   time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+		lots: []etfLot{
+			{id: "lot-1", createdAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), principal: 1000.0, currentValue: 2000.0},
+		},
+		penaltyAnalysis: &[]domain.PenaltyEvent{},
+	}
+
+	// Asset 2 with 1800€ allowance
+	as2 := &assetState{
+		asset: domain.Asset{
+			Name: "Asset 1800€",
+			ActiveVersion: &domain.AssetVersion{
+				Type: "ETF",
+				TaxAllowances: []domain.AssetTaxAllowance{
+					{ID: "ta-1800", Amount: 1800.0},
+				},
+			},
+		},
+		currentBalance: 5000.0,
+		currentMonth:   time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+		lots: []etfLot{
+			{id: "lot-2", createdAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), principal: 2000.0, currentValue: 5000.0},
+		},
+		penaltyAnalysis: &[]domain.PenaltyEvent{},
+	}
+
+	// Run step-up for both
+	as1.PerformDecemberStepUp()
+	as2.PerformDecemberStepUp()
+
+	// Assert Asset 1 consumed 200€ of allowance (remaining 0)
+	if math.Abs(as1.getRemainingTaxAllowance()) > 0.01 {
+		t.Errorf("Expected Asset 1 remaining allowance to be 0, got %f", as1.getRemainingTaxAllowance())
+	}
+	if len(*as1.penaltyAnalysis) != 2 {
+		t.Errorf("Expected 2 penalty events for Asset 1 step-up, got %d", len(*as1.penaltyAnalysis))
+	}
+
+	// Assert Asset 2 consumed 1800€ of allowance (remaining 0)
+	if math.Abs(as2.getRemainingTaxAllowance()) > 0.01 {
+		t.Errorf("Expected Asset 2 remaining allowance to be 0, got %f", as2.getRemainingTaxAllowance())
+	}
+	if len(*as2.penaltyAnalysis) != 2 {
+		t.Errorf("Expected 2 penalty events for Asset 2 step-up, got %d", len(*as2.penaltyAnalysis))
+	}
+}
+
 
 
 

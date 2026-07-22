@@ -1553,6 +1553,12 @@
                         taxAllowance: parseFloat(activeVersion.taxAllowance) || 0,
                         taxAllowanceStartDate: activeVersion.taxAllowanceStartDate || "",
                         taxAllowanceEndDate: activeVersion.taxAllowanceEndDate || "",
+                        taxAllowances: (activeVersion.taxAllowances || []).map((ta: any) => ({
+                            id: ta.id || "",
+                            amount: parseFloat(ta.amount) || 0,
+                            startDate: ta.startDate || "",
+                            endDate: ta.endDate || "",
+                        })),
                         etfConfig: (activeVersion.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
