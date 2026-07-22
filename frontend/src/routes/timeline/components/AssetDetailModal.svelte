@@ -110,6 +110,40 @@
                         oninput={(e: any) => editingAssetObj.activeVersion.endDate = fromInputMonth(e.target.value)}
                     />
                 </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                        type="number"
+                        label="Tax Allowance (€/year)"
+                        bind:value={editingAssetObj.activeVersion.taxAllowance}
+                    />
+                    <div class="flex flex-col justify-end pb-1 pl-1 space-y-1">
+                        <span class="text-[10px] font-black uppercase text-slate-400 block mb-1">Options</span>
+                        <label class="flex items-center gap-2 cursor-pointer select-none py-2">
+                            <input
+                                type="checkbox"
+                                bind:checked={editingAssetObj.activeVersion.useForPassiveIncome}
+                                class="w-4 h-4 rounded border-slate-350 text-indigo-650 focus:ring-indigo-500/20"
+                            />
+                            <span class="text-[10px] font-black uppercase text-slate-500 tracking-[0.15em]">Use for Passive Income</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                        type="month"
+                        label="Tax Allowance Start"
+                        value={toInputMonth(editingAssetObj.activeVersion.taxAllowanceStartDate)}
+                        oninput={(e: any) => editingAssetObj.activeVersion.taxAllowanceStartDate = fromInputMonth(e.target.value)}
+                    />
+                    <Input
+                        type="month"
+                        label="Tax Allowance End"
+                        value={toInputMonth(editingAssetObj.activeVersion.taxAllowanceEndDate)}
+                        oninput={(e: any) => editingAssetObj.activeVersion.taxAllowanceEndDate = fromInputMonth(e.target.value)}
+                    />
+                </div>
             </div>
 
             <!-- Sub-Assets/Savings Targets Form List -->

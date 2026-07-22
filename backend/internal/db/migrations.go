@@ -881,6 +881,27 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "031_asset_versions_tax_allowance",
+		Run: func(db *sql.DB) error {
+			if !hasColumn(db, "asset_versions", "tax_allowance") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN tax_allowance DOUBLE PRECISION DEFAULT 0"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "asset_versions", "tax_allowance_start_date") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN tax_allowance_start_date TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			if !hasColumn(db, "asset_versions", "tax_allowance_end_date") {
+				if _, err := db.Exec("ALTER TABLE asset_versions ADD COLUMN tax_allowance_end_date TIMESTAMP"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

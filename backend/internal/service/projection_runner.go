@@ -886,6 +886,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				}
 			}
 		}
+		for _, as := range assetStates {
+			as.PerformDecemberStepUp()
+		}
 	}
 
 	for _, as := range assetStates {
@@ -2416,6 +2419,9 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			if interestEarned != 0 || interestPenaltyPaid != 0 {
 				month.Breakdown.Assets = append(month.Breakdown.Assets, buildAssetBreakdownEntry(as, as.asset.Name, 0, interestEarned, interestPenaltyPaid))
 			}
+		}
+		for _, as := range assetStates {
+			as.PerformDecemberStepUp()
 		}
 
 		// Finalize

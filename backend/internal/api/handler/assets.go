@@ -85,6 +85,19 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 	}
 
 	av.UseForPassiveIncome = reqVersion.UseForPassiveIncome
+	av.TaxAllowance = reqVersion.TaxAllowance
+
+	if reqVersion.TaxAllowanceStartDate != "" {
+		if t, err := time.Parse(time.RFC3339, reqVersion.TaxAllowanceStartDate); err == nil {
+			av.TaxAllowanceStartDate = &t
+		}
+	}
+
+	if reqVersion.TaxAllowanceEndDate != "" {
+		if t, err := time.Parse(time.RFC3339, reqVersion.TaxAllowanceEndDate); err == nil {
+			av.TaxAllowanceEndDate = &t
+		}
+	}
 
 	if reqVersion.RemainderStartDate != "" {
 		if t, err := time.Parse(time.RFC3339, reqVersion.RemainderStartDate); err == nil {
@@ -259,6 +272,7 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 			CreatedAt:           a.ActiveVersion.CreatedAt.Format(time.RFC3339),
 			StartDate:           a.ActiveVersion.StartDate.Format(time.RFC3339),
 			UseForPassiveIncome: a.ActiveVersion.UseForPassiveIncome,
+			TaxAllowance:        a.ActiveVersion.TaxAllowance,
 		}
 
 		if a.ActiveVersion.DumpingLoanID != nil {
@@ -275,6 +289,14 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 
 		if a.ActiveVersion.EndDate != nil {
 			pa.ActiveVersion.EndDate = a.ActiveVersion.EndDate.Format(time.RFC3339)
+		}
+
+		if a.ActiveVersion.TaxAllowanceStartDate != nil {
+			pa.ActiveVersion.TaxAllowanceStartDate = a.ActiveVersion.TaxAllowanceStartDate.Format(time.RFC3339)
+		}
+
+		if a.ActiveVersion.TaxAllowanceEndDate != nil {
+			pa.ActiveVersion.TaxAllowanceEndDate = a.ActiveVersion.TaxAllowanceEndDate.Format(time.RFC3339)
 		}
 
 		for _, tracker := range a.ActiveVersion.ETFConfig {

@@ -51,6 +51,46 @@ type assetState struct {
 	lotCounter      *int
 	penaltyAnalysis *[]domain.PenaltyEvent
 	currentMonth    time.Time
+
+	remainingTaxAllowance float64
+	lastFreibetragYear    int
+}
+
+func (as *assetState) getRemainingTaxAllowance() float64 {
+	if as.asset.ActiveVersion == nil {
+		return 0
+	}
+	v := as.asset.ActiveVersion
+	if v.TaxAllowanceStartDate != nil && as.currentMonth.Before(*v.TaxAllowanceStartDate) {
+		return 0
+	}
+	if v.TaxAllowanceEndDate != nil && as.currentMonth.After(*v.TaxAllowanceEndDate) {
+		return 0
+	}
+
+	year := as.currentMonth.Year()
+	if as.lastFreibetragYear != year {
+		as.lastFreibetragYear = year
+		as.remainingTaxAllowance = v.TaxAllowance
+	}
+	return as.remainingTaxAllowance
+}
+
+func (as *assetState) consumeTaxAllowance(gain float64) float64 {
+	if gain <= 0 {
+		return 0
+	}
+	rem := as.getRemainingTaxAllowance()
+	if rem <= 0 {
+		return gain
+	}
+	if gain <= rem {
+		as.remainingTaxAllowance -= gain
+		return 0
+	}
+	taxable := gain - rem
+	as.remainingTaxAllowance = 0
+	return taxable
 }
 
 func (as *assetState) addLot(amount float64) {
@@ -559,7 +599,13 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 		// Calculate gross needed
 		var grossNeeded float64
 		if profitMargin > 0 {
-			grossNeeded = remainingNet / (1.0 - (profitMargin * penalty))
+			rem := as.getRemainingTaxAllowance()
+			candidateGain := remainingNet * profitMargin
+			if candidateGain <= rem {
+				grossNeeded = remainingNet
+			} else {
+				grossNeeded = (remainingNet - rem*penalty) / (1.0 - (profitMargin * penalty))
+			}
 		} else {
 			grossNeeded = remainingNet
 		}
@@ -575,7 +621,8 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 			penaltyPaid := 0.0
 			if interestGenerated > 0.00001 {
-				penaltyPaid = interestGenerated * penalty
+				taxableGain := as.consumeTaxAllowance(interestGenerated)
+				penaltyPaid = taxableGain * penalty
 			}
 
 			if as.penaltyAnalysis != nil {
@@ -607,7 +654,8 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 
 			penaltyPaid := 0.0
 			if interestGenerated > 0.00001 {
-				penaltyPaid = interestGenerated * penalty
+				taxableGain := as.consumeTaxAllowance(interestGenerated)
+				penaltyPaid = taxableGain * penalty
 			}
 
 			netFromLot := maxGrossFromLot - penaltyPaid
@@ -747,7 +795,13 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 		// Calculate gross needed
 		var grossNeeded float64
 		if profitMargin > 0 {
-			grossNeeded = remainingNet / (1.0 - (profitMargin * penalty))
+			rem := as.getRemainingTaxAllowance()
+			candidateGain := remainingNet * profitMargin
+			if candidateGain <= rem {
+				grossNeeded = remainingNet
+			} else {
+				grossNeeded = (remainingNet - rem*penalty) / (1.0 - (profitMargin * penalty))
+			}
 		} else {
 			grossNeeded = remainingNet
 		}
@@ -762,7 +816,8 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 			penaltyPaid := 0.0
 			if interestGenerated > 0.00001 {
-				penaltyPaid = interestGenerated * penalty
+				taxableGain := as.consumeTaxAllowance(interestGenerated)
+				penaltyPaid = taxableGain * penalty
 			}
 
 			if as.penaltyAnalysis != nil {
@@ -793,7 +848,8 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 
 			penaltyPaid := 0.0
 			if interestGenerated > 0.00001 {
-				penaltyPaid = interestGenerated * penalty
+				taxableGain := as.consumeTaxAllowance(interestGenerated)
+				penaltyPaid = taxableGain * penalty
 			}
 
 			netFromLot := lot.currentValue - penaltyPaid
@@ -827,4 +883,71 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 		as.lots = nil
 	}
 	return grossSold, netFulfilled
+}
+
+func (as *assetState) PerformDecemberStepUp() {
+	if as.isClosed || as.asset.ActiveVersion == nil || as.asset.ActiveVersion.Type != domain.AssetTypeETF {
+		return
+	}
+	if as.currentMonth.Month() != time.December {
+		return
+	}
+	rem := as.getRemainingTaxAllowance()
+	if rem <= 0.00001 {
+		return
+	}
+
+	var newLotsToAppend []etfLot
+	for i := range as.lots {
+		lot := &as.lots[i]
+		gain := lot.currentValue - lot.principal
+		if gain > 0.00001 {
+			targetGain := math.Min(rem, gain)
+			f := targetGain / gain
+			soldValue := f * lot.currentValue
+			soldPrincipal := f * lot.principal
+
+			// Consume the Freibetrag
+			as.consumeTaxAllowance(targetGain)
+
+			// Subtract from the current lot:
+			lot.currentValue -= soldValue
+			lot.principal -= soldPrincipal
+
+			// And create a new lot (stepped-up):
+			newLotID := "STEPUP"
+			if as.lotCounter != nil {
+				*as.lotCounter++
+				newLotID = fmt.Sprintf("STEPUP_%d", *as.lotCounter)
+			}
+			newLotsToAppend = append(newLotsToAppend, etfLot{
+				id:           newLotID,
+				createdAt:    as.currentMonth,
+				principal:    soldValue,
+				currentValue: soldValue,
+			})
+
+			// Record the stepup event in penaltyAnalysis with PenaltyPaid = 0.0
+			if as.penaltyAnalysis != nil {
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:              "SELL",
+					Date:              as.currentMonth,
+					AssetName:         as.asset.Name,
+					LotID:             lot.id,
+					LotCreatedAt:      lot.createdAt,
+					Amount:            soldValue,
+					PrincipalSold:     soldPrincipal,
+					PenaltyPaid:       0.0,
+					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
+					InterestGenerated: targetGain,
+				})
+			}
+
+			rem = as.getRemainingTaxAllowance()
+			if rem <= 0.00001 {
+				break
+			}
+		}
+	}
+	as.lots = append(as.lots, newLotsToAppend...)
 }

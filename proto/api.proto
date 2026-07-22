@@ -401,6 +401,9 @@ message AssetVersion {
   repeated SubAsset sub_assets = 15;
   string created_at = 16;
   bool use_for_passive_income = 17;
+  double tax_allowance = 18;
+  string tax_allowance_start_date = 19;
+  string tax_allowance_end_date = 20;
 }
 
 message Asset {

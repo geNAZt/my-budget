@@ -1517,6 +1517,92 @@ func TestGenerateScenarioPDF(t *testing.T) {
 	}
 }
 
+func TestETFTaxAllowanceAndTaxHarvesting(t *testing.T) {
+	allowanceStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	allowanceEnd := time.Date(2027, 12, 31, 23, 59, 59, 0, time.UTC)
+
+	parentVersion := &domain.AssetVersion{
+		Type:                  "ETF",
+		TaxAllowance:          1000.0,
+		TaxAllowanceStartDate: &allowanceStart,
+		TaxAllowanceEndDate:   &allowanceEnd,
+		Penalties: []domain.AssetPenalty{
+			{Name: "Tax", TriggerType: domain.PenaltyTriggerWithdrawal, Percentage: 25.0},
+		},
+	}
+	sa1 := &subAssetState{
+		id:                  "sa1",
+		name:                "Target SA",
+		currentBalance:      5000.0,
+		isRemainderConsumer: false,
+	}
+	as := &assetState{
+		asset: domain.Asset{
+			ActiveVersion: parentVersion,
+		},
+		currentBalance: 5000.0,
+		subAssets:      []*subAssetState{sa1},
+		lots: []etfLot{
+			{
+				id:           "lot-1",
+				createdAt:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				principal:    2000.0, // Significant gain: value = 5000, principal = 2000
+				currentValue: 5000.0,
+			},
+		},
+		penaltyAnalysis: &[]domain.PenaltyEvent{},
+		currentMonth:    time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	// 1. Withdraw 800 net from sub-asset.
+	// Profit margin is (5000-2000)/5000 = 60%.
+	// With 800 net and candidate gain = 800 * 60% = 480.
+	// Since 480 <= 1000 (TaxAllowance), the entire gain is covered by allowance, so gross = 800.
+	gross, net := withdrawFromSubAsset(as, "sa1", 800.0)
+	if math.Abs(gross-800.0) > 0.01 || math.Abs(net-800.0) > 0.01 {
+		t.Errorf("Expected gross/net to be 800.0, got gross=%f, net=%f", gross, net)
+	}
+
+	events := *as.penaltyAnalysis
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 penalty event, got %d", len(events))
+	}
+	event := events[0]
+	if event.PenaltyPaid != 0.0 {
+		t.Errorf("Expected PenaltyPaid to be 0.00 since it is within TaxAllowance, got %f", event.PenaltyPaid)
+	}
+	if math.Abs(as.getRemainingTaxAllowance()-520.0) > 0.01 {
+		t.Errorf("Expected remaining TaxAllowance to be 520.0, got %f", as.getRemainingTaxAllowance())
+	}
+
+	// 2. Withdraw another 2000. Remaining TaxAllowance is 520.
+	gross, net = withdrawFromSubAsset(as, "sa1", 2000.0)
+	if math.Abs(gross-2200.0) > 0.01 || math.Abs(net-2000.0) > 0.01 {
+		t.Errorf("Expected gross=2200, net=2000, got gross=%f, net=%f", gross, net)
+	}
+	if math.Abs(as.getRemainingTaxAllowance()) > 0.01 {
+		t.Errorf("Expected remaining TaxAllowance to be 0, got %f", as.getRemainingTaxAllowance())
+	}
+
+	// 3. Reset TaxAllowance by moving to next year (2027) within active range
+	as.currentMonth = time.Date(2027, 12, 1, 0, 0, 0, 0, time.UTC) // December 2027
+	as.PerformDecemberStepUp()
+
+	if math.Abs(as.getRemainingTaxAllowance()) > 0.01 {
+		t.Errorf("Expected remaining TaxAllowance to be 0 after December step-up, got %f", as.getRemainingTaxAllowance())
+	}
+
+	if len(as.lots) != 2 {
+		t.Fatalf("Expected 2 lots after step-up, got %d", len(as.lots))
+	}
+
+	// 4. Move to 2028 (outside allowance date range)
+	as.currentMonth = time.Date(2028, 5, 1, 0, 0, 0, 0, time.UTC)
+	if as.getRemainingTaxAllowance() != 0.0 {
+		t.Errorf("Expected TaxAllowance to be 0 outside active date range, got %f", as.getRemainingTaxAllowance())
+	}
+}
+
 
 
 

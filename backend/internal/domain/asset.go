@@ -67,6 +67,9 @@ type AssetVersion struct {
 	SubAssets          []SubAsset
 	CreatedAt          time.Time
 	UseForPassiveIncome bool
+	TaxAllowance       float64
+	TaxAllowanceStartDate *time.Time
+	TaxAllowanceEndDate   *time.Time
 }
 
 type HistoryStitchingSegment struct {

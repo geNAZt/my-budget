@@ -1550,6 +1550,9 @@
                         startDate: activeVersion.startDate || "",
                         endDate: activeVersion.endDate || "",
                         useForPassiveIncome: !!activeVersion.useForPassiveIncome,
+                        taxAllowance: parseFloat(activeVersion.taxAllowance) || 0,
+                        taxAllowanceStartDate: activeVersion.taxAllowanceStartDate || "",
+                        taxAllowanceEndDate: activeVersion.taxAllowanceEndDate || "",
                         etfConfig: (activeVersion.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",

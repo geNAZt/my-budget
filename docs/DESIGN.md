@@ -758,3 +758,32 @@ To support high-fidelity exports of all monthly projected budget sheets in a sce
 - Connected the button to the stateful WebSocket endpoint `scenarios::pdf`.
 - Created a dynamic `Blob` with MIME type `application/pdf` from the response bytes and triggered a seamless native browser file download.
 - Wrapped the export action in loading states to prevent double-triggering.
+
+## 40. Sparer-Pauschbetrag (Tax Allowance / Freibetrag) on Assets
+
+## 40. Tax Allowance (Sparer-Pauschbetrag) & Date Bounds on Assets
+
+To support tax optimization, date-bounded allowances, and tax harvesting across assets, we implemented configurable tax allowance properties:
+
+### 1. Database Schema & Mappings
+- Added columns `tax_allowance` (DOUBLE PRECISION DEFAULT 0), `tax_allowance_start_date` (TIMESTAMP), and `tax_allowance_end_date` (TIMESTAMP) to the `asset_versions` table.
+- Implemented an idempotent database migration `031_asset_versions_tax_allowance` in `backend/internal/db/migrations.go`.
+- Added `tax_allowance`, `tax_allowance_start_date`, and `tax_allowance_end_date` fields to the `AssetVersion` protobuf message in `proto/api.proto` and compiled generators.
+- Mapped the fields in domain objects, SQL repositories, and stateful handlers using strictly non-denglish English terminology.
+
+### 2. Date-Bounded Tax Allowance & Consumption
+- Added a calendar-year tracking state in the asset simulation (`remainingTaxAllowance` and `lastFreibetragYear`).
+- Added date activation checks: tax allowance is only applied during simulation months falling within `TaxAllowanceStartDate` and `TaxAllowanceEndDate` bounds, enabling users to transition/move tax allowances between assets over time.
+- For any partial or full withdrawals (FIFO) on ETF assets, capital gains are offset tax-free against the active remaining yearly allowance.
+- Decreased the remaining allowance proportionally by the consumed tax-free gains.
+- Tax/penalties only apply to any capital gains exceeding the active annual allowance.
+
+### 3. December Tax Harvesting (Wash Sale / Step-Up)
+- At the end of each year (December step), if an ETF asset has an active remaining tax allowance, the engine performs a virtual "sell and rebuy" wash sale.
+- Gains are realized from the oldest lots with positive gains up to the remaining allowance limit.
+- The cost basis (principal) of the corresponding portion of the ETF lot is stepped up tax-free to the current market value.
+- Future capital gains on this portion are calculated starting from this new stepped-up base, saving future taxes.
+
+### 4. Svelte UI Editor
+- Added "Tax Allowance (€/year)", "Tax Allowance Start", and "Tax Allowance End" input fields to `AssetDetailModal.svelte` inside the asset configuration section.
+

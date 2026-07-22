@@ -154,6 +154,9 @@ const Schema = `
         end_date TIMESTAMP,
         withdrawal_penalty DOUBLE PRECISION DEFAULT 0,
         use_for_passive_income BOOLEAN DEFAULT FALSE,
+        tax_allowance DOUBLE PRECISION DEFAULT 0,
+        tax_allowance_start_date TIMESTAMP,
+        tax_allowance_end_date TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(asset_id) REFERENCES assets(id),
         FOREIGN KEY(dumping_loan_id) REFERENCES loans(id)
