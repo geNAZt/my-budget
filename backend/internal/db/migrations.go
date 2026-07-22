@@ -902,6 +902,43 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		ID: "032_asset_version_tax_allowances_table",
+		Run: func(db *sql.DB) error {
+			var exists bool
+			err := db.QueryRow("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'asset_version_tax_allowances' AND table_schema = current_schema())").Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				_, err = db.Exec(`
+					CREATE TABLE asset_version_tax_allowances (
+						id TEXT PRIMARY KEY,
+						asset_version_id TEXT NOT NULL,
+						amount DOUBLE PRECISION DEFAULT 0.0,
+						start_date TIMESTAMP,
+						end_date TIMESTAMP,
+						FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+					)
+				`)
+				if err != nil {
+					return err
+				}
+			}
+
+			if hasColumn(db, "asset_versions", "tax_allowance") {
+				_, _ = db.Exec(`
+					INSERT INTO asset_version_tax_allowances (id, asset_version_id, amount, start_date, end_date)
+					SELECT 
+						'legacy_' || id, id, tax_allowance, tax_allowance_start_date, tax_allowance_end_date
+					FROM asset_versions
+					WHERE tax_allowance > 0
+					ON CONFLICT DO NOTHING
+				`)
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

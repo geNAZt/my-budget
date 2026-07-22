@@ -452,6 +452,15 @@ const Schema = `
         FOREIGN KEY(expense_id) REFERENCES expenses(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS asset_version_tax_allowances (
+        id TEXT PRIMARY KEY,
+        asset_version_id TEXT NOT NULL,
+        amount DOUBLE PRECISION DEFAULT 0.0,
+        start_date TIMESTAMP,
+        end_date TIMESTAMP,
+        FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS scenario_remainder_orders (
         scenario_id TEXT NOT NULL,
         entity_id TEXT NOT NULL,

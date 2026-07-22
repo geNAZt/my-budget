@@ -145,6 +145,24 @@ func mapProtoToAssetVersion(reqVersion *apiproto.AssetVersion) *domain.AssetVers
 		})
 	}
 
+	for _, ta := range reqVersion.TaxAllowances {
+		item := domain.AssetTaxAllowance{
+			ID:     ta.Id,
+			Amount: ta.Amount,
+		}
+		if ta.StartDate != "" {
+			if t, err := time.Parse(time.RFC3339, ta.StartDate); err == nil {
+				item.StartDate = &t
+			}
+		}
+		if ta.EndDate != "" {
+			if t, err := time.Parse(time.RFC3339, ta.EndDate); err == nil {
+				item.EndDate = &t
+			}
+		}
+		av.TaxAllowances = append(av.TaxAllowances, item)
+	}
+
 	for _, subAsset := range reqVersion.SubAssets {
 		sa := domain.SubAsset{
 			ID:                  subAsset.Id,
@@ -325,6 +343,20 @@ func mapAssetToProto(a domain.Asset) *apiproto.Asset {
 				TriggerType: string(penalty.TriggerType),
 				Percentage:  penalty.Percentage,
 			})
+		}
+
+		for _, ta := range a.ActiveVersion.TaxAllowances {
+			item := &apiproto.TaxAllowance{
+				Id:     ta.ID,
+				Amount: ta.Amount,
+			}
+			if ta.StartDate != nil {
+				item.StartDate = ta.StartDate.Format(time.RFC3339)
+			}
+			if ta.EndDate != nil {
+				item.EndDate = ta.EndDate.Format(time.RFC3339)
+			}
+			pa.ActiveVersion.TaxAllowances = append(pa.ActiveVersion.TaxAllowances, item)
 		}
 
 		for _, subAsset := range a.ActiveVersion.SubAssets {

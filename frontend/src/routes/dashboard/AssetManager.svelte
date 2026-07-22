@@ -98,6 +98,14 @@
         taxAllowance?: number;
         taxAllowanceStartDate?: string | null;
         taxAllowanceEndDate?: string | null;
+        taxAllowances?: TaxAllowance[];
+    }
+
+    interface TaxAllowance {
+        id?: string;
+        amount: number;
+        startDate?: string | null;
+        endDate?: string | null;
     }
 
     interface Asset {
@@ -169,6 +177,24 @@
     let targetInput = $state("");
     let interestInput = $state("");
     let taxAllowanceInput = $state("");
+
+    function addTaxAllowance() {
+        if (!currentAsset.activeVersion) return;
+        if (!currentAsset.activeVersion.taxAllowances) {
+            currentAsset.activeVersion.taxAllowances = [];
+        }
+        currentAsset.activeVersion.taxAllowances.push({
+            id: crypto.randomUUID(),
+            amount: 1000,
+            startDate: null,
+            endDate: null,
+        });
+    }
+
+    function removeTaxAllowance(idx: number) {
+        if (!currentAsset.activeVersion || !currentAsset.activeVersion.taxAllowances) return;
+        currentAsset.activeVersion.taxAllowances.splice(idx, 1);
+    }
     let assetToDelete = $state<string | null>(null);
 
     function createNewAsset(): Asset & { activeVersion: AssetVersion } {
@@ -387,6 +413,14 @@
                             currentAsset.activeVersion.taxAllowanceStartDate || "",
                         taxAllowanceEndDate:
                             currentAsset.activeVersion.taxAllowanceEndDate || "",
+                        taxAllowances: (
+                            currentAsset.activeVersion.taxAllowances || []
+                        ).map((ta) => ({
+                            id: ta.id || "",
+                            amount: parseFloat(ta.amount as any) || 0,
+                            startDate: ta.startDate || "",
+                            endDate: ta.endDate || "",
+                        })),
                         etfConfig: (
                             currentAsset.activeVersion.etfConfig || []
                         ).map((t) => ({
@@ -509,6 +543,12 @@
                         taxAllowance: parseFloat(av.taxAllowance as any) || 0,
                         taxAllowanceStartDate: av.taxAllowanceStartDate || "",
                         taxAllowanceEndDate: av.taxAllowanceEndDate || "",
+                        taxAllowances: (av.taxAllowances || []).map((ta: any) => ({
+                            id: ta.id || "",
+                            amount: parseFloat(ta.amount) || 0,
+                            startDate: ta.startDate || "",
+                            endDate: ta.endDate || "",
+                        })),
                         etfConfig: (av.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
@@ -1001,44 +1041,76 @@
 
             <!-- Tax Allowance Section -->
             <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-fade-in" transition:slide>
-                <div class="space-y-0.5">
-                    <label class="text-sm font-black text-slate-900 dark:text-slate-100">
-                        Tax Allowance (Sparer-Pauschbetrag)
-                    </label>
-                    <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                        Configure an annual tax-free capital gain limit and validity period for this asset.
-                    </p>
+                <div class="flex items-center justify-between">
+                    <div class="space-y-0.5">
+                        <label class="text-sm font-black text-slate-900 dark:text-slate-100">
+                            Tax Allowance (Sparer-Pauschbetrag)
+                        </label>
+                        <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            Configure annual tax-free capital gain limits and validity periods for this asset.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onclick={addTaxAllowance}
+                        class="px-4 py-2 text-xs font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200 flex items-center gap-1.5"
+                    >
+                        <Plus class="w-3.5 h-3.5" />
+                        Add Allowance
+                    </button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="space-y-2">
-                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
-                            Allowance (€/year)
-                        </label>
-                        <input
-                            type="text"
-                            bind:value={taxAllowanceInput}
-                            placeholder="1000,00"
-                            class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold dark:bg-slate-800 dark:border-slate-700"
-                        />
+                {#if !currentAsset.activeVersion.taxAllowances || currentAsset.activeVersion.taxAllowances.length === 0}
+                    <div class="p-6 border border-dashed border-slate-200 rounded-2xl text-center space-y-2">
+                        <p class="text-xs font-bold text-slate-400">No tax allowances configured for this asset.</p>
                     </div>
-                    <div class="space-y-2">
-                        <Input
-                            type="month"
-                            label="Start Period"
-                            value={toInputMonth(currentAsset.activeVersion.taxAllowanceStartDate)}
-                            oninput={(e: any) => currentAsset.activeVersion.taxAllowanceStartDate = fromInputMonth(e.target.value)}
-                        />
+                {:else}
+                    <div class="space-y-3">
+                        {#each currentAsset.activeVersion.taxAllowances as ta, idx}
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-slate-50/50 rounded-2xl border border-slate-100 items-end">
+                                <div class="md:col-span-4 space-y-1">
+                                    <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 block">
+                                        Amount (€/year)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        bind:value={ta.amount}
+                                        placeholder="1000.00"
+                                        class="block w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold text-xs"
+                                    />
+                                </div>
+                                <div class="md:col-span-3 space-y-1">
+                                    <Input
+                                        type="month"
+                                        label="Start Period"
+                                        value={toInputMonth(ta.startDate)}
+                                        oninput={(e: any) => ta.startDate = fromInputMonth(e.target.value)}
+                                    />
+                                </div>
+                                <div class="md:col-span-4 space-y-1">
+                                    <Input
+                                        type="month"
+                                        label="End Period"
+                                        value={toInputMonth(ta.endDate)}
+                                        oninput={(e: any) => ta.endDate = fromInputMonth(e.target.value)}
+                                    />
+                                </div>
+                                <div class="md:col-span-1 flex justify-end pb-1">
+                                    <button
+                                        type="button"
+                                        onclick={() => removeTaxAllowance(idx)}
+                                        class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                                        title="Delete Allowance"
+                                    >
+                                        <Trash2 class="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        {/each}
                     </div>
-                    <div class="space-y-2">
-                        <Input
-                            type="month"
-                            label="End Period"
-                            value={toInputMonth(currentAsset.activeVersion.taxAllowanceEndDate)}
-                            oninput={(e: any) => currentAsset.activeVersion.taxAllowanceEndDate = fromInputMonth(e.target.value)}
-                        />
-                    </div>
-                </div>
+                {/if}
             </div>
 
             <!-- Logical Sub-Assets / Targets Configurator -->

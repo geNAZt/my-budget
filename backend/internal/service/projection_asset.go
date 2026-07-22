@@ -52,45 +52,114 @@ type assetState struct {
 	penaltyAnalysis *[]domain.PenaltyEvent
 	currentMonth    time.Time
 
-	remainingTaxAllowance float64
-	lastFreibetragYear    int
+	taxAllowanceStates map[string]*taxAllowanceState
 }
 
-func (as *assetState) getRemainingTaxAllowance() float64 {
+type taxAllowanceState struct {
+	id                  string
+	amount              float64
+	startDate           *time.Time
+	endDate             *time.Time
+	remaining           float64
+	lastInitializedYear int
+}
+
+func isDateActive(startDate *time.Time, endDate *time.Time, currentMonth time.Time) bool {
+	if startDate != nil && currentMonth.Before(*startDate) {
+		return false
+	}
+	if endDate != nil && currentMonth.After(*endDate) {
+		return false
+	}
+	return true
+}
+
+func (as *assetState) getActiveTaxAllowanceStates() []*taxAllowanceState {
 	if as.asset.ActiveVersion == nil {
-		return 0
+		return nil
 	}
-	v := as.asset.ActiveVersion
-	if v.TaxAllowanceStartDate != nil && as.currentMonth.Before(*v.TaxAllowanceStartDate) {
-		return 0
+
+	if as.taxAllowanceStates == nil {
+		as.taxAllowanceStates = make(map[string]*taxAllowanceState)
 	}
-	if v.TaxAllowanceEndDate != nil && as.currentMonth.After(*v.TaxAllowanceEndDate) {
-		return 0
+
+	allowances := as.asset.ActiveVersion.TaxAllowances
+	if len(allowances) == 0 && as.asset.ActiveVersion.TaxAllowance > 0 {
+		allowances = []domain.AssetTaxAllowance{
+			{
+				ID:        "legacy",
+				Amount:    as.asset.ActiveVersion.TaxAllowance,
+				StartDate: as.asset.ActiveVersion.TaxAllowanceStartDate,
+				EndDate:   as.asset.ActiveVersion.TaxAllowanceEndDate,
+			},
+		}
 	}
 
 	year := as.currentMonth.Year()
-	if as.lastFreibetragYear != year {
-		as.lastFreibetragYear = year
-		as.remainingTaxAllowance = v.TaxAllowance
+	var active []*taxAllowanceState
+	for i, ta := range allowances {
+		id := ta.ID
+		if id == "" {
+			id = fmt.Sprintf("ta_%d", i)
+		}
+
+		st, exists := as.taxAllowanceStates[id]
+		if !exists {
+			st = &taxAllowanceState{
+				id:        id,
+				amount:    ta.Amount,
+				startDate: ta.StartDate,
+				endDate:   ta.EndDate,
+			}
+			as.taxAllowanceStates[id] = st
+		} else {
+			st.amount = ta.Amount
+			st.startDate = ta.StartDate
+			st.endDate = ta.EndDate
+		}
+
+		if isDateActive(st.startDate, st.endDate, as.currentMonth) {
+			if st.lastInitializedYear != year {
+				st.lastInitializedYear = year
+				st.remaining = st.amount
+			}
+			active = append(active, st)
+		}
 	}
-	return as.remainingTaxAllowance
+	return active
+}
+
+func (as *assetState) getRemainingTaxAllowance() float64 {
+	active := as.getActiveTaxAllowanceStates()
+	total := 0.0
+	for _, st := range active {
+		total += st.remaining
+	}
+	return total
 }
 
 func (as *assetState) consumeTaxAllowance(gain float64) float64 {
 	if gain <= 0 {
 		return 0
 	}
-	rem := as.getRemainingTaxAllowance()
-	if rem <= 0 {
+	active := as.getActiveTaxAllowanceStates()
+	if len(active) == 0 {
 		return gain
 	}
-	if gain <= rem {
-		as.remainingTaxAllowance -= gain
-		return 0
+
+	remainingGain := gain
+	for _, st := range active {
+		if st.remaining <= 0 {
+			continue
+		}
+		if remainingGain <= st.remaining {
+			st.remaining -= remainingGain
+			return 0
+		}
+		remainingGain -= st.remaining
+		st.remaining = 0
 	}
-	taxable := gain - rem
-	as.remainingTaxAllowance = 0
-	return taxable
+	return remainingGain
 }
 
 func (as *assetState) addLot(amount float64, reason string) {

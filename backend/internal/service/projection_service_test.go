@@ -1615,6 +1615,42 @@ func TestETFTaxAllowanceAndTaxHarvesting(t *testing.T) {
 	}
 }
 
+func TestMultipleETFTaxAllowances(t *testing.T) {
+	d1Start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	d1End := time.Date(2026, 6, 30, 23, 59, 59, 0, time.UTC)
+
+	d2Start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	d2End := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
+
+	parentVersion := &domain.AssetVersion{
+		Type: "ETF",
+		TaxAllowances: []domain.AssetTaxAllowance{
+			{ID: "ta-h1", Amount: 500.0, StartDate: &d1Start, EndDate: &d1End},
+			{ID: "ta-h2", Amount: 1000.0, StartDate: &d2Start, EndDate: &d2End},
+		},
+	}
+
+	as := &assetState{
+		asset: domain.Asset{
+			ActiveVersion: parentVersion,
+		},
+		currentMonth: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	// In March 2026, only ta-h1 (500€) should be active
+	rem := as.getRemainingTaxAllowance()
+	if math.Abs(rem-500.0) > 0.01 {
+		t.Errorf("Expected 500.0 active tax allowance in March, got %f", rem)
+	}
+
+	// In September 2026, only ta-h2 (1000€) should be active
+	as.currentMonth = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	rem = as.getRemainingTaxAllowance()
+	if math.Abs(rem-1000.0) > 0.01 {
+		t.Errorf("Expected 1000.0 active tax allowance in September, got %f", rem)
+	}
+}
+
 
 
 

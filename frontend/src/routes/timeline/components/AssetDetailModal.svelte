@@ -44,9 +44,27 @@
         editingAssetObj.activeVersion.subAssets = [...editingAssetObj.activeVersion.subAssets];
     }
 
+    function addEditingTaxAllowance() {
+        if (!editingAssetObj.activeVersion.taxAllowances) {
+            editingAssetObj.activeVersion.taxAllowances = [];
+        }
+        editingAssetObj.activeVersion.taxAllowances.push({
+            id: "ta_" + Math.random().toString(36).substring(2, 11),
+            amount: 1000,
+            startDate: null,
+            endDate: null,
+        });
+        editingAssetObj.activeVersion.taxAllowances = [...editingAssetObj.activeVersion.taxAllowances];
+    }
+
     function removeEditingSubAsset(idx: number) {
         editingAssetObj.activeVersion.subAssets.splice(idx, 1);
         editingAssetObj.activeVersion.subAssets = [...editingAssetObj.activeVersion.subAssets];
+    }
+
+    function removeEditingTaxAllowance(idx: number) {
+        editingAssetObj.activeVersion.taxAllowances.splice(idx, 1);
+        editingAssetObj.activeVersion.taxAllowances = [...editingAssetObj.activeVersion.taxAllowances];
     }
 </script>
 
@@ -111,38 +129,74 @@
                     />
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                        type="number"
-                        label="Tax Allowance (€/year)"
-                        bind:value={editingAssetObj.activeVersion.taxAllowance}
-                    />
-                    <div class="flex flex-col justify-end pb-1 pl-1 space-y-1">
-                        <span class="text-[10px] font-black uppercase text-slate-400 block mb-1">Options</span>
-                        <label class="flex items-center gap-2 cursor-pointer select-none py-2">
-                            <input
-                                type="checkbox"
-                                bind:checked={editingAssetObj.activeVersion.useForPassiveIncome}
-                                class="w-4 h-4 rounded border-slate-350 text-indigo-650 focus:ring-indigo-500/20"
-                            />
-                            <span class="text-[10px] font-black uppercase text-slate-500 tracking-[0.15em]">Use for Passive Income</span>
-                        </label>
+                <div class="space-y-4 pt-4 border-t border-slate-150 dark:border-slate-850">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-black uppercase text-indigo-650 tracking-wider">Tax Allowances (Sparer-Pauschbetrag)</h4>
+                        <Button variant="secondary" onclick={addEditingTaxAllowance} class="text-[10px] uppercase font-black tracking-widest px-3 py-1.5 flex items-center gap-1">
+                            <Plus class="w-3 h-3" /> Add Allowance
+                        </Button>
                     </div>
+
+                    {#if !editingAssetObj.activeVersion.taxAllowances || editingAssetObj.activeVersion.taxAllowances.length === 0}
+                        <div class="p-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-center">
+                            <p class="text-xs font-bold text-slate-400">No tax allowances configured.</p>
+                        </div>
+                    {:else}
+                        <div class="space-y-3">
+                            {#each editingAssetObj.activeVersion.taxAllowances as ta, idx}
+                                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 items-end">
+                                    <div class="md:col-span-4 space-y-1">
+                                        <span class="text-[9px] font-black uppercase text-slate-400 block ml-1">Allowance (€/year)</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            bind:value={ta.amount}
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none text-slate-700 focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
+                                        />
+                                    </div>
+                                    <div class="md:col-span-3 space-y-1">
+                                        <span class="text-[9px] font-black uppercase text-slate-400 block ml-1">Start Date</span>
+                                        <input
+                                            type="month"
+                                            value={toInputMonth(ta.startDate)}
+                                            onchange={(e) => ta.startDate = fromInputMonth(e.currentTarget.value)}
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none text-slate-700 focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
+                                        />
+                                    </div>
+                                    <div class="md:col-span-4 space-y-1">
+                                        <span class="text-[9px] font-black uppercase text-slate-400 block ml-1">End Date</span>
+                                        <input
+                                            type="month"
+                                            value={toInputMonth(ta.endDate)}
+                                            onchange={(e) => ta.endDate = fromInputMonth(e.currentTarget.value)}
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none text-slate-700 focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
+                                        />
+                                    </div>
+                                    <div class="md:col-span-1 flex justify-end pb-1">
+                                        <button
+                                            type="button"
+                                            onclick={() => removeEditingTaxAllowance(idx)}
+                                            class="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                                            title="Delete Allowance"
+                                        >
+                                            <Trash2 class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                        type="month"
-                        label="Tax Allowance Start"
-                        value={toInputMonth(editingAssetObj.activeVersion.taxAllowanceStartDate)}
-                        oninput={(e: any) => editingAssetObj.activeVersion.taxAllowanceStartDate = fromInputMonth(e.target.value)}
-                    />
-                    <Input
-                        type="month"
-                        label="Tax Allowance End"
-                        value={toInputMonth(editingAssetObj.activeVersion.taxAllowanceEndDate)}
-                        oninput={(e: any) => editingAssetObj.activeVersion.taxAllowanceEndDate = fromInputMonth(e.target.value)}
-                    />
+                <div class="flex items-center gap-2 pt-2">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            bind:checked={editingAssetObj.activeVersion.useForPassiveIncome}
+                            class="w-4 h-4 rounded border-slate-350 text-indigo-650 focus:ring-indigo-500/20"
+                        />
+                        <span class="text-[10px] font-black uppercase text-slate-500 tracking-[0.15em]">Use for Passive Income</span>
+                    </label>
                 </div>
             </div>
 

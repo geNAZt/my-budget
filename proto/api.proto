@@ -385,6 +385,13 @@ message SubAsset {
   int32 remainder_priority = 12;
 }
 
+message TaxAllowance {
+  string id = 1;
+  double amount = 2;
+  string start_date = 3;
+  string end_date = 4;
+}
+
 message AssetVersion {
   string id = 1;
   string asset_id = 2;
@@ -406,6 +413,7 @@ message AssetVersion {
   double tax_allowance = 18;
   string tax_allowance_start_date = 19;
   string tax_allowance_end_date = 20;
+  repeated TaxAllowance tax_allowances = 21;
 }
 
 message Asset {

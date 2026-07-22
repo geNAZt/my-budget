@@ -761,31 +761,30 @@ To support high-fidelity exports of all monthly projected budget sheets in a sce
 
 ## 40. Sparer-Pauschbetrag (Tax Allowance / Freibetrag) on Assets
 
-## 40. Tax Allowance (Sparer-Pauschbetrag) & Date Bounds on Assets
+## 40. Tax Allowance (Sparer-Pauschbetrag), Multiple Slices & Date Bounds on Assets
 
-To support tax optimization, date-bounded allowances, and tax harvesting across assets, we implemented configurable tax allowance properties:
+To support tax optimization, date-bounded allowances, multiple simultaneous or sequential allowance periods, and tax harvesting across assets, we implemented configurable tax allowance properties:
 
 ### 1. Database Schema & Mappings
-- Added columns `tax_allowance` (DOUBLE PRECISION DEFAULT 0), `tax_allowance_start_date` (TIMESTAMP), and `tax_allowance_end_date` (TIMESTAMP) to the `asset_versions` table.
-- Implemented an idempotent database migration `031_asset_versions_tax_allowance` in `backend/internal/db/migrations.go`.
-- Added `tax_allowance`, `tax_allowance_start_date`, and `tax_allowance_end_date` fields to the `AssetVersion` protobuf message in `proto/api.proto` and compiled generators.
-- Mapped the fields in domain objects, SQL repositories, and stateful handlers using strictly non-denglish English terminology.
+- Added relational table `asset_version_tax_allowances` (id, asset_version_id, amount, start_date, end_date) to `backend/internal/db/schema.go`.
+- Implemented an idempotent database migration `032_asset_version_tax_allowances_table` in `backend/internal/db/migrations.go` that automatically creates the table and migrates any existing single allowance columns.
+- Added `TaxAllowance` message and `repeated TaxAllowance tax_allowances` field to `AssetVersion` protobuf message in `proto/api.proto` and generated Protobuf stubs.
+- Mapped `TaxAllowances` array in domain objects (`domain.AssetTaxAllowance`), SQL repositories, WebSocket handlers, and simulation engines.
 
-### 2. Date-Bounded Tax Allowance & Consumption
-- Added a calendar-year tracking state in the asset simulation (`remainingTaxAllowance` and `lastFreibetragYear`).
-- Added date activation checks: tax allowance is only applied during simulation months falling within `TaxAllowanceStartDate` and `TaxAllowanceEndDate` bounds, enabling users to transition/move tax allowances between assets over time.
-- For any partial or full withdrawals (FIFO) on ETF assets, capital gains are offset tax-free against the active remaining yearly allowance.
-- Decreased the remaining allowance proportionally by the consumed tax-free gains.
-- Tax/penalties only apply to any capital gains exceeding the active annual allowance.
+### 2. Multi-Slice Date-Bounded Tax Allowance Engine
+- Maintained a dynamic `taxAllowanceStates` map in `assetState` tracking annual remaining balances for each tax allowance definition.
+- For each simulation month, active tax allowance slices are evaluated based on their `StartDate` and `EndDate` bounds.
+- Allowances reset their remaining limits at the start of each calendar year.
+- Capital gains realized during partial or full withdrawals (FIFO) or December step-ups consume remaining active tax allowances sequentially before any tax penalties apply.
 
 ### 3. December Tax Harvesting (Wash Sale / Step-Up)
-- At the end of each year (December step), if an ETF asset has an active remaining tax allowance, the engine performs a virtual "sell and rebuy" wash sale.
-- Gains are realized from the oldest lots with positive gains up to the remaining allowance limit.
+- At the end of each year (December step), if an ETF asset has an active remaining tax allowance across its active slices, the engine performs a virtual "sell and rebuy" wash sale.
+- Gains are realized from the oldest lots with positive gains up to the active remaining allowance limit.
 - The cost basis (principal) of the corresponding portion of the ETF lot is stepped up tax-free to the current market value.
 - Future capital gains on this portion are calculated starting from this new stepped-up base, saving future taxes.
 
 ### 4. Svelte UI Editors
-- Added "Tax Allowance (€/year)", "Tax Allowance Start", and "Tax Allowance End" input controls to `AssetDetailModal.svelte` (Timeline view) and `AssetManager.svelte` (Dashboard Asset Manager modal).
+- Built a dynamic **Tax Allowances List Editor** inside `AssetDetailModal.svelte` (Timeline view) and `AssetManager.svelte` (Dashboard Asset Manager modal), enabling users to add, edit, and remove multiple tax allowance slices per asset (with custom amounts, start periods, and end periods).
 
 ### 5. Penalty Analysis Audit Reasons, Step-Up Event Pairing & Remaining Allowance
 - Added `Reason` and `RemainingTaxAllowance` fields to `PenaltyEvent` protobuf messages and domain models (e.g., `INITIAL_BALANCE`, `MONTHLY_SAVINGS`, `REMAINDER_SAVINGS`, `REGULAR_WITHDRAWAL`, `SUB_ASSET_WITHDRAWAL`, `DIVIDEND_TAX`, `STEP UP`).

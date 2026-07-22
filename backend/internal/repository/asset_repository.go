@@ -94,6 +94,7 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 		v.ETFConfig = []domain.ETFTracker{}
 		v.Penalties = []domain.AssetPenalty{}
 		v.SubAssets = []domain.SubAsset{}
+		v.TaxAllowances = []domain.AssetTaxAllowance{}
 
 		v.AssetID = a.ID
 		a.ActiveVersion = &v
@@ -230,6 +231,33 @@ func (r *AssetRepository) List(userID string) ([]domain.Asset, error) {
 					}
 				}
 			}
+
+			// 4. Load Tax Allowances
+			allowanceQuery := fmt.Sprintf(`
+				SELECT id, asset_version_id, amount, start_date, end_date
+				FROM asset_version_tax_allowances
+				WHERE asset_version_id IN (%s)`, strings.Join(placeholders, ","))
+			allowRows, err := r.db.Query(allowanceQuery, args...)
+			if err == nil {
+				defer allowRows.Close()
+				for allowRows.Next() {
+					var id, vID string
+					var ta domain.AssetTaxAllowance
+					var startDate, endDate sql.NullTime
+					if err := allowRows.Scan(&id, &vID, &ta.Amount, &startDate, &endDate); err == nil {
+						ta.ID = id
+						if startDate.Valid {
+							ta.StartDate = &startDate.Time
+						}
+						if endDate.Valid {
+							ta.EndDate = &endDate.Time
+						}
+						if ver, ok := versionIndexMap[vID]; ok {
+							ver.TaxAllowances = append(ver.TaxAllowances, ta)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -291,6 +319,7 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 	v.ETFConfig = []domain.ETFTracker{}
 	v.Penalties = []domain.AssetPenalty{}
 	v.SubAssets = []domain.SubAsset{}
+	v.TaxAllowances = []domain.AssetTaxAllowance{}
 
 	v.AssetID = a.ID
 	a.ActiveVersion = &v
@@ -382,6 +411,30 @@ func (r *AssetRepository) GetByID(userID string, id string) (*domain.Asset, erro
 					sa.ExpenseID = &expenseID.String
 				}
 				v.SubAssets = append(v.SubAssets, sa)
+			}
+		}
+	}
+
+	// Load Tax Allowances for single asset
+	allowRows, err := r.db.Query(`
+		SELECT id, amount, start_date, end_date
+		FROM asset_version_tax_allowances
+		WHERE asset_version_id = ?`, v.ID)
+	if err == nil {
+		defer allowRows.Close()
+		for allowRows.Next() {
+			var id string
+			var ta domain.AssetTaxAllowance
+			var startDate, endDate sql.NullTime
+			if err := allowRows.Scan(&id, &ta.Amount, &startDate, &endDate); err == nil {
+				ta.ID = id
+				if startDate.Valid {
+					ta.StartDate = &startDate.Time
+				}
+				if endDate.Valid {
+					ta.EndDate = &endDate.Time
+				}
+				v.TaxAllowances = append(v.TaxAllowances, ta)
 			}
 		}
 	}
@@ -519,6 +572,21 @@ func (r *AssetRepository) Save(userID string, asset *domain.Asset) error {
 			INSERT INTO asset_version_sub_assets (id, asset_version_id, sub_asset_id, name, target_value, amount_per_month, is_remainder_consumer, remainder_start_date, dumping_loan_id, start_date, end_date, earliest_dump_date, expense_id, remainder_priority)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.New().String(), v.ID, saID, sa.Name, sa.TargetValue, sa.AmountPerMonth, sa.IsRemainderConsumer, sa.RemainderStartDate, dLoanID, sa.StartDate, sa.EndDate, sa.EarliestDumpDate, expenseID, sa.RemainderPriority)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Save TaxAllowances
+	for _, ta := range v.TaxAllowances {
+		taID := ta.ID
+		if taID == "" {
+			taID = uuid.New().String()
+		}
+		_, err = tx.Exec(`
+			INSERT INTO asset_version_tax_allowances (id, asset_version_id, amount, start_date, end_date)
+			VALUES (?, ?, ?, ?, ?)`,
+			taID, v.ID, ta.Amount, ta.StartDate, ta.EndDate)
 		if err != nil {
 			return err
 		}

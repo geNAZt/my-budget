@@ -49,6 +49,13 @@ type SubAsset struct {
 	RemainderPriority   int32      `json:"remainder_priority"`
 }
 
+type AssetTaxAllowance struct {
+	ID        string     `json:"id"`
+	Amount    float64    `json:"amount"`
+	StartDate *time.Time `json:"start_date"`
+	EndDate   *time.Time `json:"end_date"`
+}
+
 type AssetVersion struct {
 	ID                 string
 	AssetID            string
@@ -70,6 +77,7 @@ type AssetVersion struct {
 	TaxAllowance       float64
 	TaxAllowanceStartDate *time.Time
 	TaxAllowanceEndDate   *time.Time
+	TaxAllowances      []AssetTaxAllowance
 }
 
 type HistoryStitchingSegment struct {
