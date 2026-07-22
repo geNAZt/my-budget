@@ -212,7 +212,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 			currentMonth:    startDate,
 		}
 		if a.ActiveVersion.Type == domain.AssetTypeETF && initialBalance > 0 {
-			state.addLot(initialBalance)
+			state.addLot(initialBalance, "INITIAL_BALANCE")
 		}
 		if a.ActiveVersion.Type == domain.AssetTypeETF {
 			assetMCStart := time.Now()
@@ -821,6 +821,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if as.penaltyAnalysis != nil {
 					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 						Type:              "SELL",
+						Reason:            "DIVIDEND_TAX",
 						Date:              as.currentMonth,
 						AssetName:         as.asset.Name,
 						LotID:             "DIVIDEND",
@@ -2343,6 +2344,7 @@ func (s *ProjectionService) RunWithLimit(userID string, scenarioID string, limit
 				if as.penaltyAnalysis != nil {
 					*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 						Type:              "SELL",
+						Reason:            "DIVIDEND_TAX",
 						Date:              as.currentMonth,
 						AssetName:         as.asset.Name,
 						LotID:             "DIVIDEND",

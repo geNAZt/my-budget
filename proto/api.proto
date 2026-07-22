@@ -272,6 +272,7 @@ message PenaltyEvent {
   double penalty_paid = 8;
   int32 months_held = 9;
   double interest_generated = 10;
+  string reason = 11;
 }
 
 message PenaltyAnalysis {

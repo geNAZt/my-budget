@@ -53,6 +53,7 @@ type ProjectionResult struct {
 
 type PenaltyEvent struct {
 	Type              string    `json:"type"` // 'BUY' or 'SELL'
+	Reason            string    `json:"reason"`
 	Date              time.Time `json:"date"`
 	AssetName         string    `json:"asset_name"`
 	LotID             string    `json:"lot_id"`

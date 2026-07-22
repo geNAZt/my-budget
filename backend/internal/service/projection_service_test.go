@@ -1586,6 +1586,7 @@ func TestETFTaxAllowanceAndTaxHarvesting(t *testing.T) {
 
 	// 3. Reset TaxAllowance by moving to next year (2027) within active range
 	as.currentMonth = time.Date(2027, 12, 1, 0, 0, 0, 0, time.UTC) // December 2027
+	prevEventsCount := len(*as.penaltyAnalysis)
 	as.PerformDecemberStepUp()
 
 	if math.Abs(as.getRemainingTaxAllowance()) > 0.01 {
@@ -1594,6 +1595,17 @@ func TestETFTaxAllowanceAndTaxHarvesting(t *testing.T) {
 
 	if len(as.lots) != 2 {
 		t.Fatalf("Expected 2 lots after step-up, got %d", len(as.lots))
+	}
+
+	stepUpEvents := (*as.penaltyAnalysis)[prevEventsCount:]
+	if len(stepUpEvents) != 2 {
+		t.Fatalf("Expected 2 step-up penalty events (SELL and BUY), got %d", len(stepUpEvents))
+	}
+	if stepUpEvents[0].Type != "SELL" || stepUpEvents[0].Reason != "STEP UP" {
+		t.Errorf("Expected first step-up event to be SELL with Reason STEP UP, got %s / %s", stepUpEvents[0].Type, stepUpEvents[0].Reason)
+	}
+	if stepUpEvents[1].Type != "BUY" || stepUpEvents[1].Reason != "STEP UP" {
+		t.Errorf("Expected second step-up event to be BUY with Reason STEP UP, got %s / %s", stepUpEvents[1].Type, stepUpEvents[1].Reason)
 	}
 
 	// 4. Move to 2028 (outside allowance date range)

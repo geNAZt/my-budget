@@ -54,6 +54,7 @@
 
     interface PenaltyEvent {
         type: string;
+        reason?: string;
         date: string;
         assetName: string;
         lotId: string;
@@ -443,6 +444,7 @@
             "Lot ID",
             "Created",
             "Type",
+            "Reason",
             "Amount",
             "Principal Sold",
             "Penalty/Tax",
@@ -463,6 +465,7 @@
                 year: "numeric",
             }),
             e.type,
+            e.reason || "REGULAR",
             e.amount.toFixed(2),
             e.principalSold.toFixed(2),
             e.penaltyPaid.toFixed(2),
@@ -2381,6 +2384,10 @@
                                                     >Type</th
                                                 >
                                                 <th
+                                                    class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400"
+                                                    >Reason</th
+                                                >
+                                                <th
                                                     class="pb-3 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right"
                                                     >Amount</th
                                                 >
@@ -2454,6 +2461,13 @@
                                                             {event.type}
                                                         </span>
                                                     </td>
+                                                    <td class="py-4">
+                                                        <span
+                                                            class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono"
+                                                        >
+                                                            {event.reason || "REGULAR"}
+                                                        </span>
+                                                     </td>
                                                     <td
                                                         class="py-4 text-xs font-black text-right text-slate-900"
                                                     >

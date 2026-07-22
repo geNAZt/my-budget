@@ -95,6 +95,9 @@
         penalties: AssetPenalty[];
         subAssets: SubAsset[];
         useForPassiveIncome: boolean;
+        taxAllowance?: number;
+        taxAllowanceStartDate?: string | null;
+        taxAllowanceEndDate?: string | null;
     }
 
     interface Asset {
@@ -165,6 +168,7 @@
     let amountInput = $state("");
     let targetInput = $state("");
     let interestInput = $state("");
+    let taxAllowanceInput = $state("");
     let assetToDelete = $state<string | null>(null);
 
     function createNewAsset(): Asset & { activeVersion: AssetVersion } {
@@ -190,6 +194,9 @@
                 penalties: [],
                 subAssets: [],
                 useForPassiveIncome: false,
+                taxAllowance: 0,
+                taxAllowanceStartDate: null,
+                taxAllowanceEndDate: null,
             },
         } as any;
     }
@@ -331,6 +338,11 @@
 
         isSaving = true;
         try {
+            currentAsset.activeVersion.taxAllowance = parseNumeric(
+                taxAllowanceInput,
+                "DE",
+            );
+
             const [, err] = await wsCall(
                 "assets::save",
                 AssetSchema,
@@ -367,6 +379,14 @@
                         endDate: currentAsset.activeVersion.endDate || "",
                         useForPassiveIncome:
                             !!currentAsset.activeVersion.useForPassiveIncome,
+                        taxAllowance:
+                            parseFloat(
+                                currentAsset.activeVersion.taxAllowance as any,
+                            ) || 0,
+                        taxAllowanceStartDate:
+                            currentAsset.activeVersion.taxAllowanceStartDate || "",
+                        taxAllowanceEndDate:
+                            currentAsset.activeVersion.taxAllowanceEndDate || "",
                         etfConfig: (
                             currentAsset.activeVersion.etfConfig || []
                         ).map((t) => ({
@@ -486,6 +506,9 @@
                         startDate: av.startDate || "",
                         endDate: av.endDate || "",
                         useForPassiveIncome: !!av.useForPassiveIncome,
+                        taxAllowance: parseFloat(av.taxAllowance as any) || 0,
+                        taxAllowanceStartDate: av.taxAllowanceStartDate || "",
+                        taxAllowanceEndDate: av.taxAllowanceEndDate || "",
                         etfConfig: (av.etfConfig || []).map((t: any) => ({
                             tracker: t.tracker || "",
                             historicalTracker: t.historicalTracker || "",
@@ -573,6 +596,9 @@
         targetInput = formatGermanNumeric(
             currentAsset.activeVersion.targetValue,
         );
+        taxAllowanceInput = formatGermanNumeric(
+            currentAsset.activeVersion.taxAllowance || 0,
+        );
         showAddModal = true;
     }
 
@@ -620,6 +646,7 @@
                     amountInput = "";
                     targetInput = "";
                     interestInput = "";
+                    taxAllowanceInput = "";
                     showAddModal = true;
                 }}
                 class="bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100"
@@ -971,6 +998,48 @@
                     {/if}
                 </div>
             {/if}
+
+            <!-- Tax Allowance Section -->
+            <div class="space-y-4 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-fade-in" transition:slide>
+                <div class="space-y-0.5">
+                    <label class="text-sm font-black text-slate-900 dark:text-slate-100">
+                        Tax Allowance (Sparer-Pauschbetrag)
+                    </label>
+                    <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                        Configure an annual tax-free capital gain limit and validity period for this asset.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1 mb-1 block">
+                            Allowance (€/year)
+                        </label>
+                        <input
+                            type="text"
+                            bind:value={taxAllowanceInput}
+                            placeholder="1000,00"
+                            class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-bold dark:bg-slate-800 dark:border-slate-700"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <Input
+                            type="month"
+                            label="Start Period"
+                            value={toInputMonth(currentAsset.activeVersion.taxAllowanceStartDate)}
+                            oninput={(e: any) => currentAsset.activeVersion.taxAllowanceStartDate = fromInputMonth(e.target.value)}
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <Input
+                            type="month"
+                            label="End Period"
+                            value={toInputMonth(currentAsset.activeVersion.taxAllowanceEndDate)}
+                            oninput={(e: any) => currentAsset.activeVersion.taxAllowanceEndDate = fromInputMonth(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
 
             <!-- Logical Sub-Assets / Targets Configurator -->
             <SubAssetForm

@@ -93,7 +93,7 @@ func (as *assetState) consumeTaxAllowance(gain float64) float64 {
 	return taxable
 }
 
-func (as *assetState) addLot(amount float64) {
+func (as *assetState) addLot(amount float64, reason string) {
 	if amount <= 0 {
 		return
 	}
@@ -118,6 +118,7 @@ func (as *assetState) addLot(amount float64) {
 	if as.penaltyAnalysis != nil {
 		*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 			Type:         "BUY",
+			Reason:       reason,
 			Date:         as.currentMonth,
 			AssetName:    as.asset.Name,
 			LotID:        lotID,
@@ -311,7 +312,7 @@ func depositToSubAsset(as *assetState, subID string, amount float64) {
 	}
 	as.currentBalance += amount
 	if as.asset.ActiveVersion.Type == domain.AssetTypeETF && amount > 0 {
-		as.addLot(amount)
+		as.addLot(amount, "REMAINDER_SAVINGS")
 		depositToTrackers(as, amount)
 	}
 }
@@ -378,14 +379,14 @@ func depositAsset(as *assetState, amount float64, loanByID map[string]*loanState
 		deposited := amount - remaining
 		as.currentBalance += deposited
 		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && deposited > 0 {
-			as.addLot(deposited)
+			as.addLot(deposited, "MONTHLY_SAVINGS")
 			depositToTrackers(as, deposited)
 		}
 		return deposited
 	} else {
 		as.currentBalance += amount
 		if amount > 0 {
-			as.addLot(amount)
+			as.addLot(amount, "MONTHLY_SAVINGS")
 			if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
 				depositToTrackers(as, amount)
 			}
@@ -440,14 +441,14 @@ func depositAssetProportionally(as *assetState, amount float64, loanByID map[str
 		deposited := amount - remaining
 		as.currentBalance += deposited
 		if as.asset.ActiveVersion.Type == domain.AssetTypeETF && deposited > 0 {
-			as.addLot(deposited)
+			as.addLot(deposited, "MONTHLY_SAVINGS")
 			depositToTrackers(as, deposited)
 		}
 		return deposited
 	} else {
 		as.currentBalance += amount
 		if amount > 0 {
-			as.addLot(amount)
+			as.addLot(amount, "MONTHLY_SAVINGS")
 			if as.asset.ActiveVersion.Type == domain.AssetTypeETF {
 				depositToTrackers(as, amount)
 			}
@@ -557,6 +558,7 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 				Type:              "SELL",
+				Reason:            "SUB_ASSET_WITHDRAWAL",
 				Date:              as.currentMonth,
 				AssetName:         as.asset.Name,
 				LotID:             "STATIC",
@@ -628,6 +630,7 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
+					Reason:            "SUB_ASSET_WITHDRAWAL",
 					Date:              as.currentMonth,
 					AssetName:         as.asset.Name,
 					LotID:             lot.id,
@@ -666,6 +669,7 @@ func withdrawFromSubAsset(as *assetState, subID string, requestedNet float64) (g
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
+					Reason:            "SUB_ASSET_WITHDRAWAL",
 					Date:              as.currentMonth,
 					AssetName:         as.asset.Name,
 					LotID:             lot.id,
@@ -759,6 +763,7 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 		if as.penaltyAnalysis != nil {
 			*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 				Type:              "SELL",
+				Reason:            "REGULAR_WITHDRAWAL",
 				Date:              as.currentMonth,
 				AssetName:         as.asset.Name,
 				LotID:             "STATIC",
@@ -823,6 +828,7 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
+					Reason:            "REGULAR_WITHDRAWAL",
 					Date:              as.currentMonth,
 					AssetName:         as.asset.Name,
 					LotID:             lot.id,
@@ -859,6 +865,7 @@ func withdrawAsset(as *assetState, requestedNet float64) (grossSold float64, net
 			if as.penaltyAnalysis != nil {
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
+					Reason:            "REGULAR_WITHDRAWAL",
 					Date:              as.currentMonth,
 					AssetName:         as.asset.Name,
 					LotID:             lot.id,
@@ -914,11 +921,11 @@ func (as *assetState) PerformDecemberStepUp() {
 			lot.currentValue -= soldValue
 			lot.principal -= soldPrincipal
 
-			// And create a new lot (stepped-up):
-			newLotID := "STEPUP"
+			// And create a new lot (stepped-up) with normal lot numbering:
+			newLotID := fmt.Sprintf("LOT-STEPUP-%s", lot.id)
 			if as.lotCounter != nil {
 				*as.lotCounter++
-				newLotID = fmt.Sprintf("STEPUP_%d", *as.lotCounter)
+				newLotID = fmt.Sprintf("LOT-%06d", *as.lotCounter)
 			}
 			newLotsToAppend = append(newLotsToAppend, etfLot{
 				id:           newLotID,
@@ -927,10 +934,12 @@ func (as *assetState) PerformDecemberStepUp() {
 				currentValue: soldValue,
 			})
 
-			// Record the stepup event in penaltyAnalysis with PenaltyPaid = 0.0
+			// Record the stepup events in penaltyAnalysis with PenaltyPaid = 0.0
 			if as.penaltyAnalysis != nil {
+				// 1. SELL event for the original lot being stepped up
 				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
 					Type:              "SELL",
+					Reason:            "STEP UP",
 					Date:              as.currentMonth,
 					AssetName:         as.asset.Name,
 					LotID:             lot.id,
@@ -940,6 +949,17 @@ func (as *assetState) PerformDecemberStepUp() {
 					PenaltyPaid:       0.0,
 					MonthsHeld:        diffMonths(lot.createdAt, as.currentMonth),
 					InterestGenerated: targetGain,
+				})
+
+				// 2. BUY event for the new stepped-up lot
+				*as.penaltyAnalysis = append(*as.penaltyAnalysis, domain.PenaltyEvent{
+					Type:         "BUY",
+					Reason:       "STEP UP",
+					Date:         as.currentMonth,
+					AssetName:    as.asset.Name,
+					LotID:        fmt.Sprintf("%s (from %s)", newLotID, lot.id),
+					LotCreatedAt: as.currentMonth,
+					Amount:       soldValue,
 				})
 			}
 

@@ -356,6 +356,7 @@ func (sc *Scenarios) Projection(s *api.WebsocketSession, reqID string, reqObj *a
 			PenaltyPaid:       event.PenaltyPaid,
 			MonthsHeld:        int32(event.MonthsHeld),
 			InterestGenerated: event.InterestGenerated,
+			Reason:            event.Reason,
 		})
 	}
 	sc.handler.SendResponse(s, reqID, wsPenalty, false)
