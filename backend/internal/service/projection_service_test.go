@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -1708,6 +1709,47 @@ func TestTwoAssetsIndependentTaxAllowances(t *testing.T) {
 	}
 	if len(*as2.penaltyAnalysis) != 2 {
 		t.Errorf("Expected 2 penalty events for Asset 2 step-up, got %d", len(*as2.penaltyAnalysis))
+	}
+}
+
+func TestBillCustomIntervals(t *testing.T) {
+	s := &ProjectionService{}
+	startDate := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		interval       int
+		activeInMonths []int
+	}{
+		{interval: 1, activeInMonths: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}},
+		{interval: 2, activeInMonths: []int{1, 3, 5, 7, 9, 11}},
+		{interval: 3, activeInMonths: []int{1, 4, 7, 10}},
+		{interval: 4, activeInMonths: []int{1, 5, 9}},
+		{interval: 5, activeInMonths: []int{1, 6, 11}},
+		{interval: 6, activeInMonths: []int{1, 7}},
+		{interval: 7, activeInMonths: []int{1, 8}},
+		{interval: 8, activeInMonths: []int{1, 9}},
+		{interval: 9, activeInMonths: []int{1, 10}},
+		{interval: 10, activeInMonths: []int{1, 11}},
+		{interval: 11, activeInMonths: []int{1, 12}},
+		{interval: 12, activeInMonths: []int{1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("Interval_%d", tt.interval), func(t *testing.T) {
+			activeMap := make(map[int]bool)
+			for _, m := range tt.activeInMonths {
+				activeMap[m] = true
+			}
+
+			for m := 1; m <= 12; m++ {
+				currDate := time.Date(2026, time.Month(m), 1, 0, 0, 0, 0, time.UTC)
+				expected := activeMap[m]
+				actual := s.isActiveAt(startDate, nil, currDate, tt.interval)
+				if actual != expected {
+					t.Errorf("For interval %d in month %d, expected isActiveAt=%v, got %v", tt.interval, m, expected, actual)
+				}
+			}
+		})
 	}
 }
 

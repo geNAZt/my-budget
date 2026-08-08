@@ -88,6 +88,15 @@
             month: "2-digit",
         });
     }
+
+    function formatInterval(months: number | undefined): string {
+        if (!months || months === 1) return "Monthly";
+        if (months === 2) return "Every 2 Months";
+        if (months === 3) return "Quarterly";
+        if (months === 6) return "Semi-Annually";
+        if (months === 12) return "Yearly";
+        return `Every ${months} Months`;
+    }
 </script>
 
 <div class="space-y-4">
@@ -128,7 +137,16 @@
                         class="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
                     >
                         <option value={1}>Monthly</option>
+                        <option value={2}>Every 2 Months</option>
                         <option value={3}>Quarterly</option>
+                        <option value={4}>Every 4 Months</option>
+                        <option value={5}>Every 5 Months</option>
+                        <option value={6}>Semi-Annually</option>
+                        <option value={7}>Every 7 Months</option>
+                        <option value={8}>Every 8 Months</option>
+                        <option value={9}>Every 9 Months</option>
+                        <option value={10}>Every 10 Months</option>
+                        <option value={11}>Every 11 Months</option>
                         <option value={12}>Yearly</option>
                     </select>
                 </div>
@@ -192,7 +210,7 @@
                     <div class="flex items-center gap-2 mb-1">
                         <span class="text-sm font-black text-slate-900">{formatGermanAmount(slice.amount)} €</span>
                         <span class="px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded text-[8px] font-black uppercase tracking-wider">
-                            {slice.intervalMonths === 1 ? 'Monthly' : slice.intervalMonths === 3 ? 'Quarterly' : 'Yearly'}
+                            {formatInterval(slice.intervalMonths)}
                         </span>
                     </div>
                     {#if slice.description}

@@ -248,6 +248,15 @@
         });
     }
 
+    function formatInterval(months: number | undefined): string {
+        if (!months || months === 1) return "Monthly";
+        if (months === 2) return "Bimonthly (2 Mo.)";
+        if (months === 3) return "Quarterly";
+        if (months === 6) return "Semi-Annually";
+        if (months === 12) return "Yearly";
+        return `Every ${months} Months`;
+    }
+
     onMount(() => {
         fetchData();
     });
@@ -343,11 +352,7 @@
                         <td class="px-6 py-4 font-bold text-slate-800">{bill.name}</td>
                         <td class="px-6 py-4 text-xs font-bold text-slate-700">
                             <Badge variant="warning">
-                                {bill.activeVersion?.intervalMonths === 1
-                                    ? "Monthly"
-                                    : bill.activeVersion?.intervalMonths === 3
-                                      ? "Quarterly"
-                                      : "Yearly"}
+                                {formatInterval(bill.activeVersion?.intervalMonths)}
                             </Badge>
                         </td>
                         <td class="px-6 py-4 text-xs font-bold text-slate-700">{formatDate(bill.activeVersion?.startDate)}</td>
@@ -437,9 +442,18 @@
                     bind:value={currentBill.activeVersion.intervalMonths}
                     class="block w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all font-bold appearance-none cursor-pointer dark:bg-slate-800 dark:border-slate-700"
                 >
-                    <option value={1}>Monthly</option>
-                    <option value={3}>Quarterly</option>
-                    <option value={12}>Yearly</option>
+                    <option value={1}>Monthly (1 Month)</option>
+                    <option value={2}>Every 2 Months</option>
+                    <option value={3}>Quarterly (3 Months)</option>
+                    <option value={4}>Every 4 Months</option>
+                    <option value={5}>Every 5 Months</option>
+                    <option value={6}>Semi-Annually (6 Months)</option>
+                    <option value={7}>Every 7 Months</option>
+                    <option value={8}>Every 8 Months</option>
+                    <option value={9}>Every 9 Months</option>
+                    <option value={10}>Every 10 Months</option>
+                    <option value={11}>Every 11 Months</option>
+                    <option value={12}>Yearly (12 Months)</option>
                 </select>
             </div>
         </div>

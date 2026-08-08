@@ -786,10 +786,29 @@ To support tax optimization, date-bounded allowances, multiple simultaneous or s
 ### 4. Svelte UI Editors
 - Built a dynamic **Tax Allowances List Editor** inside `AssetDetailModal.svelte` (Timeline view) and `AssetManager.svelte` (Dashboard Asset Manager modal), enabling users to add, edit, and remove multiple tax allowance slices per asset (with custom amounts, start periods, and end periods).
 
-### 5. Penalty Analysis Audit Reasons, Step-Up Event Pairing & Remaining Allowance
-- Added `Reason` and `RemainingTaxAllowance` fields to `PenaltyEvent` protobuf messages and domain models (e.g., `INITIAL_BALANCE`, `MONTHLY_SAVINGS`, `REMAINDER_SAVINGS`, `REGULAR_WITHDRAWAL`, `SUB_ASSET_WITHDRAWAL`, `DIVIDEND_TAX`, `STEP UP`).
-- During December tax harvesting step-ups, the simulation engine generates paired `SELL` and `BUY` events with `Reason: "STEP UP"`.
-- Stepped-up lots are assigned standard incremental lot IDs (e.g. `LOT-%06d (from LOT-XXXXXX)`), making it clear which original lot was stepped up to the new lot.
-- Populated `RemainingTaxAllowance` on all penalty events so users can audit the remaining tax allowance balance immediately after every transaction or step-up.
-- Added **Reason** and **Allowance Left** columns to the Tax & Penalty Analysis table on the Analytics page (`frontend/src/routes/analytics/+page.svelte`) and included both fields in CSV data exports.
 
+## 31. Custom Intervals (1 to 12 Months) for Bills and Financial Entities
+
+To give users flexibility in setting recurring payment frequencies for bills (e.g. bimonthly, every 4 or 5 months, semi-annually), we extend interval selection across the UI to allow any integer interval from 1 to 12 months.
+
+### Design Details
+1. **Domain and Engine Parity**:
+   - The Go backend database (`bill_versions.interval_months`) and domain structures (`BillVersion.IntervalMonths`) already support integer interval values.
+   - The projection engine (`isActiveAt`) uses `monthsDiff % interval == 0` for any interval $N$, matching payments accurately for custom intervals.
+2. **Frontend UI Options & Formatting**:
+   - In `BillManager.svelte` (modal select & table badges) and `TimeSliceManager.svelte`, update interval selection dropdowns to present all 1 to 12 month options:
+     - 1: Monthly
+     - 2: Every 2 Months
+     - 3: Quarterly
+     - 4: Every 4 Months
+     - 5: Every 5 Months
+     - 6: Semi-Annually
+     - 7: Every 7 Months
+     - 8: Every 8 Months
+     - 9: Every 9 Months
+     - 10: Every 10 Months
+     - 11: Every 11 Months
+     - 12: Yearly
+   - Introduce a `formatInterval` utility function in Svelte components to render clean badge labels for table views (e.g. `Monthly`, `Quarterly`, `Semi-Annually`, `Yearly`, or `Every N Months`).
+3. **Backend Service Unit Tests**:
+   - Add backend tests in `projection_service_test.go` (`TestBillCustomIntervals`) to verify that custom intervals (e.g. 2, 5, 7, 10 months) trigger bill payments in exact expected months during projections.
