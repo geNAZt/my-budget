@@ -136,6 +136,12 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 	if (!isCashExcluded && !isCashBackedOff) || (!isPortfolioExcluded && !isPortfolioBackedOff) {
 		summary, err := p.t212.GetAccountSummary(ctx, config.ApiKey, config.ApiSecret)
 		if err != nil {
+			if re, ok := err.(*service.RateLimitError); ok {
+				backoffUntil = &re.RetryAfter
+				p.recordAccountBackoff(userID, i, masterKey, &config, "T212_CASH", re.RetryAfter)
+				p.recordAccountBackoff(userID, i, masterKey, &config, "T212_PORTFOLIO", re.RetryAfter)
+				return integration.SyncResult{Error: err, BackoffUntil: backoffUntil}
+			}
 			return integration.SyncResult{Error: err}
 		}
 
@@ -188,6 +194,11 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		for {
 			t212Resp, err := p.t212.GetTransactions(ctx, config.ApiKey, config.ApiSecret, 50, cursor)
 			if err != nil {
+				if re, ok := err.(*service.RateLimitError); ok {
+					backoffUntil = &re.RetryAfter
+					p.recordAccountBackoff(userID, i, masterKey, &config, "T212_PORTFOLIO", re.RetryAfter)
+					return integration.SyncResult{Error: err, BackoffUntil: backoffUntil}
+				}
 				log.Printf("[SYNC] Trading 212 transaction fetch failed: %v", err)
 				return integration.SyncResult{Error: err, BackoffUntil: backoffUntil}
 			}
@@ -195,6 +206,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 			// Check for rate limit
 			if bu := p.t212.ExtractRateLimit(t212Resp.HTTPResponse); bu != nil {
 				backoffUntil = bu
+				p.recordAccountBackoff(userID, i, masterKey, &config, "T212_PORTFOLIO", *bu)
 				log.Printf("[SYNC] Trading 212 rate limit reached. Backing off until %v", bu)
 			}
 
@@ -326,6 +338,13 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 				break
 			}
 
+			if backoffUntil != nil && backoffUntil.After(time.Now()) {
+				log.Printf("[SYNC] Trading 212 rate limit backoff active during pagination. Stopping pagination for this run.")
+				break
+			}
+
+			time.Sleep(500 * time.Millisecond)
+
 			// Extract cursor from nextPagePath
 			nextURL := *t212Resp.JSON200.NextPagePath
 			if idx := strings.Index(nextURL, "cursor="); idx != -1 {
@@ -341,6 +360,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		// 3b. Fetch and check open positions for portfolio changes
 		positions, err := p.t212.GetPositions(ctx, config.ApiKey, config.ApiSecret)
 		if err != nil {
+			if re, ok := err.(*service.RateLimitError); ok {
+				backoffUntil = &re.RetryAfter
+				p.recordAccountBackoff(userID, i, masterKey, &config, "T212_PORTFOLIO", re.RetryAfter)
+			}
 			log.Printf("[SYNC] [TRADING212] Positions fetch failed: %v", err)
 		} else {
 			log.Printf("[SYNC] [TRADING212] Fetched %d open positions for portfolio check", len(positions))
@@ -456,6 +479,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 	if !isCashExcluded && !isCashBackedOff {
 		activeOrders, err := p.t212.GetActiveOrders(ctx, config.ApiKey, config.ApiSecret)
 		if err != nil {
+			if re, ok := err.(*service.RateLimitError); ok {
+				backoffUntil = &re.RetryAfter
+				p.recordAccountBackoff(userID, i, masterKey, &config, "T212_CASH", re.RetryAfter)
+			}
 			log.Printf("[SYNC] [TRADING212] Active orders fetch failed: %v", err)
 		} else {
 			log.Printf("[SYNC] [TRADING212] Fetched %d active/pending orders", len(activeOrders))
@@ -858,4 +885,44 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 	}
 
 	return accounts, nil
+}
+
+func (p *Provider) recordAccountBackoff(
+	userID string,
+	i *domain.Integration,
+	masterKey []byte,
+	config *struct {
+		ApiKey             string                         `json:"api_key"`
+		ApiSecret          string                         `json:"api_secret"`
+		LinkedAssetID      string                         `json:"linked_asset_id"`
+		ExcludedAccountIDs []string                       `json:"excluded_account_ids"`
+		AccountsMetadata   map[string]*domain.AccountMeta `json:"accounts_metadata"`
+	},
+	accID string,
+	retryAfter time.Time,
+) {
+	if config.AccountsMetadata == nil {
+		config.AccountsMetadata = make(map[string]*domain.AccountMeta)
+	}
+
+	meta, ok := config.AccountsMetadata[accID]
+	if !ok || meta == nil {
+		alias := "Cash"
+		if accID == "T212_PORTFOLIO" {
+			alias = "Portfolio"
+		}
+		config.AccountsMetadata[accID] = &domain.AccountMeta{
+			Alias:        alias,
+			Enabled:      true,
+			BackoffUntil: &retryAfter,
+		}
+	} else {
+		meta.BackoffUntil = &retryAfter
+	}
+
+	updatedJSON, _ := json.Marshal(config)
+	newEncrypted, _ := p.cryptoService.Encrypt(masterKey, updatedJSON)
+	i.EncryptedConfig = base64.StdEncoding.EncodeToString(newEncrypted)
+
+	p.integrationRepo.Save(userID, i)
 }

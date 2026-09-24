@@ -96,6 +96,12 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 
 	token, tokenResp, err := p.gocardless.GetAccessToken(ctx, config.SecretID, config.SecretKey)
 	if err != nil {
+		if re, ok := err.(*service.RateLimitError); ok {
+			return integration.SyncResult{Error: err, BackoffUntil: &re.RetryAfter}
+		}
+		if bu := p.gocardless.ExtractRateLimit(tokenResp); bu != nil {
+			return integration.SyncResult{Error: err, BackoffUntil: bu}
+		}
 		return integration.SyncResult{Error: err}
 	}
 
@@ -201,11 +207,14 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		balanceFetched := false
 		var fetchedBalance float64
 
-		balResult, err := p.gocardless.GetBalances(ctx, accID, token)
+		balResult, balResp, err := p.gocardless.GetBalances(ctx, accID, token)
 		if err != nil {
 			if re, ok := err.(*service.RateLimitError); ok {
 				log.Printf("[SYNC] Rate limit hit on balance fetch for account %s: %v", accID, err)
 				p.recordAccountBackoff(userID, i, masterKey, &config, accID, re.RetryAfter)
+				if backoffUntil == nil || re.RetryAfter.After(*backoffUntil) {
+					backoffUntil = &re.RetryAfter
+				}
 				// Accumulate last known balance from metadata
 				if config.AccountsMetadata != nil {
 					if m, ok := config.AccountsMetadata[accID]; ok && m != nil {
@@ -216,6 +225,12 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 			}
 			log.Printf("[SYNC] Failed to fetch balances for account %s: %v", accID, err)
 		} else if balResult != nil && balResult.Balances != nil {
+			if bu := p.gocardless.ExtractRateLimit(balResp); bu != nil {
+				p.recordAccountBackoff(userID, i, masterKey, &config, accID, *bu)
+				if backoffUntil == nil || bu.After(*backoffUntil) {
+					backoffUntil = bu
+				}
+			}
 			for _, b := range *balResult.Balances {
 				if b.BalanceType == "closingBooked" || b.BalanceType == "expected" || b.BalanceType == "interimAvailable" {
 					val, _ := strconv.ParseFloat(b.BalanceAmount.Amount, 64)
@@ -276,7 +291,10 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		}
 
 		if bu := p.gocardless.ExtractRateLimit(txResp); bu != nil {
-			backoffUntil = bu
+			p.recordAccountBackoff(userID, i, masterKey, &config, accID, *bu)
+			if backoffUntil == nil || bu.After(*backoffUntil) {
+				backoffUntil = bu
+			}
 		}
 
 		// Set last successful sync time

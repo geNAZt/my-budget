@@ -812,3 +812,30 @@ To give users flexibility in setting recurring payment frequencies for bills (e.
    - Introduce a `formatInterval` utility function in Svelte components to render clean badge labels for table views (e.g. `Monthly`, `Quarterly`, `Semi-Annually`, `Yearly`, or `Every N Months`).
 3. **Backend Service Unit Tests**:
    - Add backend tests in `projection_service_test.go` (`TestBillCustomIntervals`) to verify that custom intervals (e.g. 2, 5, 7, 10 months) trigger bill payments in exact expected months during projections.
+
+## 32. Realtime Sync Robustness & Instant Reset Error Resolution
+
+To resolve instant reset and rate-limit errors during realtime synchronization across bank and broker feeds (Trading 212, GoCardless, EnableBanking), we address the root causes of timestamp calculation, header parsing, connection handling, and error states:
+
+### Design Details
+1. **Multi-Format Reset Time Parser**:
+   - Rate-limit reset headers from different providers express reset times differently:
+     - Relative duration in seconds (e.g. `res < 1_000_000_000` like `60`, `3600`, `86400` from GoCardless or proxies). The previous code used `time.Unix(res, 0)`, which interpreted relative seconds as seconds since Unix epoch, creating timestamps in January 1970 that expired instantly ("instant reset"). This now correctly calculates `time.Now().Add(time.Duration(res) * time.Second)`.
+     - Epoch seconds (e.g. `1_000_000_000 <= res < 100_000_000_000`). Correctly parsed via `time.Unix(res, 0)`.
+     - Epoch milliseconds (e.g. `res >= 100_000_000_000`). Correctly parsed via `time.UnixMilli(res)`.
+     - HTTP Date / RFC3339 strings (e.g. `http.ParseTime` or `time.RFC3339`).
+2. **Canonical and Case-Insensitive Header Extraction**:
+   - Extract rate-limit headers checking `RateLimit-*`, `X-RateLimit-*`, `x-ratelimit-*`, `Retry-After`, and `HTTP_X_RATELIMIT_*` to ensure headers are never missed due to casing or framework prefixes.
+3. **Provider-Specific Rate Limit & Error Handling**:
+   - **Trading 212**:
+     - Check `rem <= 0` or HTTP 429 rather than `rem < 5` (since endpoints like `GET /equity/account/summary` have limits of 1 req / 5s and naturally have `remaining <= 1`).
+     - On HTTP 429, extract `x-ratelimit-reset` / `Retry-After` and return `RateLimitError` so `BackoffUntil` is populated on the sync result.
+     - In transaction pagination, if a rate limit reset is encountered, sleep or pause rather than hammering into 429.
+   - **GoCardless**:
+     - Propagate `RateLimitError` in `GetAccessToken` to populate `SyncResult.BackoffUntil`.
+     - Inspect `Retry-After` and rate-limit headers on 429 responses.
+   - **EnableBanking**:
+     - Persist `meta.BackoffUntil` via `recordAccountBackoff` when rate-limited.
+4. **TCP Connection Health (Auditing Transport)**:
+   - In `AuditingTransport.RoundTrip`, ensure the original `resp.Body` is closed before being replaced by `io.NopCloser`, allowing Go's `http.Transport` connection pool to cleanly recycle sockets and prevent abrupt TCP connection resets (`read: connection reset by peer`).
+

@@ -624,7 +624,13 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 		writeMetaUpdate("FAILED", res.Error.Error())
 		if res.BackoffUntil != nil {
 			integration.BackoffUntil = res.BackoffUntil
+			integration.LastError = res.Error.Error()
+			integration.Status = "ACTIVE"
 			_ = s.integrationRepo.Save(userID, integration)
+
+			_ = os.RemoveAll(logDir)
+			_ = s.integrationRepo.UpdateSyncRun(correlationID, "FAILED", 0, false, res.Error.Error())
+			return res.Error
 		}
 
 		_ = os.RemoveAll(logDir)

@@ -307,8 +307,10 @@ func (t *AuditingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	// Read response body
 	var respBodyBytes []byte
 	if resp.Body != nil {
+		origBody := resp.Body
 		var rerr error
-		respBodyBytes, rerr = io.ReadAll(resp.Body)
+		respBodyBytes, rerr = io.ReadAll(origBody)
+		_ = origBody.Close()
 		if rerr == nil {
 			resp.Body = io.NopCloser(bytes.NewBuffer(respBodyBytes))
 		}

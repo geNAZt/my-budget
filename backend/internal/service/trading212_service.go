@@ -22,20 +22,31 @@ func (s *Trading212Service) ExtractRateLimit(resp *http.Response) *time.Time {
 		return nil
 	}
 
-	remaining := resp.Header.Get("x-ratelimit-remaining")
-	reset := resp.Header.Get("x-ratelimit-reset")
-
-	if remaining == "" || reset == "" {
-		return nil
+	retryAfter := getHeader(resp.Header, "retry-after", "Retry-After")
+	if retryAfter != "" {
+		if t := ParseResetTime(retryAfter); t != nil {
+			return t
+		}
 	}
 
-	rem, _ := strconv.Atoi(remaining)
-	res, _ := strconv.ParseInt(reset, 10, 64)
+	reset := getHeader(resp.Header, "x-ratelimit-reset", "X-RateLimit-Reset", "RateLimit-Reset")
+	remaining := getHeader(resp.Header, "x-ratelimit-remaining", "X-RateLimit-Remaining", "RateLimit-Remaining")
 
-	// If we have less than 5 requests left, back off until reset
-	if rem < 5 {
-		t := time.Unix(res, 0)
-		return &t
+	if resp.StatusCode == http.StatusTooManyRequests {
+		if reset != "" {
+			if t := ParseResetTime(reset); t != nil {
+				return t
+			}
+		}
+		fallback := time.Now().Add(60 * time.Second)
+		return &fallback
+	}
+
+	if remaining != "" && reset != "" {
+		rem, err := strconv.Atoi(remaining)
+		if err == nil && rem <= 0 {
+			return ParseResetTime(reset)
+		}
 	}
 
 	return nil
@@ -53,6 +64,20 @@ func (s *Trading212Service) getClient(ctx context.Context, apiKey, apiSecret str
 	}))
 }
 
+func (s *Trading212Service) parseResponseError(statusCode int, body []byte, httpResp *http.Response) error {
+	if statusCode == http.StatusTooManyRequests {
+		retryAfter := time.Now().Add(60 * time.Second)
+		if bu := s.ExtractRateLimit(httpResp); bu != nil {
+			retryAfter = *bu
+		}
+		return &RateLimitError{
+			RetryAfter: retryAfter,
+			Message:    fmt.Sprintf("T212 rate limit exceeded (429): %s", string(body)),
+		}
+	}
+	return fmt.Errorf("T212 API error: %d - %s", statusCode, string(body))
+}
+
 func (s *Trading212Service) GetAccountSummary(ctx context.Context, apiKey, apiSecret string) (*trading212.AccountSummary, error) {
 	client, err := s.getClient(ctx, apiKey, apiSecret)
 	if err != nil {
@@ -65,7 +90,7 @@ func (s *Trading212Service) GetAccountSummary(ctx context.Context, apiKey, apiSe
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("T212 API error: %d - %s", resp.StatusCode(), string(resp.Body))
+		return nil, s.parseResponseError(resp.StatusCode(), resp.Body, resp.HTTPResponse)
 	}
 
 	return resp.JSON200, nil
@@ -83,7 +108,7 @@ func (s *Trading212Service) GetPositions(ctx context.Context, apiKey, apiSecret 
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("T212 API error: %d - %s", resp.StatusCode(), string(resp.Body))
+		return nil, s.parseResponseError(resp.StatusCode(), resp.Body, resp.HTTPResponse)
 	}
 
 	if resp.JSON200 == nil {
@@ -113,7 +138,7 @@ func (s *Trading212Service) GetTransactions(ctx context.Context, apiKey, apiSecr
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("T212 API error: %d - %s", resp.StatusCode(), string(resp.Body))
+		return nil, s.parseResponseError(resp.StatusCode(), resp.Body, resp.HTTPResponse)
 	}
 
 	return resp, nil
@@ -131,7 +156,7 @@ func (s *Trading212Service) GetActiveOrders(ctx context.Context, apiKey, apiSecr
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("T212 API error: %d - %s", resp.StatusCode(), string(resp.Body))
+		return nil, s.parseResponseError(resp.StatusCode(), resp.Body, resp.HTTPResponse)
 	}
 
 	if resp.JSON200 == nil {

@@ -157,11 +157,8 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 			errStr := err.Error()
 			if strings.Contains(errStr, "Status 429") || strings.Contains(errStr, "RateLimitException") || strings.Contains(errStr, "ASPSP_RATE_LIMIT_EXCEEDED") {
 				backoff := now.Add(8 * time.Hour)
-				if meta == nil {
-					meta = &domain.AccountMeta{Enabled: true, Alias: accID}
-					config.AccountsMetadata[accID] = meta
-				}
-				meta.BackoffUntil = &backoff
+				backoffUntil = &backoff
+				p.recordAccountBackoff(userID, i, masterKey, &config, accID, backoff)
 				log.Printf("[SYNC] [ENABLEBANKING] Rate limit exceeded for account %s. Backing off until %v", accID, backoff)
 				return true
 			}
@@ -240,7 +237,7 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 
 		ebTxs, txResp, err := p.enableBanking.GetTransactions(ctx, token, accID, dateFrom, psuHeaders, strategy)
 		if err != nil {
-			if strings.Contains(err.Error(), "ASPSP_RATE_LIMIT_EXCEEDED") {
+			if strings.Contains(err.Error(), "ASPSP_RATE_LIMIT_EXCEEDED") || strings.Contains(err.Error(), "Status 429") || strings.Contains(err.Error(), "RateLimitException") {
 				log.Printf("[SYNC] Rate limit hit on transactions fetch for account %s: %v", accID, err)
 				backoff := now.Add(24 * time.Hour)
 				backoffUntil = &backoff
