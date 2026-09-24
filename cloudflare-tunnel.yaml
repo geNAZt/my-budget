@@ -6,14 +6,19 @@ tunnel: ed168bbb-feb9-48a4-a367-eb98e3b4d2ed
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
-  # 1. Backend WebSocket Gateway
+  # 1. Backend OAuth2 Callback
+  - hostname: budget.genazt.me
+    path: ^/auth/oauth2/callback
+    service: http://backend:8080
+
+  # 2. Backend WebSocket Gateway
   - hostname: budget.genazt.me
     path: ^/api/ws$
     service: http://backend:8080
 
-  # 2. Frontend SPA (Catch-all)
+  # 3. Frontend SPA (Catch-all)
   - hostname: budget.genazt.me
     service: http://frontend:3000
 
-  # 3. Global 404
+  # 4. Global 404
   - service: http_status:404
