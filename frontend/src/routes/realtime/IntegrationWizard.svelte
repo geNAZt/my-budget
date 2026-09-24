@@ -1,8 +1,10 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { wsCall } from "$lib/utils/ws_fetch";
     import {
         IntegrationSaveRequestSchema,
         IntegrationSchema,
+        GenericIDSchema,
         EBAspspsRequestSchema,
         EBAspspsListSchema,
         EBLinkRequestSchema,
@@ -33,7 +35,15 @@
     import { fade, slide } from "svelte/transition";
     import SearchableDropdown from "$lib/components/SearchableDropdown.svelte";
 
-    let { onComplete, onCancel } = $props();
+    let {
+        onComplete,
+        onCancel,
+        reauthIntegrationId = null,
+    } = $props<{
+        onComplete: () => void;
+        onCancel: () => void;
+        reauthIntegrationId?: string | null;
+    }>();
 
     let step = $state(0);
     let selectedType = $state<
@@ -71,6 +81,37 @@
         { id: "AT", label: "Austria" },
     ];
 
+    onMount(async () => {
+        if (reauthIntegrationId) {
+            isLoading = true;
+            try {
+                const [resp, err] = await wsCall(
+                    "integrations::get",
+                    GenericIDSchema,
+                    { id: reauthIntegrationId },
+                    [IntegrationSaveRequestSchema],
+                ).one();
+                if (err) throw err;
+                if (resp) {
+                    name = resp.name;
+                    selectedType = resp.serviceType as any;
+                    syncIntervalSeconds = resp.syncIntervalSeconds || 21600;
+                    secretID = resp.secretId || "";
+                    secretKey = resp.secretKey || "";
+                    t212ApiKey = resp.apiKey || "";
+                    t212ApiSecret = resp.apiSecret || "";
+                    ebApplicationID = resp.applicationId || "";
+                    ebPrivateKey = resp.privateKey || "";
+                    step = 1;
+                }
+            } catch (e: any) {
+                error = e.message;
+            } finally {
+                isLoading = false;
+            }
+        }
+    });
+
     async function createGCIntegration() {
         isLoading = true;
         error = null;
@@ -79,7 +120,7 @@
                 "integrations::save",
                 IntegrationSaveRequestSchema,
                 {
-                    id: "",
+                    id: reauthIntegrationId || "",
                     name: name,
                     serviceType: "GOCARDLESS",
                     secretId: secretID,
@@ -108,7 +149,7 @@
                 "integrations::save",
                 IntegrationSaveRequestSchema,
                 {
-                    id: "",
+                    id: reauthIntegrationId || "",
                     name: name,
                     serviceType: "TRADING212",
                     apiKey: t212ApiKey,
@@ -135,7 +176,7 @@
                 "integrations::save",
                 IntegrationSaveRequestSchema,
                 {
-                    id: "",
+                    id: reauthIntegrationId || "",
                     name: name,
                     serviceType: "ENABLEBANKING",
                     applicationId: ebApplicationID,
@@ -290,12 +331,15 @@
                 </div>
                 <div>
                     <h3
-                        class="text-2xl font-black tracking-tight text-slate-900"
+                        class="text-2xl font-black tracking-tight text-slate-900 flex items-center gap-3"
                     >
-                        Integration Wizard
+                        <span>{reauthIntegrationId ? "Reauthenticate Node" : "Integration Wizard"}</span>
+                        {#if reauthIntegrationId}
+                            <span class="text-xs px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full uppercase tracking-wider font-bold">Reauth</span>
+                        {/if}
                     </h3>
                     <p class="text-slate-500 font-medium text-sm">
-                        Establish a secure, identity-bound data chain.
+                        {reauthIntegrationId ? `Update credentials & re-authorize for "${name || reauthIntegrationId}"` : "Establish a secure, identity-bound data chain."}
                     </p>
                 </div>
             </div>
@@ -609,7 +653,7 @@
 
                     <div class="flex gap-4 pt-4">
                         <button
-                            onclick={() => (step = 0)}
+                            onclick={() => (reauthIntegrationId ? onCancel() : (step = 0))}
                             class="p-5 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 hover:text-slate-600 transition-all border border-transparent hover:border-slate-200"
                             ><ArrowLeft class="w-6 h-6" /></button
                         >
@@ -633,8 +677,8 @@
                         >
                             {#if isLoading}<Loader2
                                     class="w-6 h-6 animate-spin"
-                                /><span>Initializing...</span>
-                            {:else}<span>Initialize Data Chain</span><ArrowRight
+                                /><span>{reauthIntegrationId ? "Saving & Reauthorizing..." : "Initializing..."}</span>
+                            {:else}<span>{reauthIntegrationId ? "Save & Reauthenticate" : "Initialize Data Chain"}</span><ArrowRight
                                     class="w-5 h-5 group-hover:translate-x-1 transition-transform"
                                 />{/if}
                         </button>

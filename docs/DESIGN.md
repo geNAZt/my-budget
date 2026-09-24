@@ -839,3 +839,22 @@ To resolve instant reset and rate-limit errors during realtime synchronization a
 4. **TCP Connection Health (Auditing Transport)**:
    - In `AuditingTransport.RoundTrip`, ensure the original `resp.Body` is closed before being replaced by `io.NopCloser`, allowing Go's `http.Transport` connection pool to cleanly recycle sockets and prevent abrupt TCP connection resets (`read: connection reset by peer`).
 
+## 33. Enable Banking Auth Expiration (CLOSED_SESSION) Reauthentication & WebSocket Logging Cleanup
+
+### 1. Enable Banking Session Expiration (`CLOSED_SESSION`) Flow
+- **Error Detection**: When Enable Banking returns HTTP 401 with `CLOSED_SESSION` (session closed or expired past the ASPSP consent limit), the provider marks the integration `Status = "NEEDS_REAUTH"`, updates `LastError = "Enable Banking session expired (CLOSED_SESSION). Reauthentication required."`, and persists this immediately to the database.
+- **Sync Scheduler Isolation**: Background sync runners skip integrations with `Status == "NEEDS_REAUTH"` to avoid polling dead sessions.
+- **User Alert Banner**: Upon accessing the application (`+layout.svelte`), an alert banner notifies the user that their banking authentication expired and provides a direct shortcut ("Resolve in Chains") redirecting to `/realtime?view=CHAINS`.
+- **Chains View & Reauthenticate Action**:
+  - The integration card displays a pulsing `Reauth Required` badge.
+  - A dedicated `Reauthenticate` action button opens the `IntegrationWizard` with `reauthIntegrationId`.
+- **Pre-filled Reauth Wizard**:
+  - A new WebSocket handler endpoint `integrations::get` provides the decrypted configuration credentials (`name`, `syncIntervalSeconds`, `applicationId`, `privateKey`).
+  - The wizard opens directly at Step 1 with all stored fields prefilled, eliminating repetitive credential entry.
+  - Submitting saves credentials with the existing integration ID (`integrations::save`), sets `status = "LINKING"`, and proceeds to ASPSP selection and the bank OAuth consent redirect.
+  - On callback (`/auth/oauth2/callback`), `HandleEnableBankingCallback` preserves existing account metadata, updates the session ID, sets `Status = "ACTIVE"`, clears `LastError`, and resumes normal syncing.
+
+### 2. WebSocket Request/Response Debug Log Cleanup
+- Removed verbose hex and payload dumps from `[WS] Incoming Request`, `[WS] Handled with body`, `[WS] Handled without body`, `[WS] Sending Final Response`, and `[WS] SendResponse` in `websocket.go`.
+- Reduced server log volume while retaining critical error, unmarshal, and panic recovery traces.
+

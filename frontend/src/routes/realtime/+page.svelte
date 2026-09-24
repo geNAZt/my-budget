@@ -27,9 +27,11 @@
 
 
     import { onMount } from "svelte";
+    import { page } from "$app/state";
     import { auth } from "$lib/stores/auth.svelte";
     import {
         ShieldCheck,
+        KeyRound,
         RefreshCw,
         Loader2,
         CheckCircle2,
@@ -117,6 +119,19 @@
     let activeIntegrationIDs = $state<string[]>(
         getStored("realtime_activeIntegrationIDs", []),
     );
+    let reauthIntegrationId = $state<string | null>(null);
+
+    $effect(() => {
+        const v = page.url.searchParams.get("view");
+        if (v === "CHAINS" || v === "CONFIG" || v === "GROUPED" || v === "LEDGER") {
+            viewMode = v;
+        }
+    });
+
+    function startReauth(id: string) {
+        reauthIntegrationId = id;
+        showIntegrationWizard = true;
+    }
 
     // Sorting
     let sortKey = $state<"date" | "amount" | "description" | "receiver">(
@@ -2452,7 +2467,10 @@
                         </p>
                     </div>
                     <button
-                        onclick={() => (showIntegrationWizard = true)}
+                        onclick={() => {
+                            reauthIntegrationId = null;
+                            showIntegrationWizard = true;
+                        }}
                         class="btn-primary"
                     >
                         <Plus class="w-4 h-4" />
@@ -2481,6 +2499,11 @@
                                         <span
                                             class="px-3 py-1 bg-rose-50 text-rose-600 text-[10px] font-black rounded-full uppercase tracking-[0.2em]"
                                             >Error</span
+                                        >
+                                    {:else if i.status === "NEEDS_REAUTH"}
+                                        <span
+                                            class="px-3 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-full uppercase tracking-[0.2em] animate-pulse border border-amber-200"
+                                            >Reauth Required</span
                                         >
                                     {:else if i.status === "LINKING"}
                                         <span
@@ -2590,14 +2613,24 @@
                                 {/each}
 
                             <div class="flex items-center gap-3">
-                                <button
-                                    onclick={() => {
-                                        selectedIntegration = i;
-                                        showChainEditor = true;
-                                    }}
-                                    class="flex-1 px-4 py-3 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 font-bold rounded-xl text-[10px] uppercase tracking-[0.2em] transition-all"
-                                    >Configure</button
-                                >
+                                {#if i.status === "NEEDS_REAUTH"}
+                                    <button
+                                        onclick={() => startReauth(i.integrationId)}
+                                        class="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                    >
+                                        <KeyRound class="w-3.5 h-3.5" />
+                                        <span>Reauthenticate</span>
+                                    </button>
+                                {:else}
+                                    <button
+                                        onclick={() => {
+                                            selectedIntegration = i;
+                                            showChainEditor = true;
+                                        }}
+                                        class="flex-1 px-4 py-3 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 font-bold rounded-xl text-[10px] uppercase tracking-[0.2em] transition-all"
+                                        >Configure</button
+                                    >
+                                {/if}
                                 <button
                                     onclick={() =>
                                         triggerManualSync(i.integrationId)}
@@ -2716,11 +2749,16 @@
 
 {#if showIntegrationWizard}
     <IntegrationWizard
+        {reauthIntegrationId}
         onComplete={() => {
             showIntegrationWizard = false;
+            reauthIntegrationId = null;
             fetchData(true);
         }}
-        onCancel={() => (showIntegrationWizard = false)}
+        onCancel={() => {
+            showIntegrationWizard = false;
+            reauthIntegrationId = null;
+        }}
     />
 {/if}
 

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/hex"
 	"log"
 	"net/http"
 	"reflect"
@@ -198,8 +197,6 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 			continue
 		}
 
-		log.Printf("[WS] Incoming Request: %s (ID: %s) bytes: %d, data(hex): %s", req.Path, req.Id, len(message), hex.EncodeToString(message))
-
 		if req.Path == "cancel" {
 			log.Printf("[WS] Cancel Request received for ID: %s", req.Id)
 			session.CancelRequest(req.Id)
@@ -242,7 +239,6 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 						return
 					}
 					reqBodyVal = newReqStruct
-					log.Printf("[WS] Handled with body: %T", reqBody)
 				} else {
 					// If no body is provided, ensure we pass a non-nil pointer to an empty struct
 					// if the handler expects a pointer type (which all currently do).
@@ -251,7 +247,6 @@ func (h *WebSocketHandler) WebSocketGateway(c echo.Context) error {
 					} else {
 						reqBodyVal = reflect.Zero(registration.RequestType)
 					}
-					log.Printf("[WS] Handled without body (RequestType: %v)", registration.RequestType)
 				}
 
 				// 2. Invoke the method dynamically via Reflection
@@ -296,10 +291,6 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 		bodyBytes, _ = proto.Marshal(body)
 	}
 
-	if done {
-		log.Printf("[WS] Sending Final Response for %s (Done: %v)", reqID, done)
-	}
-
 	resp := &apiproto.WSResponse{
 		Id:   reqID,
 		Data: bodyBytes,
@@ -307,7 +298,6 @@ func (h *WebSocketHandler) SendResponse(session *WebsocketSession, reqID string,
 	}
 
 	bytes, _ := proto.Marshal(resp)
-	log.Printf("[WS] SendResponse: ID: %s, payload: %T, bytes: %d, done: %v, data(hex): %s", reqID, body, len(bytes), done, hex.EncodeToString(bytes))
 	session.writeMutex.Lock()
 	defer session.writeMutex.Unlock()
 

@@ -521,6 +521,11 @@ func (s *SyncService) SyncAll() {
 	log.Printf("[SYNC] Syncing %d active integrations...", len(integrations))
 
 	for _, i := range integrations {
+		if i.Status == "NEEDS_REAUTH" {
+			log.Printf("[SYNC] Skipping %s (Needs reauthentication)", i.Name)
+			continue
+		}
+
 		if i.BackoffUntil != nil && i.BackoffUntil.After(time.Now()) {
 			log.Printf("[SYNC] Skipping %s (Backoff until %v)", i.Name, i.BackoffUntil)
 			continue
@@ -622,6 +627,15 @@ func (s *SyncService) SyncIntegration(userID string, integrationID string, force
 
 	if res.Error != nil {
 		writeMetaUpdate("FAILED", res.Error.Error())
+		if integration.Status == "NEEDS_REAUTH" {
+			integration.LastError = res.Error.Error()
+			_ = s.integrationRepo.Save(userID, integration)
+
+			_ = os.RemoveAll(logDir)
+			_ = s.integrationRepo.UpdateSyncRun(correlationID, "FAILED", 0, false, res.Error.Error())
+			return res.Error
+		}
+
 		if res.BackoffUntil != nil {
 			integration.BackoffUntil = res.BackoffUntil
 			integration.LastError = res.Error.Error()

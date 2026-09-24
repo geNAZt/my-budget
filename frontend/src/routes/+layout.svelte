@@ -20,6 +20,7 @@
         Calendar,
         ChevronDown,
         Terminal,
+        AlertCircle,
     } from "@lucide/svelte";
     import {
         Chart as ChartJS,
@@ -35,7 +36,8 @@
     } from "chart.js";
     import { upgradeSecurityKey } from "$lib/utils/auth.svelte";
     import { fade, slide } from "svelte/transition";
-    import { initWebSocketFetch } from "$lib/utils/ws_fetch";
+    import { initWebSocketFetch, wsCall } from "$lib/utils/ws_fetch";
+    import { GenericIDSchema, IntegrationListSchema } from "$lib/gen/api_pb.js";
     import VersionStatus from "$lib/components/VersionStatus.svelte";
 
     let { children } = $props();
@@ -44,6 +46,26 @@
     let mounted = $state(false);
     let isDark = $state(false);
     let activeDropdown = $state<string | null>(null);
+    let reauthIntegrations = $state<any[]>([]);
+
+    async function checkReauthIntegrations() {
+        if (!auth.isAuthenticated || auth.isLoading) return;
+        try {
+            const [resp, err] = await wsCall(
+                "integrations::list",
+                GenericIDSchema,
+                {},
+                [IntegrationListSchema],
+            ).one();
+            if (!err && resp?.integrations) {
+                reauthIntegrations = resp.integrations.filter(
+                    (i: any) => i.status === "NEEDS_REAUTH",
+                );
+            }
+        } catch {
+            // Ignore background check errors
+        }
+    }
 
     $effect(() => {
         if (mounted && !auth.isLoading) {
@@ -53,6 +75,8 @@
                 goto("/auth/login");
             } else if (auth.isAuthenticated && isAuthRoute) {
                 goto("/dashboard");
+            } else if (auth.isAuthenticated) {
+                checkReauthIntegrations();
             }
         }
     });
@@ -292,6 +316,35 @@
                 ? "max-w-[1600px] mx-auto py-12 px-4 sm:px-6 lg:px-8"
                 : ""}
         >
+            {#if showNav && reauthIntegrations.length > 0 && !page.url.pathname.startsWith("/realtime")}
+                <div
+                    class="mb-8 p-6 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm"
+                    transition:slide
+                >
+                    <div class="flex items-center gap-4">
+                        <div class="p-3 bg-rose-100 text-rose-600 rounded-xl shrink-0">
+                            <AlertCircle class="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-black text-rose-900 uppercase tracking-tight">
+                                Authentication Required
+                            </h3>
+                            <p class="text-xs font-medium text-rose-700 mt-0.5">
+                                {reauthIntegrations.length === 1
+                                    ? `Integration "${reauthIntegrations[0].integrationName}" has expired and requires reauthentication.`
+                                    : `${reauthIntegrations.length} integrations have expired and require reauthentication.`}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onclick={() => goto("/realtime?view=CHAINS")}
+                        class="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-md flex items-center gap-2 cursor-pointer shrink-0"
+                    >
+                        <span>Resolve in Chains</span>
+                        <ArrowRight class="w-4 h-4" />
+                    </button>
+                </div>
+            {/if}
             {@render children()}
         </main>
 

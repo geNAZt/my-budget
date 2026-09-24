@@ -149,6 +149,21 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		metaJSON, _ := json.Marshal(meta)
 		log.Printf("[SYNC][%s] [ENABLEBANKING] Syncing account %s with metadata %s...", correlationID, accID, metaJSON)
 
+		handleClosedSession := func(err error) bool {
+			if err == nil {
+				return false
+			}
+			errStr := err.Error()
+			if strings.Contains(errStr, "CLOSED_SESSION") || (strings.Contains(errStr, "Status 401") && strings.Contains(errStr, "session")) {
+				log.Printf("[SYNC] [ENABLEBANKING] Session expired/closed for integration '%s' (%s): %v", i.Name, i.ID, err)
+				i.Status = "NEEDS_REAUTH"
+				i.LastError = "Enable Banking session expired (CLOSED_SESSION). Reauthentication required."
+				_ = p.integrationRepo.Save(userID, i)
+				return true
+			}
+			return false
+		}
+
 		handleRateLimit := func(err error) bool {
 			if err == nil {
 				return false
@@ -175,6 +190,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 			}
 		} else {
 			details, err := p.enableBanking.GetAccountDetails(ctx, token, accID)
+			if handleClosedSession(err) {
+				return integration.SyncResult{Error: err}
+			}
 			if handleRateLimit(err) {
 				continue
 			}
@@ -200,6 +218,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 			totalBalance += meta.Balance
 		} else {
 			balances, err := p.enableBanking.GetBalances(ctx, token, accID)
+			if handleClosedSession(err) {
+				return integration.SyncResult{Error: err}
+			}
 			if handleRateLimit(err) {
 				continue
 			}
@@ -237,6 +258,9 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 
 		ebTxs, txResp, err := p.enableBanking.GetTransactions(ctx, token, accID, dateFrom, psuHeaders, strategy)
 		if err != nil {
+			if handleClosedSession(err) {
+				return integration.SyncResult{Error: err}
+			}
 			if strings.Contains(err.Error(), "ASPSP_RATE_LIMIT_EXCEEDED") || strings.Contains(err.Error(), "Status 429") || strings.Contains(err.Error(), "RateLimitException") {
 				log.Printf("[SYNC] Rate limit hit on transactions fetch for account %s: %v", accID, err)
 				backoff := now.Add(24 * time.Hour)

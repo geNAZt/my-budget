@@ -113,6 +113,58 @@ func (i *Integrations) List(s *api.WebsocketSession, reqID string, body *apiprot
 	i.handler.SendResponse(s, reqID, resp, true)
 }
 
+// Get automatically registers as "integrations::get"
+func (i *Integrations) Get(s *api.WebsocketSession, reqID string, body *apiproto.GenericID) {
+	userID, _ := s.GetAuth()
+	if userID == "" {
+		i.handler.SendError(s, reqID, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	integration, err := i.integrations.GetByID(userID, body.Id)
+	if err != nil || integration == nil {
+		i.handler.SendError(s, reqID, http.StatusNotFound, "Integration not found")
+		return
+	}
+
+	decrypted, err := i.syncService.DecryptIntegrationConfig(userID, integration)
+	if err != nil {
+		i.handler.SendError(s, reqID, http.StatusInternalServerError, "failed to decrypt config")
+		return
+	}
+
+	var config map[string]interface{}
+	_ = json.Unmarshal(decrypted, &config)
+
+	resp := &apiproto.IntegrationSaveRequest{
+		Id:                  integration.ID,
+		Name:                integration.Name,
+		ServiceType:         integration.ServiceType,
+		SyncIntervalSeconds: int32(integration.SyncIntervalSeconds),
+	}
+
+	if val, ok := config["secret_id"].(string); ok {
+		resp.SecretId = val
+	}
+	if val, ok := config["secret_key"].(string); ok {
+		resp.SecretKey = val
+	}
+	if val, ok := config["api_key"].(string); ok {
+		resp.ApiKey = val
+	}
+	if val, ok := config["api_secret"].(string); ok {
+		resp.ApiSecret = val
+	}
+	if val, ok := config["application_id"].(string); ok {
+		resp.ApplicationId = val
+	}
+	if val, ok := config["private_key"].(string); ok {
+		resp.PrivateKey = val
+	}
+
+	i.handler.SendResponse(s, reqID, resp, true)
+}
+
 // Delete automatically registers as "integrations::delete"
 func (i *Integrations) Delete(s *api.WebsocketSession, reqID string, reqIDObj *apiproto.GenericID) {
 	userID, _ := s.GetAuth()

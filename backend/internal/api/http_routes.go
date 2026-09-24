@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/genazt/my-budget-script/backend/internal/crypto"
+	"github.com/genazt/my-budget-script/backend/internal/domain"
 	"github.com/genazt/my-budget-script/backend/internal/repository"
 	"github.com/genazt/my-budget-script/backend/internal/service"
 	"github.com/labstack/echo/v4"
@@ -54,10 +55,12 @@ func HandleEnableBankingCallback(
 		}
 
 		var config struct {
-			ApplicationID string   `json:"application_id"`
-			PrivateKey    string   `json:"private_key"`
-			SessionID     string   `json:"session_id"`
-			AccountIDs    []string `json:"account_ids"`
+			ApplicationID    string                         `json:"application_id"`
+			PrivateKey       string                         `json:"private_key"`
+			SessionID        string                         `json:"session_id"`
+			AccountIDs       []string                       `json:"account_ids"`
+			LegacyAccountIDs []string                       `json:"accounts"`
+			AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
 		}
 		if err := json.Unmarshal(configBytes, &config); err != nil {
 			return c.Redirect(http.StatusFound, "/dashboard?error=invalid_config")
@@ -80,6 +83,7 @@ func HandleEnableBankingCallback(
 		newCiphertext, _ := cryptoService.Encrypt(masterKey, updatedConfigBytes)
 		integration.EncryptedConfig = base64.StdEncoding.EncodeToString(newCiphertext)
 		integration.Status = "ACTIVE"
+		integration.LastError = ""
 
 		if err := integrationRepo.Save(integration.UserID, integration); err != nil {
 			return c.Redirect(http.StatusFound, "/dashboard?error=save_failed")
