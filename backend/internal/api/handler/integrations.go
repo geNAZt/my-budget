@@ -161,6 +161,9 @@ func (i *Integrations) Get(s *api.WebsocketSession, reqID string, body *apiproto
 	if val, ok := config["private_key"].(string); ok {
 		resp.PrivateKey = val
 	}
+	if val, ok := config["session_id"].(string); ok {
+		resp.SessionId = val
+	}
 
 	i.handler.SendResponse(s, reqID, resp, true)
 }
@@ -239,6 +242,7 @@ func (i *Integrations) Save(s *api.WebsocketSession, reqID string, reqObj *apipr
 		}
 	}
 
+	var ebAccountIDs []string
 	if reqObj.ServiceType == "GOCARDLESS" {
 		configMap["secret_id"] = reqObj.SecretId
 		configMap["secret_key"] = reqObj.SecretKey
@@ -248,6 +252,29 @@ func (i *Integrations) Save(s *api.WebsocketSession, reqID string, reqObj *apipr
 	} else if reqObj.ServiceType == "ENABLEBANKING" {
 		configMap["application_id"] = reqObj.ApplicationId
 		configMap["private_key"] = reqObj.PrivateKey
+		if reqObj.SessionId != "" {
+			appID := reqObj.ApplicationId
+			privKey := reqObj.PrivateKey
+			if appID == "" && configMap["application_id"] != nil {
+				appID, _ = configMap["application_id"].(string)
+			}
+			if privKey == "" && configMap["private_key"] != nil {
+				privKey, _ = configMap["private_key"].(string)
+			}
+			token, err := i.ebService.CreateJWT(appID, privKey)
+			if err != nil {
+				i.handler.SendError(s, reqID, http.StatusBadRequest, fmt.Sprintf("invalid credentials: %v", err))
+				return
+			}
+			_, accounts, err := i.ebService.GetSession(context.Background(), token, reqObj.SessionId)
+			if err != nil {
+				i.handler.SendError(s, reqID, http.StatusBadRequest, fmt.Sprintf("invalid session: %v", err))
+				return
+			}
+			configMap["session_id"] = reqObj.SessionId
+			configMap["account_ids"] = accounts
+			ebAccountIDs = accounts
+		}
 	}
 
 	configBytes, _ := json.Marshal(configMap)
@@ -258,8 +285,10 @@ func (i *Integrations) Save(s *api.WebsocketSession, reqID string, reqObj *apipr
 	}
 
 	status := "LINKING"
-	if reqObj.ServiceType == "TRADING212" {
+	if reqObj.ServiceType == "TRADING212" || (reqObj.ServiceType == "ENABLEBANKING" && reqObj.SessionId != "") {
 		status = "ACTIVE"
+	} else if existing != nil && existing.Status != "" {
+		status = existing.Status
 	}
 
 	domainObj := domain.Integration{
@@ -282,6 +311,12 @@ func (i *Integrations) Save(s *api.WebsocketSession, reqID string, reqObj *apipr
 
 	// Cache the derived key for enablebanking callback or immediate list use
 	i.syncService.CacheMasterKey(userID, integrationID, masterKey)
+
+	if reqObj.ServiceType == "ENABLEBANKING" && reqObj.SessionId != "" {
+		if err := i.syncService.ApplyEnableBankingSession(context.Background(), &domainObj, reqObj.SessionId, ebAccountIDs, masterKey); err != nil {
+			log.Printf("[ENABLEBANKING] Warning: Failed to apply session in Save: %v", err)
+		}
+	}
 
 	resp := mapIntegrationToProto(domainObj)
 	i.handler.SendResponse(s, reqID, resp, true)

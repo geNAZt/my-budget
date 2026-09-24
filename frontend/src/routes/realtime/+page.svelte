@@ -128,6 +128,15 @@
         }
     });
 
+    $effect(() => {
+        if (page.url.searchParams.get("sync") === "true") {
+            fetchData(true);
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.delete("sync");
+            window.history.replaceState({}, "", newUrl.toString());
+        }
+    });
+
     function startReauth(id: string) {
         reauthIntegrationId = id;
         showIntegrationWizard = true;

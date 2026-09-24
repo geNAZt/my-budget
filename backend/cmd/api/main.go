@@ -126,6 +126,8 @@ func main() {
 	// Initialize Integration Registry
 	integrationRegistry := integration.NewRegistry()
 	syncService := service.NewSyncService(integrationRepo, transactionRepo, connectionRepo, assetRepo, userRepo, cryptoService, integrationRegistry, ruleService, eventBus)
+	syncService.SetVirtualAccountRepo(virtualAccountRepo)
+	syncService.SetEnableBankingService(ebService)
 
 	integrationRegistry.Register(gc_provider.NewProvider(integrationRepo, transactionRepo, cryptoService, gcService, ruleService, syncService, eventBus))
 	integrationRegistry.Register(t212_provider.NewProvider(integrationRepo, transactionRepo, assetRepo, cryptoService, t212Service, ruleService, syncService, eventBus, database))

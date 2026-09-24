@@ -43,6 +43,9 @@ type SyncService struct {
 	masterKeyCache          map[string]map[string][]byte // userID -> integrationID -> MIK
 	activeIntegrationsCache map[string]map[string]string // userID -> accountID -> integrationID
 	cacheMu                 sync.RWMutex
+
+	virtualAccountRepo      *repository.VirtualAccountRepository
+	ebService               *EnableBankingService
 }
 
 func (s *SyncService) RuleService() *RuleService {
@@ -51,6 +54,14 @@ func (s *SyncService) RuleService() *RuleService {
 
 func (s *SyncService) GetProvider(serviceType string) integration.Provider {
 	return s.integrationRegistry.Get(serviceType)
+}
+
+func (s *SyncService) SetVirtualAccountRepo(vaRepo *repository.VirtualAccountRepository) {
+	s.virtualAccountRepo = vaRepo
+}
+
+func (s *SyncService) SetEnableBankingService(eb *EnableBankingService) {
+	s.ebService = eb
 }
 
 func NewSyncService(
@@ -1558,4 +1569,192 @@ func (s *SyncService) ReconcilePendingDuplicates(userID string, integrationID st
 			}
 		}
 	}
+}
+
+func (s *SyncService) ApplyEnableBankingSession(
+	ctx context.Context,
+	integrationObj *domain.Integration,
+	sessionID string,
+	newAccountIDs []string,
+	masterKey []byte,
+) error {
+	ciphertext, err := base64.StdEncoding.DecodeString(integrationObj.EncryptedConfig)
+	if err != nil {
+		return fmt.Errorf("failed to decode encrypted config: %w", err)
+	}
+	configBytes, err := s.cryptoService.Decrypt(masterKey, ciphertext)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt config: %w", err)
+	}
+
+	var config struct {
+		ApplicationID    string                         `json:"application_id"`
+		PrivateKey       string                         `json:"private_key"`
+		SessionID        string                         `json:"session_id"`
+		AccountIDs       []string                       `json:"account_ids"`
+		LegacyAccountIDs []string                       `json:"accounts"`
+		AccountsMetadata map[string]*domain.AccountMeta `json:"accounts_metadata"`
+	}
+	if err := json.Unmarshal(configBytes, &config); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if config.AccountsMetadata == nil {
+		config.AccountsMetadata = make(map[string]*domain.AccountMeta)
+	}
+
+	var token string
+	if s.ebService != nil {
+		token, err = s.ebService.CreateJWT(config.ApplicationID, config.PrivateKey)
+		if err != nil {
+			log.Printf("[ENABLEBANKING] Warning: Failed to create JWT during session apply: %v", err)
+		}
+	}
+
+	if len(newAccountIDs) == 0 && s.ebService != nil && token != "" {
+		_, accs, err := s.ebService.GetSession(ctx, token, sessionID)
+		if err != nil {
+			log.Printf("[ENABLEBANKING] Warning: Failed to get session accounts during session apply: %v", err)
+		} else {
+			newAccountIDs = accs
+		}
+	}
+
+	type newAccInfo struct {
+		uid  string
+		iban string
+		name string
+	}
+	newAccounts := make([]newAccInfo, 0, len(newAccountIDs))
+	for _, uid := range newAccountIDs {
+		if uid == "" {
+			continue
+		}
+		info := newAccInfo{uid: uid}
+		if s.ebService != nil && token != "" {
+			details, err := s.ebService.GetAccountDetails(ctx, token, uid)
+		if err == nil && details != nil {
+			if details.Iban != nil {
+				info.iban = strings.ToUpper(strings.TrimSpace(*details.Iban))
+			}
+			if details.Name != nil {
+				info.name = strings.TrimSpace(*details.Name)
+			}
+		}
+		}
+		newAccounts = append(newAccounts, info)
+	}
+
+	oldMetaMap := config.AccountsMetadata
+	matchedOld := make(map[string]bool)
+	newMetadata := make(map[string]*domain.AccountMeta)
+
+	for _, nAcc := range newAccounts {
+		var matchedOldUID string
+		var matchedMeta *domain.AccountMeta
+
+		// A. Match by IBAN
+		if nAcc.iban != "" {
+			for oldUID, oMeta := range oldMetaMap {
+				if matchedOld[oldUID] {
+					continue
+				}
+				if oMeta != nil && strings.ToUpper(strings.TrimSpace(oMeta.IBAN)) == nAcc.iban {
+					matchedOldUID = oldUID
+					matchedMeta = oMeta
+					break
+				}
+			}
+		}
+
+		// B. Match 1:1 if single account on both sides
+		if matchedOldUID == "" && len(newAccounts) == 1 && len(oldMetaMap) == 1 {
+			for oldUID, oMeta := range oldMetaMap {
+				matchedOldUID = oldUID
+				matchedMeta = oMeta
+				break
+			}
+		}
+
+		// C. Match by Name/Alias
+		if matchedOldUID == "" && nAcc.name != "" {
+			for oldUID, oMeta := range oldMetaMap {
+				if matchedOld[oldUID] {
+					continue
+				}
+				if oMeta != nil && strings.EqualFold(strings.TrimSpace(oMeta.Alias), nAcc.name) {
+					matchedOldUID = oldUID
+					matchedMeta = oMeta
+					break
+				}
+			}
+		}
+
+		if matchedOldUID != "" && matchedMeta != nil {
+			matchedOld[matchedOldUID] = true
+			clonedMeta := *matchedMeta
+			if nAcc.iban != "" {
+				clonedMeta.IBAN = nAcc.iban
+			}
+			if clonedMeta.Alias == "" && nAcc.name != "" {
+				clonedMeta.Alias = nAcc.name
+			}
+			clonedMeta.BackoffUntil = nil
+			newMetadata[nAcc.uid] = &clonedMeta
+
+			if matchedOldUID != nAcc.uid {
+				log.Printf("[ENABLEBANKING] Remapping account %s -> %s for integration %s", matchedOldUID, nAcc.uid, integrationObj.ID)
+				if err := s.transactionRepo.RemapAccountID(integrationObj.UserID, integrationObj.ID, matchedOldUID, nAcc.uid); err != nil {
+					log.Printf("[ENABLEBANKING] Warning: Failed to remap transaction account IDs: %v", err)
+				}
+				if s.virtualAccountRepo != nil {
+					if err := s.virtualAccountRepo.RemapRealtimeAccountID(matchedOldUID, nAcc.uid); err != nil {
+						log.Printf("[ENABLEBANKING] Warning: Failed to remap virtual account realtime account ID: %v", err)
+					}
+				}
+			}
+		} else {
+			alias := nAcc.name
+			if alias == "" {
+				alias = nAcc.uid
+			}
+			newMetadata[nAcc.uid] = &domain.AccountMeta{
+				Enabled: true,
+				Alias:   alias,
+				IBAN:    nAcc.iban,
+			}
+		}
+	}
+
+	config.SessionID = sessionID
+	config.AccountIDs = newAccountIDs
+	config.LegacyAccountIDs = nil
+	config.AccountsMetadata = newMetadata
+
+	updatedJSON, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated config: %w", err)
+	}
+
+	newEncrypted, err := s.cryptoService.Encrypt(masterKey, updatedJSON)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt updated config: %w", err)
+	}
+
+	integrationObj.EncryptedConfig = base64.StdEncoding.EncodeToString(newEncrypted)
+	integrationObj.Status = "ACTIVE"
+	integrationObj.LastError = ""
+	integrationObj.BackoffUntil = nil
+
+	if err := s.integrationRepo.Save(integrationObj.UserID, integrationObj); err != nil {
+		return fmt.Errorf("failed to save integration: %w", err)
+	}
+
+	s.CacheMasterKey(integrationObj.UserID, integrationObj.ID, masterKey)
+
+	go func() {
+		_ = s.SyncIntegration(integrationObj.UserID, integrationObj.ID, false, nil)
+	}()
+
+	return nil
 }

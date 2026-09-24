@@ -114,16 +114,30 @@ func (p *Provider) Sync(ctx context.Context, i *domain.Integration, force bool, 
 		}
 	}
 
-	// Gather all unique account IDs from all sources for syncing
+	// Gather active account IDs for syncing
 	idMap := make(map[string]bool)
 	for _, id := range config.AccountIDs {
-		idMap[id] = true
+		if id != "" {
+			idMap[id] = true
+		}
 	}
-	for _, id := range config.LegacyAccountIDs {
-		idMap[id] = true
+	if len(idMap) == 0 && config.SessionID != "" {
+		_, accs, err := p.enableBanking.GetSession(ctx, token, config.SessionID)
+		if err == nil && len(accs) > 0 {
+			config.AccountIDs = accs
+			for _, id := range accs {
+				if id != "" {
+					idMap[id] = true
+				}
+			}
+		}
 	}
-	for id := range config.AccountsMetadata {
-		idMap[id] = true
+	if len(idMap) == 0 {
+		for _, id := range config.LegacyAccountIDs {
+			if id != "" {
+				idMap[id] = true
+			}
+		}
 	}
 
 	log.Printf("[SYNC][%s] [ENABLEBANKING] Found %d potential accounts to sync for integration '%s'", correlationID, len(idMap), i.Name)
@@ -631,13 +645,23 @@ func (p *Provider) GetAccounts(userID string, integrationObj *domain.Integration
 
 	idMap := make(map[string]bool)
 	for _, id := range config.AccountIDs {
-		idMap[id] = true
+		if id != "" {
+			idMap[id] = true
+		}
 	}
-	for _, id := range config.LegacyAccountIDs {
-		idMap[id] = true
+	if len(idMap) == 0 {
+		for _, id := range config.LegacyAccountIDs {
+			if id != "" {
+				idMap[id] = true
+			}
+		}
 	}
-	for id := range config.AccountsMetadata {
-		idMap[id] = true
+	if len(idMap) == 0 {
+		for id := range config.AccountsMetadata {
+			if id != "" {
+				idMap[id] = true
+			}
+		}
 	}
 
 	var accounts []integration.Account

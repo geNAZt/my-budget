@@ -119,3 +119,11 @@ func (r *VirtualAccountRepository) RevertLatest(userID string, vaID string) erro
 
 	return nil
 }
+
+func (r *VirtualAccountRepository) RemapRealtimeAccountID(oldAccountID string, newAccountID string) error {
+	if oldAccountID == "" || newAccountID == "" || oldAccountID == newAccountID {
+		return nil
+	}
+	_, err := r.db.Exec(`UPDATE virtual_account_versions SET realtime_account_id = ? WHERE realtime_account_id = ?`, newAccountID, oldAccountID)
+	return err
+}

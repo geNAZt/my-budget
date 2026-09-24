@@ -63,6 +63,30 @@ func (r *TransactionRepository) SaveBulk(userID string, txs []domain.BankTransac
 	return tx.Commit()
 }
 
+func (r *TransactionRepository) RemapAccountID(userID string, integrationID string, oldAccountID string, newAccountID string) error {
+	if oldAccountID == "" || newAccountID == "" || oldAccountID == newAccountID {
+		return nil
+	}
+	_, err := r.db.Exec(`
+		UPDATE bank_transactions
+		SET account_id = CASE WHEN account_id = ? THEN ? ELSE account_id END,
+		    source_account_id = CASE WHEN source_account_id = ? THEN ? ELSE source_account_id END,
+		    destination_account_id = CASE WHEN destination_account_id = ? THEN ? ELSE destination_account_id END
+		WHERE user_id = ? AND integration_id = ? AND (account_id = ? OR source_account_id = ? OR destination_account_id = ?)
+	`, oldAccountID, newAccountID, oldAccountID, newAccountID, oldAccountID, newAccountID, userID, integrationID, oldAccountID, oldAccountID, oldAccountID)
+	if err != nil {
+		return err
+	}
+
+	_, _ = r.db.Exec(`
+		UPDATE account_balance_history
+		SET account_id = ?
+		WHERE user_id = ? AND integration_id = ? AND account_id = ?
+	`, newAccountID, userID, integrationID, oldAccountID)
+
+	return nil
+}
+
 func (r *TransactionRepository) List(userID string) ([]domain.BankTransaction, error) {
 	return r.ListWithFilters(userID, "", "", "")
 }

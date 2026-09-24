@@ -102,6 +102,10 @@
                     t212ApiSecret = resp.apiSecret || "";
                     ebApplicationID = resp.applicationId || "";
                     ebPrivateKey = resp.privateKey || "";
+                    if (resp.sessionId) {
+                        ebExistingSessionID = resp.sessionId;
+                        useExistingSession = true;
+                    }
                     step = 1;
                 }
             } catch (e: any) {
@@ -182,12 +186,19 @@
                     applicationId: ebApplicationID,
                     privateKey: ebPrivateKey,
                     syncIntervalSeconds: syncIntervalSeconds,
+                    sessionId: useExistingSession ? ebExistingSessionID.trim() : "",
                 },
                 [IntegrationSchema],
             ).one();
             if (err) throw err;
 
             integration = resp;
+
+            if (useExistingSession && ebExistingSessionID.trim()) {
+                onComplete();
+                return;
+            }
+
             step = 2;
             await fetchEBInstitutions();
         } catch (e: any) {
